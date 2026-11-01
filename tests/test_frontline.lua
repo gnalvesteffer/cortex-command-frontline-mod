@@ -1,23 +1,32 @@
-Frontline={}; Actor={AIMODE_SENTRY=1,AIMODE_BRAINHUNT=2}; Activity={OBSERVE=1,OVER=2,NOTEAM=-1}
+Frontline={}; Actor={AIMODE_SENTRY=1,AIMODE_BRAINHUNT=2,AIMODE_GOTO=3}; Activity={OBSERVE=1,OVER=2,NOTEAM=-1}
 Key={TAB=1}; MouseButtons={MOUSE_LEFT=1}
 function Timer() return {ElapsedSimTimeMS=0, IsPastSimMS=function(s,n) return s.ElapsedSimTimeMS>=n end, Reset=function(s) s.ElapsedSimTimeMS=0 end} end
 function Vector(x,y) return setmetatable({X=x,Y=y},{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
 local nextId=0
-function CreateAHuman(n,m) nextId=nextId+1; return {Team=0,UniqueID=nextId,name=n,AddInventoryItem=function() end} end
+function CreateAHuman(n,m) nextId=nextId+1; return {Team=0,UniqueID=nextId,name=n,Health=100,MaxHealth=100,Height=70,AddInventoryItem=function(self,item) self.inventory=item end,ClearAIWaypoints=function(self) self.waypoint=nil end,AddAISceneWaypoint=function(self,v) self.waypoint=v end} end
+function CreateACrab(n,m) local a=CreateAHuman(n,m); a.vehicle=true; return a end
 function CreateHDFirearm(n,m) return {name=n} end
-function CreateTerrainObject() return {} end
-local actors={}; MovableMan={Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(), AddActor=function(s,a) table.insert(actors,a) end, IsActor=function(s,a) return a~=nil end}
-function IsAHuman() return true end; function IsACrab() return false end
-SceneMan={AddSceneObject=function() end}; MusicMan={PlayDynamicSong=function() end}
+function CreateTDExplosive(n,m) return {name=n,GibThis=function(self) self.gibbed=true end,Activate=function(self) self.activated=true end} end
+function CreateMOSRotating(n,m) return {name=n} end
+function CreateMOPixel(n,m) return {name=n} end
+function CreateTerrainObject(name) return {name=name} end
+local actors={}; MovableMan={Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(), AddActor=function(s,a) table.insert(actors,a) end, AddParticle=function(s,p) s.lastParticle=p; s.particleCount=(s.particleCount or 0)+1 end, IsActor=function(s,a) return a~=nil end}
+function IsAHuman(a) return not a.vehicle end; function IsACrab(a) return a.vehicle==true end
+local sceneObjects={}
+SceneMan={SceneWidth=5200, AddSceneObject=function(_,o) table.insert(sceneObjects,o) end, MovePointToGround=function(_,p) return Vector(p.X,600) end}; MusicMan={PlayDynamicSong=function() end}
+FrameMan={IsHudDisabled=function() return false end,SetHudDisabled=function() end}
+PrimitiveMan={}
 TimerMan={DeltaTimeSecs=1}; UInputMan={KeyPressed=function()return false end}
 ActivityMan={EndActivity=function() end}
 function Frontline:SetPlayerBrain() end; function Frontline:SetViewState() end; function Frontline:SetObservationTarget() end
 function Frontline:GetTeamDeathCount(team) return self.deathCounts[team] end
 assert(loadfile('Frontline.rte/Frontline.lua'))()
 local a=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
-a:StartActivity(); a.panel=false
+a:StartActivity(); assert(a.brains[0].Pos.X==180 and a.brains[1].Pos.X==5020); assert(a.brains[0].inventory.name=="Gatling Gun" and a.brains[1].inventory.name=="Gatling Gun" and a.brains[1].HFlipped); assert(sceneObjects[1].name=="Frontline Outpost Structure" and sceneObjects[2].name=="Frontline Outpost Structure" and sceneObjects[3].name=="Frontline Outpost Structure"); assert(sceneObjects[4].name=="Frontline Mirrored Brain Vault" and sceneObjects[4].Team==0); assert(sceneObjects[5].name=="Brain Vault" and not sceneObjects[5].HFlipped and sceneObjects[5].Team==1); a.panel=false
 a.DrawHUD=function() end
-local p=a.teams[0]; assert(a:Batch(0)==210)
+a.DrawOutpost=function() end
+local p=a.teams[0]; assert(a.settings.unitCap==32); a.settings.unitCap=12; assert(a:Batch(0)==210)
+assert(not a:Deploy(0)); assert(a:AutoReason(0)=="Match setup"); a:StartBattle(); assert(a:AutoReason(0):find("Grace")); a.matchTimer.ElapsedSimTimeMS=15000
 local ok=a:Deploy(0); assert(ok and p.funds==240 and a:UnitCount(0)==2)
 assert(not a:Deploy(0)); assert(p.funds==240)
 p.timer.ElapsedSimTimeMS=10000; p.funds=209; assert(not a:Deploy(0)); assert(p.timer.ElapsedSimTimeMS==10000)
@@ -28,7 +37,7 @@ p.auto=true; p.funds=1000; a.teams[1].auto=false; a:UpdateActivity(); assert(a:U
 a:UpdateActivity(); assert(a:UnitCount(0)==9)
 local before=p.funds; a.deathCounts[1]=2; a:UpdateActivity(); assert(p.funds==before+75)
 print('Frontline Lua rules: batch costs, cooldown, capacity, research, auto deploy and bounty passed')
-FrameMan={PlayerScreenWidth=960,PlayerScreenHeight=540}
+FrameMan={PlayerScreenWidth=960,PlayerScreenHeight=540,IsHudDisabled=function() return false end,SetHudDisabled=function() end}
 local cameraOffset=Vector(120,80); local target
 CameraMan={GetOffset=function() return cameraOffset end, SetOffset=function(_,v) cameraOffset=v end, SetScrollTarget=function(_,v) target=v end}
 a.DrawPanel=function() end
@@ -37,7 +46,194 @@ cameraOffset=Vector(150,100); a:UpdateActivity(); assert(cameraOffset.X==120 and
 a.panel=false; a:UpdateActivity(); assert(a.panelCameraOffset==nil)
 print('Camera is held while panel is open and released when closed')
 local labels={}
-PrimitiveMan={DrawBoxFillPrimitive=function() end,DrawBoxPrimitive=function() end,DrawTextPrimitive=function(_,_,_,s) labels[#labels+1]=s end}
+PrimitiveMan={DrawLinePrimitive=function() end,DrawBoxFillPrimitive=function() end,DrawBoxPrimitive=function() end,DrawTextPrimitive=function(_,_,_,s) labels[#labels+1]=s end}
 Frontline.DrawHUD(a)
-assert(#labels==4 and labels[1]:find('FRONTLINE') and labels[2]:find('Funds:') and labels[3]:find('Batch:') and labels[4]:find('Deploy:'))
+assert(#labels>=4 and labels[1]:find('FRONTLINE') and labels[2]:find('Funds:') and labels[3]:find('Batch:') and labels[4]:find('Deploy:'))
 print('Compact HUD renders economy, batch, capacity, and deployment status')
+-- Independent per-row weapons, research prerequisites, and preset composition.
+actors={}
+local b=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+b:StartActivity(); b:StartBattle(); b.DrawHUD=function() end; b.DrawOutpost=function() end
+local t=b.teams[0]; t.funds=5000
+assert(not b:Research(0,6)); assert(b:Research(0,3)); assert(b:Research(0,6))
+t.counts={1,1,0,0}; t.weapons={4,2,1,1}
+assert(b:Batch(0)==75+65+120+45)
+b:SetPreset(0,'Specialist'); assert(t.counts[1]==2 and t.weapons[1]==4 and t.weapons[2]==2)
+b:SaveSquad(0); t.counts[1]=0; t.weapons[1]=1; assert(b:LoadSquad(0)); assert(t.counts[1]==2 and t.weapons[1]==4)
+b.matchTimer.ElapsedSimTimeMS=15000; assert(b:Deploy(0)); assert(not b:Deploy(0))
+-- Capture progresses only for an uncontested side and grants income.
+for _,v in ipairs(actors) do if v.Pos then v.Pos=Vector(100,565) end end
+local fighter=CreateAHuman('Soldier Light','Coalition.rte'); fighter.Team=0; fighter.Pos=Vector(2600,565); MovableMan:AddActor(fighter)
+local middle=b.outposts[2]
+middle.progress=0; middle.owner=-1; b:UpdateOutpost(8)
+assert(middle.owner==0 and middle.progress==1 and b:OutpostCount(0)==1)
+local enemy=CreateAHuman('Soldier Light','Coalition.rte'); enemy.Team=1; enemy.Pos=Vector(2600,565); MovableMan:AddActor(enemy)
+b:UpdateOutpost(8); assert(middle.progress==1)
+fighter.Pos=Vector(100,565); b:UpdateOutpost(16); assert(middle.owner==1 and middle.progress==-1)
+local west=b.outposts[1]; fighter.Pos=Vector(west.x,565); b:UpdateOutpost(8); assert(west.owner==0 and b:OutpostCount(0)==1 and b:OutpostCount(1)==1)
+local east=b.outposts[3]; fighter.Pos=Vector(east.x,565); b:UpdateOutpost(8); assert(east.owner==0 and b:OutpostCount(0)==2)
+print('Per-unit loadouts, research prerequisites, presets, grace and contested outpost passed')
+-- All tabs and world marker use the supported primitive signatures.
+UInputMan.GetMouseMovement=function() return Vector(0,0) end
+UInputMan.MouseButtonPressed=function() return false end
+for _,tab in ipairs({'Squad','Research','Battle','Support','Base','Setup'}) do b.tab=tab; Frontline.DrawPanel(b) end
+Frontline.DrawOutpost(b)
+print('Squad, research, battle panels and outpost marker render without Lua errors')
+
+-- Call-ins enforce grace, resources, independent cooldowns, and target effects.
+local c=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+actors={}; c:StartActivity(); c:StartBattle(); c.DrawHUD=function() end; c.DrawOutpost=function() end
+local ct=c.teams[0]; ct.funds=1000
+assert(not c:CallIn(0,'strike',2)); c.matchTimer.ElapsedSimTimeMS=15000
+assert(c:CallIn(0,'strike',2)); assert(ct.funds==780 and #c.pendingStrikes==1)
+assert(not c:CallIn(0,'strike',2)); c.pendingStrikes[1].timer.ElapsedSimTimeMS=3000
+c:UpdateCallIns(); assert(#c.pendingStrikes==0 and MovableMan.lastParticle.gibbed and MovableMan.lastParticle.Team==0)
+local injured=CreateAHuman('Soldier Light','Coalition.rte'); injured.Team=0; injured.Pos=Vector(c.outposts[2].x,565); injured.Health=70; injured.MaxHealth=100; MovableMan:AddActor(injured)
+assert(c:CallIn(0,'medic',2)); assert(injured.Health==100 and ct.funds==660)
+assert(not c:CallIn(0,'medic',2)); assert(not c:CallIn(0,'medic',4))
+print('Call-in costs, cooldowns, targeting, warning delay, explosion and healing passed')
+
+-- Cover and mines avoid occupied lanes and independently enforce cooldowns.
+ct.funds=2000
+local objectCount=#sceneObjects
+assert(c:CallIn(0,'cover',2)); assert(#sceneObjects>objectCount and ct.funds==1860)
+assert(not c:CallIn(0,'cover',2)); assert(ct.funds==1860)
+local previous=MovableMan.particleCount
+assert(c:CallIn(0,'mines',2)); assert(MovableMan.particleCount>previous and MovableMan.lastParticle.Sharpness==0 and ct.funds==1680)
+assert(c:CallIn(0,'bomb',2)); assert(MovableMan.lastParticle.activated and ct.funds==1420)
+-- The orbital salvo warns, fires over time, and then completes.
+assert(c:CallIn(0,'orbital',2)); assert(ct.funds==1070 and #c.pendingOrbitals==1)
+local salvo=c.pendingOrbitals[1]; previous=MovableMan.particleCount
+salvo.timer.ElapsedSimTimeMS=2999; c:UpdateCallIns(); assert(MovableMan.particleCount==previous)
+salvo.timer.ElapsedSimTimeMS=3000; c:UpdateCallIns(); assert(MovableMan.particleCount==previous+1)
+salvo.timer.ElapsedSimTimeMS=3000+19*120; c:UpdateCallIns(); assert(#c.pendingOrbitals==0 and MovableMan.particleCount==previous+20)
+assert(not c:CallIn(0,'orbital',2))
+print('Cover, mines, bomb and timed orbital salvo costs, effects and cooldowns passed')
+
+-- Unique outpost bonuses and forward deployment.
+local d=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+actors={}; d:StartActivity(); d:StartBattle(); local dt=d.teams[0]
+dt.funds=5000; d.matchTimer.ElapsedSimTimeMS=15000
+assert(d:TeamIncome(0)==5 and d:ResearchCost(0,3)==200 and d:CallinCooldown(0,45000)==45000)
+d.outposts[1].owner=0; d.outposts[2].owner=0; d.outposts[3].owner=0
+assert(d:TeamIncome(0)==7 and d:ResearchCost(0,3)==160 and d:CallinCooldown(0,45000)==36000)
+d.settings.outpostBonuses=false; assert(d:TeamIncome(0)==5 and d:ResearchCost(0,3)==200); d.settings.outpostBonuses=true
+dt.tier=2; dt.counts={0,0,0,0,1}; dt.weapons={1,1,1,1,1}; dt.forward=2; dt.order='Advance'
+assert(d:Batch(0)==285); assert(d:Deploy(0)); local vehicle=actors[#actors]
+assert(vehicle.vehicle and vehicle.waypoint.X==d.outposts[2].x and vehicle.Pos.X==d.outposts[2].x-60)
+dt.timer.ElapsedSimTimeMS=10000; d.outposts[2].owner=1; assert(not d:Deploy(0))
+-- Support research upgrades and temporary shield interception.
+d.outposts[1].owner=0; dt.funds=5000; assert(d:Research(0,8)); assert(d:Research(0,9))
+assert(d:CallIn(0,'shield',1)); assert(d:ShieldBlocks(d.outposts[1],1) and not d:ShieldBlocks(d.outposts[1],0))
+assert(not d:CallIn(1,'bomb',1)); d.outposts[1].shieldTimer.ElapsedSimTimeMS=20000; assert(not d:ShieldBlocks(d.outposts[1],1))
+assert(d:CallIn(0,'orbital',3)); assert(d.pendingOrbitals[1].total==30)
+-- Brain damage is tracked as health lost, including non-player causes.
+d.brains[1].Health=70; d:RecordBrainLoss(); assert(dt.stats.brainDamage==30)
+local target=CreateAHuman('Dummy','Dummy.rte'); target.Team=1; target.Pos=Vector(3000,565); MovableMan:AddActor(target)
+d:RecordTroopLoss(); target.Health=65; d:RecordTroopLoss(); assert(dt.stats.troopDamage==35)
+d.WinnerTeam=0; d.resultReady=true; local report
+FrameMan.SetScreenText=function(_,message) report=message end
+d:EndActivity(); assert(report:find('VICTORY') and report:find('Enemy brain health lost: 30'))
+print('Outpost bonuses, vehicle and forward orders, support upgrades, shields and match report passed')
+-- Wizard prevents enemy deployment and income indefinitely until explicitly started.
+actors={}; local w=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+w:StartActivity(); w.DrawOutpost=function() end; w.DrawWizard=function() end
+w.matchTimer.ElapsedSimTimeMS=100000; w.aiTimer.ElapsedSimTimeMS=100000
+local funds0,funds1=w.teams[0].funds,w.teams[1].funds
+w:UpdateActivity(); assert(not w.battleStarted and w:UnitCount(1)==0 and w.teams[0].funds==funds0 and w.teams[1].funds==funds1)
+assert(not w:Deploy(1) and not w:CallIn(0,'strike',2))
+-- Click each wizard step, changing settings and starting the battle.
+w.DrawWizard=nil; w.cursorX=25; w.cursorY=90
+UInputMan.MouseButtonPressed=function() return true end
+Frontline.DrawWizard(w); assert(w.settings.startFunds==750 and w.teams[0].funds==750 and w.teams[1].funds==750)
+w.cursorX=25; w.cursorY=275; Frontline.DrawWizard(w); assert(w.setupStep==2)
+w.cursorX=25; w.cursorY=225; Frontline.DrawWizard(w); assert(w.setupStep==1)
+w.cursorX=25; w.cursorY=275; Frontline.DrawWizard(w); assert(w.setupStep==2)
+w.cursorX=160; w.cursorY=225; Frontline.DrawWizard(w); assert(w.battleStarted and w.matchTimer.ElapsedSimTimeMS==0 and w.tab=='Squad')
+assert(not w:Deploy(1)); w.matchTimer.ElapsedSimTimeMS=15000; assert(w:Deploy(1))
+w.settings.callins=false; assert(not w:CallIn(0,'strike',1))
+print('Setup wizard holds both teams, cycles settings, reviews and starts grace before deployments')
+
+-- Issuing new orders updates living troops and preserves the brain's sentry mode.
+local own=CreateAHuman('Soldier Light','Coalition.rte'); own.Team=0; own.Pos=Vector(500,565); MovableMan:AddActor(own)
+w.teams[0].order='Defend'; w.teams[0].orderTarget=1; w:ApplyTeamOrder(0)
+assert(own.AIMode==Actor.AIMODE_GOTO and own.waypoint.X==w.outposts[1].x and w.brains[0].AIMode==Actor.AIMODE_SENTRY)
+own.Pos=Vector(w.outposts[1].x,565); w:UpdateOrders(); assert(own.AIMode==Actor.AIMODE_SENTRY)
+w.teams[0].order='Advance'; w.teams[0].orderTarget=2; w:ApplyTeamOrder(0)
+assert(own.AIMode==Actor.AIMODE_GOTO and own.waypoint.X==w.outposts[2].x)
+own.Pos=Vector(w.outposts[2].x,565); w:UpdateOrders(); assert(own.AIMode==Actor.AIMODE_SENTRY)
+w.outposts[2].owner=0; w:UpdateOrders(); assert(own.AIMode==Actor.AIMODE_BRAINHUNT)
+w.teams[0].order='Rush'; w:ApplyTeamOrder(0); assert(own.AIMode==Actor.AIMODE_BRAINHUNT and own.waypoint==nil)
+print('Orders apply to existing units, defend holds, advance resumes, and brains stay in place')
+-- The stock game HUD is hidden only while Frontline's panel is visible.
+local hudDisabled
+FrameMan.SetHudDisabled=function(_,value) hudDisabled=value end
+w.DrawPanel=function() end; w.DrawHUD=function() end; w.panel=true; w:UpdateActivity(); assert(hudDisabled==true)
+w.panel=false; w:UpdateActivity(); assert(hudDisabled==false)
+-- New engines use screen coordinates, with the camera offset excluded.
+local drawn
+PrimitiveMan.DrawScreenBoxFillPrimitive=function(_,_,a) drawn=a end
+PrimitiveMan.DrawScreenBoxPrimitive=function() end
+PrimitiveMan.DrawScreenTextPrimitive=function() end
+actors={}; local u=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+u:StartActivity(); assert(u.screenUI)
+Frontline.DrawHUD(u); assert(drawn.X==8 and drawn.Y==22)
+print('Panel HUD visibility is restored and screen-space mode ignores the camera offset')
+-- The setup wizard starts at 32 per team and retains smaller options.
+assert(u.settings.unitCap==32); u.cursorX=25; u.cursorY=149
+UInputMan.MouseButtonPressed=function() return true end
+Frontline.DrawWizard(u); assert(u.settings.unitCap==8)
+Frontline.DrawWizard(u); assert(u.settings.unitCap==12)
+Frontline.DrawWizard(u); assert(u.settings.unitCap==16)
+Frontline.DrawWizard(u); assert(u.settings.unitCap==32)
+print('Unit-cap choices cycle 32, 8, 12 and 16 per team')
+
+-- AI makes purchases and decisions through the same mechanisms as the player.
+actors={}; local bot=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+bot:StartActivity(); bot:StartBattle(); bot.DrawHUD=function() end; bot.DrawOutpost=function() end
+bot.matchTimer.ElapsedSimTimeMS=15000
+local ai=bot.teams[1]; ai.funds=2000; ai.levels={2,2,1,1,1,1,1,1,1}; ai.tier=3
+bot.outposts[3].owner=1
+local enemyVehicle=CreateACrab('Gatling Drone','Coalition.rte'); enemyVehicle.Team=0; enemyVehicle.Pos=Vector(100,565); MovableMan:AddActor(enemyVehicle)
+bot:UpdateAI(); assert(ai.counts[4]==1 and ai.counts[5]==1 and ai.weapons[2]==5 and ai.forward==3)
+assert(ai.turret and ai.turret.name=='Gatling Turret'); ai.baseArmor=3
+assert(ai.order=='Advance' and ai.orderTarget==2)
+local aiCost,aiSize=bot:Batch(1); assert(aiSize==6 and aiCost<=ai.funds-200)
+-- Same base income with no difficulty multiplier.
+bot.aiTimer.ElapsedSimTimeMS=0; bot.settings.outpostBonuses=false; ai.auto=false
+local f0,f1=bot.teams[0].funds,ai.funds; bot:UpdateActivity()
+assert(bot.teams[0].funds-f0==5 and ai.funds-f1==9) -- AI owns two income upgrades.
+-- Support reactions use normal costs/cooldowns and do not target friendly clusters.
+local medic1=CreateAHuman('Soldier Light','Coalition.rte'); medic1.Team=1; medic1.Pos=Vector(bot.outposts[3].x,565); medic1.Health=40; MovableMan:AddActor(medic1)
+local medic2=CreateAHuman('Soldier Light','Coalition.rte'); medic2.Team=1; medic2.Pos=Vector(bot.outposts[3].x+30,565); medic2.Health=40; MovableMan:AddActor(medic2)
+ai.funds=2000; bot:UpdateAI(); assert(medic1.Health==75 and medic2.Health==75 and ai.funds==1880)
+local foe1=CreateAHuman('Soldier Light','Coalition.rte'); foe1.Team=0; foe1.Pos=Vector(bot.outposts[2].x,565); MovableMan:AddActor(foe1)
+local foe2=CreateAHuman('Soldier Light','Coalition.rte'); foe2.Team=0; foe2.Pos=Vector(bot.outposts[2].x+20,565); MovableMan:AddActor(foe2)
+ai.funds=2000; bot:UpdateAI(); assert(#bot.pendingStrikes==1 and bot.pendingStrikes[1].team==1 and ai.funds==1780)
+-- A hostile warning on an owned post prompts the same paid shield call-in.
+local incoming={team=0,index=3,timer=Timer()}; table.insert(bot.pendingOrbitals,incoming)
+ai.funds=2000; bot:UpdateAI(); assert(bot.outposts[3].shieldTeam==1 and ai.funds==1800)
+print('AI uses shared income, research, units, forward orders, medics, strikes and shields')
+-- The AI cycles through the other offensive call-ins and both fortification types.
+ai.funds=2000; bot:UpdateAI(); assert(MovableMan.lastParticle.name=='Standard Bomb' and MovableMan.lastParticle.activated and ai.funds==1740)
+ai.funds=2000; bot:UpdateAI(); assert(#bot.pendingOrbitals==2 and bot.pendingOrbitals[2].team==1 and ai.funds==1650)
+foe1.Pos=Vector(bot.outposts[3].x-260,565); foe2.Pos=Vector(bot.outposts[3].x-260,565)
+medic1.Health=100; medic2.Health=100; bot.pendingOrbitals={}; ai.funds=2000
+local oldObjects=#sceneObjects; bot:UpdateAI(); assert(#sceneObjects>oldObjects and ai.funds==1860)
+ai.funds=2000; bot:UpdateAI(); assert(MovableMan.lastParticle.name=='Anti Personnel Mine Active' and MovableMan.lastParticle.Sharpness==1 and ai.funds==1820)
+print('AI can use bomb, orbital cannon, cover and mines through standard call-in rules')
+
+-- Base upgrades spend funds, affect the brain and exclude the sentry from
+-- mobile army capacity and issued commands. Both teams can purchase them.
+actors={}; local base=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+base:StartActivity(); assert(not base:BaseUpgrade(0,'armor')); base:StartBattle()
+local bt=base.teams[0]; bt.funds=2000
+assert(base:BaseUpgrade(0,'armor')); assert(bt.baseArmor==1 and base.brains[0].Health==150 and base.brains[0].MaxHealth==150 and bt.funds==1800)
+assert(not base:BaseUpgrade(0,'repair')); base.brains[0].Health=90
+assert(base:BaseUpgrade(0,'repair')); assert(base.brains[0].Health==140 and bt.funds==1680)
+assert(base:BaseUpgrade(0,'turret')); assert(bt.turret.name=='Gatling Turret' and bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.funds==1330)
+assert(base:UnitCount(0)==0 and not base:BaseUpgrade(0,'turret'))
+bt.order='Advance'; base:ApplyTeamOrder(0); assert(bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.turret.waypoint==nil)
+base.settings.callins=false; local bi=base.teams[1]; bi.funds=2000
+base:UpdateAI(); assert(bi.turret and bi.turret.name=='Gatling Turret' and bi.turret.Team==1)
+print('Base armor, repair, roof turret, unit-cap exclusion and AI base purchases passed')

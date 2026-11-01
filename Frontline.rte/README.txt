@@ -1,22 +1,30 @@
 FRONTLINE AUTO-BATTLER — EXPERIMENTAL BUILD
 
-Copy Frontline.rte into Cortex Command's Mods directory. Restart the game and
-choose Frontline Auto-Battler and the Frontline Battlefield scenario. Play as
-team 1 against the CPU. The panel opens automatically; Tab toggles it. Move
-the mouse to position the small square cursor and left-click controls.
+Copy Frontline.rte into the game Mods folder and restart. Choose Frontline
+Auto-Battler and Frontline Battlefield. Difficulty affects the AI decision rate; both teams use the same income rules. A two-step
+wizard lets you choose and review starting funds, income, unit cap, outpost
+bonuses and call-ins. Neither team earns or deploys until you click START
+BATTLE; the 15-second grace period then begins and settings lock.
 
-Choose counts using +/-, cycle through unlocked weapons, then click DEPLOY.
-AUTO repeats the selected batch whenever funds, capacity, and cooldown permit.
-A batch is all-or-nothing. The same cooldown applies in both modes. Each
-team earns income over time and a bounty when an opposing actor dies. The
-research tree improves income and bounties, and unlocks more unit types and
-weapons. Research unlocks must be bought in order. Destroy the enemy brain.
+Tab toggles the panel. In Squad, pick troops and weapons, choose Rush, Advance
+or Defend orders and target an outpost. Orders apply to existing troops and
+new deployments. Optionally choose an owned forward outpost (+25 oz/unit).
+Research unlocks the armored drone and anti-armor missile launcher. West gives
+income, Center discounts research, East reduces support cooldowns. Support
+research improves cover and mine delivery or extends the orbital burst.
 
-Balance: edit the CONFIG table near the start of Frontline.lua. In particular,
-DEPLOY_COOLDOWN_MS = 10000 controls the deployment interval in milliseconds.
-Roster and equipment entries, costs, income, bounty, and caps are alongside it.
+Support targets outposts with strikes, medics, cover, mines, bombs, orbital
+fire or a shield. A shield requires an owned post and blocks hostile strike,
+bomb and orbital call-ins for 20 seconds. Each call-in has a separate cooldown.
 
-This build has passed Lua rule tests but has not been play-tested in the game:
-the game's graphics initialization crashed in the build environment. Scene
-loading, engine API compatibility, mouse behavior, AI navigation, and balance
-still need in-game verification. Research and purchases reset each match.
+Both manual and automatic deployment cost funds and share a cooldown. Both brains have Gatling Guns. Buy brain armor,
+repairs and a rebuildable roof turret on the Base tab. Destroy
+the enemy brain to win. The match report tracks deployments, losses, captures,
+funds and observed health loss; health loss is not attacker-attributed.
+
+Tweak balance values at the start of Frontline.lua. This build needs further
+in-game testing, especially vehicle navigation, forward spawn, shields and the
+match report. Research and settings reset each match.
+
+The AI uses the same units, research, base upgrades, orders, forward spawns and call-ins,
+including their normal prices, cooldowns, capacity limits and prerequisites.
