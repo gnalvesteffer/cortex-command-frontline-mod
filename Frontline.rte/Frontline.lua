@@ -1152,6 +1152,27 @@ function Frontline:UpdateAI()
     end
 end
 
+-- Use the engine's normal reach and pickup action, keeping inventory and orders.
+-- Compare every carried firearm so units do not swap back to weaker drops.
+function Frontline:UpdateWeaponPickups()
+    for actor in MovableMan.Actors do
+        if (actor.Team==0 or actor.Team==1) and actor.UniqueID~=self.brains[actor.Team].UniqueID
+            and not self.miners[actor.UniqueID] and IsAHuman(actor) and actor.Health>0 then
+            local item=actor.ItemInReach
+            if item and IsHDFirearm(item) and item:IsPickupableBy(actor) and item.Vel.Largest<3 then
+                local value=item:GetGoldValue(0,1,1)
+                local best=0
+                local held=actor.EquippedItem
+                if held and IsHDFirearm(held) then best=held:GetGoldValue(0,1,1) end
+                for carried in actor.Inventory do
+                    if IsHDFirearm(carried) then best=math.max(best,carried:GetGoldValue(0,1,1)) end
+                end
+                if value>best then actor:GetController():SetState(Controller.WEAPON_PICKUP,true) end
+            end
+        end
+    end
+end
+
 function Frontline:UpdateActivity()
     if self.ActivityState==Activity.OVER then return end
     -- Read engine deposits, including any gold returned by miners, before spending.
@@ -1170,6 +1191,7 @@ function Frontline:UpdateActivity()
     self:UpdateOutpost(TimerMan.DeltaTimeSecs)
     self:UpdateDeliveries()
     self:UpdateOrders()
+    self:UpdateWeaponPickups()
     if self.minerTimer:IsPastSimMS(CONFIG.MINER_CHECK_INTERVAL_MS) then
         self.minerTimer:Reset()
         self:UpdateMiners()
