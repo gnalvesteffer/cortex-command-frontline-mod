@@ -216,7 +216,7 @@ print('Unit-cap choices cycle 50, 8, 12, 16 and 32 per team')
 actors={}; local bot=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 bot:StartActivity(); bot:StartBattle(); bot.DrawHUD=function() end; bot.DrawOutpost=function() end
 bot.matchTimer.ElapsedSimTimeMS=15000
-local ai=bot.teams[1]; ai.funds=2000; ai.levels={2,2,1,1,1,1,1,1,1,1,1,1,1,1,1}; ai.tier=3
+local ai=bot.teams[1]; ai.funds=2000; ai.levels={2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1}; ai.tier=3
 bot.outposts[3].owner=1
 local enemyVehicle=CreateACrab('Gatling Drone','Coalition.rte'); enemyVehicle.Team=0; enemyVehicle.Pos=Vector(100,565); MovableMan:AddActor(enemyVehicle)
 bot:UpdateAI(); assert(ai.counts[4]==1 and ai.counts[5]==1 and ai.weapons[2]==5 and ai.forward==3)
@@ -588,3 +588,19 @@ FrameMan.SetScreenText=function(_,message) finalReport=message end
 scoreboard:EndActivity(); assert(finalReport:find('Match time: 2:05',1,true) and finalReport:find('Friendly losses: 4',1,true) and finalReport:find('Enemy losses: 7',1,true))
 SceneMan.SceneWidth=5200
 print('HUD shows actual combined outpost bonuses, team deaths and match time')
+
+-- Research unlocks optional per-unit armor for either side, including miners
+-- and drones. It changes both health and batch cost, and saved squads retain it.
+actors={}; local plating=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+plating:StartActivity(); plating:StartBattle(); plating.matchTimer.ElapsedSimTimeMS=15001
+local armorTeam=plating.teams[0]; armorTeam.funds=5000; armorTeam.timer.ElapsedSimTimeMS=10001
+armorTeam.counts={2,0,0,0,0,0}; armorTeam.armor[1]=true
+assert(not plating:Batch(0)); assert(plating:Research(0,16)); assert(plating:Batch(0)==330)
+plating:SaveSquad(0); armorTeam.armor[1]=false; assert(plating:LoadSquad(0) and armorTeam.armor[1])
+assert(plating:Deploy(0)); assert(actors[#actors].MaxHealth==150 and actors[#actors].Health==150 and actors[#actors-1].Health==150)
+armorTeam.timer.ElapsedSimTimeMS=10001; armorTeam.tier=2; armorTeam.levels[11]=1
+armorTeam.counts={0,0,0,0,1,1}; armorTeam.armor[5]=true; armorTeam.armor[6]=true
+assert(plating:Batch(0)==505); assert(plating:Deploy(0)); assert(actors[#actors].Health==150 and actors[#actors-1].Health==150)
+local opponentArmor=plating.teams[1]; opponentArmor.funds=5000
+assert(plating:Research(1,16)); opponentArmor.armor[1]=true; opponentArmor.counts={1,0,0,0,0,0}; assert(plating:Batch(1)==165)
+print('Armor research, per-unit cost and health, saved squads, miners, drones and both teams passed')

@@ -3,6 +3,7 @@ local CONFIG = {
     DEPLOY_COOLDOWN_MS = 10000, -- Shared by manual and automatic deployment.
     START_FUNDS = 450, INCOME_PER_SECOND = 5, BOUNTY = 35,
     TEAM_UNIT_CAP = 50, MAX_BATCH = 6,
+    UNIT_ARMOR_COST = 60, UNIT_ARMOR_HEALTH = 50,
     FORWARD_SHIP_PASSENGERS = 3, FORWARD_LANDING_OFFSET = 150, FORWARD_SHIP_SEPARATION = 170, FORWARD_DROP_HEIGHT = 650,
     GRACE_MS = 15000, OUTPOST_CAPTURE_SECONDS = 8, OUTPOST_INCOME = 2, OUTPOST_RADIUS = 180,
     MINER_GOLD_SCAN_STEP = 24, MINER_CHECK_INTERVAL_MS = 1000, MINER_RESCAN_INTERVAL_MS = 15000, MINER_DIG_DISTANCE = 45,
@@ -54,6 +55,7 @@ local CONFIG = {
         {name="Equipment: Medikit packs", price=200, max=1, kind="equipment"},
         {name="Equipment: Grenade packs", price=220, max=1, kind="equipment"},
         {name="Equipment: Sidearms", price=180, max=1, kind="equipment"},
+        {name="Equipment: Unit armor (+50 HP)", price=260, max=1, kind="equipment"},
     }
 }
 
@@ -66,8 +68,8 @@ local function cycleOption(options,current,direction)
 end
 
 local function freshTeam()
-    return {funds=CONFIG.START_FUNDS, levels={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}, tier=0,
-        counts={2,0,0,0,0}, weapons={6,6,6,6,6,6,6}, sidearms={}, medkits={}, grenades={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), deaths=0, preset="Custom", strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
+    return {funds=CONFIG.START_FUNDS, levels={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}, tier=0,
+        counts={2,0,0,0,0}, weapons={6,6,6,6,6,6,6}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), deaths=0, preset="Custom", strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
 end
 
 function Frontline:StartActivity()
@@ -396,14 +398,15 @@ function Frontline:Batch(team)
         if n>0 and not entry.vehicle and not entry.miner and not weaponUnlocked(t,weapon) then return nil,nil,"Weapon is locked" end
         if n>0 and (entry.unlock>t.tier or (entry.research and (t.levels[entry.research] or 0)==0)) then return nil,nil,"Unit is locked" end
         count=count+n
-        local extra=0
+        if n>0 and t.armor[i] and (t.levels[16] or 0)==0 then return nil,nil,"Unit armor is locked" end
+        local extra=t.armor[i] and CONFIG.UNIT_ARMOR_COST or 0
         if not entry.vehicle and not entry.miner then
             local sidearm=t.sidearms[i] or 0
             if n>0 and sidearm>0 and (t.levels[15] or 0)==0 then return nil,nil,"Sidearms are locked" end
             if n>0 and sidearm==2 and (t.levels[7] or 0)==0 then return nil,nil,"Rocket sidearm is locked" end
             if n>0 and t.medkits[i] and (t.levels[13] or 0)==0 then return nil,nil,"Medikits are locked" end
             if n>0 and t.grenades[i] and (t.levels[14] or 0)==0 then return nil,nil,"Grenades are locked" end
-            extra=(sidearm==1 and 10 or (sidearm==2 and 95 or 0))+(t.medkits[i] and 45 or 0)+(t.grenades[i] and 45 or 0)
+            extra=extra+(sidearm==1 and 10 or (sidearm==2 and 95 or 0))+(t.medkits[i] and 45 or 0)+(t.grenades[i] and 45 or 0)
         end
         cost=cost+n*(entry.price+(entry.vehicle and 0 or (entry.miner and 25 or weapon.price))+extra+(t.forward>0 and 25 or 0))
     end
@@ -494,6 +497,10 @@ function Frontline:Deploy(team)
                 end
             end
             actor.Team=team
+            if t.armor[i] then
+                actor.MaxHealth=actor.MaxHealth+CONFIG.UNIT_ARMOR_HEALTH
+                actor.Health=actor.Health+CONFIG.UNIT_ARMOR_HEALTH
+            end
             actor.Perceptiveness=math.min(1,0.5+0.05*(t.levels[10] or 0))
             actor.HFlipped=team==1
             table.insert(actors,{actor=actor,miner=entry.miner==true})
@@ -659,11 +666,11 @@ end
 
 function Frontline:SaveSquad(team)
     local t=self.teams[team]
-    t.savedSquad={counts={},weapons={},sidearms={},medkits={},grenades={}}
+    t.savedSquad={counts={},weapons={},sidearms={},medkits={},grenades={},armor={}}
     for i=1,#CONFIG.roster do
         t.savedSquad.counts[i]=t.counts[i] or 0
         t.savedSquad.weapons[i]=t.weapons[i] or 6
-        t.savedSquad.sidearms[i]=t.sidearms[i]; t.savedSquad.medkits[i]=t.medkits[i]; t.savedSquad.grenades[i]=t.grenades[i]
+        t.savedSquad.sidearms[i]=t.sidearms[i]; t.savedSquad.medkits[i]=t.medkits[i]; t.savedSquad.grenades[i]=t.grenades[i]; t.savedSquad.armor[i]=t.armor[i]
     end
     if team==0 then self:Notify("Custom squad saved for this match") end
 end
@@ -677,7 +684,7 @@ function Frontline:LoadSquad(team)
     for i=1,#CONFIG.roster do
         t.counts[i]=t.savedSquad.counts[i]
         t.weapons[i]=t.savedSquad.weapons[i]
-        t.sidearms[i]=t.savedSquad.sidearms[i]; t.medkits[i]=t.savedSquad.medkits[i]; t.grenades[i]=t.savedSquad.grenades[i]
+        t.sidearms[i]=t.savedSquad.sidearms[i]; t.medkits[i]=t.savedSquad.medkits[i]; t.grenades[i]=t.savedSquad.grenades[i]; t.armor[i]=t.savedSquad.armor[i]
     end
     t.preset="Saved"
     if team==0 then self:Notify("Custom squad loaded") end
@@ -1007,7 +1014,7 @@ function Frontline:UpdateAI()
     elseif ai.baseArmor<CONFIG.BASE_ARMOR_LEVELS and ai.funds>=CONFIG.BASE_ARMOR_COST*(ai.baseArmor+1)+400 then
         self:BaseUpgrade(team,"armor")
     end
-    local priorities=pressured and {12,3,4,7,8,2,1,10,11,13,14,15,9,6,5} or {1,12,3,6,2,4,11,10,13,14,15,8,7,9,5}
+    local priorities=pressured and {12,3,4,7,8,2,1,10,11,16,13,14,15,9,6,5} or {1,12,3,6,2,4,11,10,16,13,14,15,8,7,9,5}
     for _,index in ipairs(priorities) do
         local r=CONFIG.research[index]
         local target=(index==1 or index==2) and (ai.funds>=3000 and 10 or 2) or (index==10 and ai.funds>=3000 and 10 or 1)
@@ -1031,9 +1038,10 @@ function Frontline:UpdateAI()
     if (ai.levels[11] or 0)>0 and ai.funds>=550 then ai.counts[6]=1 end
     local basic=(ai.levels[12] or 0)>0 and 1 or 6
     ai.weapons={ai.levels[6]>0 and 4 or basic,ai.levels[7]>0 and (enemyVehicle and 5 or 2) or (ai.tier>=1 and 2 or basic),ai.tier>=2 and 3 or basic,basic,basic,basic,basic}
-    ai.sidearms={}; ai.medkits={}; ai.grenades={}
+    ai.sidearms={}; ai.medkits={}; ai.grenades={}; ai.armor={}
     if ai.funds>=1000 then
         for i,entry in ipairs(CONFIG.roster) do
+            if (ai.counts[i] or 0)>0 and (ai.levels[16] or 0)>0 then ai.armor[i]=true end
             if not entry.vehicle and not entry.miner and (ai.counts[i] or 0)>0 then
                 ai.sidearms[i]=(ai.levels[15] or 0)>0 and (enemyVehicle and (ai.levels[7] or 0)>0 and 2 or 1) or 0
                 ai.medkits[i]=(ai.levels[13] or 0)>0
@@ -1385,7 +1393,7 @@ function Frontline:DrawPanel()
             end)
             local weapon=CONFIG.weapons[t.weapons[i] or 6]
             local special=r.vehicle or r.miner
-            button(15,y+14,special and 280 or 115,(r.vehicle and "Built-in gatling" or (r.miner and "FIXED: Pistol + Light Digger (+25/unit)" or (weapon.name.." +"..weapon.price))),unlocked and "available" or "locked",function(step)
+            button(15,y+14,special and 238 or 100,(r.vehicle and "Built-in gatling" or (r.miner and "FIXED: Pistol + Light Digger (+25/unit)" or (weapon.name.." +"..weapon.price))),unlocked and "available" or "locked",function(step)
                 if unlocked and not special then
                     local nextIndex=((t.weapons[i] or 6)-1+step)%#CONFIG.weapons+1
                     while not weaponUnlocked(t,CONFIG.weapons[nextIndex]) do nextIndex=(nextIndex-1+step)%#CONFIG.weapons+1 end
@@ -1394,16 +1402,19 @@ function Frontline:DrawPanel()
             end,true)
             if not special then
                 local side=t.sidearms[i] or 0
-                button(132,y+14,70,side==0 and "SIDE: -" or (side==1 and "Pistol +10" or "RPG +95"),unlocked and (t.levels[15] or 0)>0 and "available" or "locked",function(step)
+                button(117,y+14,60,side==0 and "SIDE: -" or (side==1 and "Pistol +10" or "RPG +95"),unlocked and (t.levels[15] or 0)>0 and "available" or "locked",function(step)
                     if unlocked and (t.levels[15] or 0)>0 then
                         local nextSide=(side+step)%3
                         if nextSide==2 and (t.levels[7] or 0)==0 then nextSide=(nextSide+step)%3 end
                         t.sidearms[i]=nextSide; t.preset="Custom"
                     end
                 end,true)
-                button(204,y+14,43,t.medkits[i] and "MED X" or "MED",unlocked and (t.levels[13] or 0)>0 and (t.medkits[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[13] or 0)>0 then t.medkits[i]=not t.medkits[i]; t.preset="Custom" end end,true)
-                button(249,y+14,46,t.grenades[i] and "GRN X" or "GRN",unlocked and (t.levels[14] or 0)>0 and (t.grenades[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[14] or 0)>0 then t.grenades[i]=not t.grenades[i]; t.preset="Custom" end end,true)
+                button(179,y+14,36,t.medkits[i] and "MED X" or "MED",unlocked and (t.levels[13] or 0)>0 and (t.medkits[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[13] or 0)>0 then t.medkits[i]=not t.medkits[i]; t.preset="Custom" end end,true)
+                button(217,y+14,36,t.grenades[i] and "GRN X" or "GRN",unlocked and (t.levels[14] or 0)>0 and (t.grenades[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[14] or 0)>0 then t.grenades[i]=not t.grenades[i]; t.preset="Custom" end end,true)
             end
+            button(255,y+14,40,t.armor[i] and "ARM X" or "ARM",unlocked and (t.levels[16] or 0)>0 and (t.armor[i] and "selected" or "available") or "locked",function()
+                if unlocked and (t.levels[16] or 0)>0 then t.armor[i]=not t.armor[i]; t.preset="Custom" end
+            end,true)
           end
         end
         button(310,238,140,"UNITS PAGE "..self.rosterPage.." / 2","available",function() self.rosterPage=self.rosterPage==1 and 2 or 1 end,true)
@@ -1428,6 +1439,7 @@ function Frontline:DrawPanel()
         text(310,193,"Defend: capture and hold",true)
         text(310,205,"Forward spawn: +25 per unit",true)
         text(310,217,"MED / GRN: +45 each",true)
+        text(310,229,"ARM: +"..CONFIG.UNIT_ARMOR_COST.."/unit",true)
         text(15,266,"Squad presets: "..t.preset.." (changes current selection)")
         for i,name in ipairs({"Rush","Assault","Specialist"}) do
             button(15+(i-1)*105,280,98,name,t.preset==name and "selected" or "available",function() self:SetPreset(0,name) end)
