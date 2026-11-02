@@ -9,8 +9,9 @@ function CreateHDFirearm(n,m) return {name=n} end
 function CreateTDExplosive(n,m) return {name=n,GibThis=function(self) self.gibbed=true end,Activate=function(self) self.activated=true end} end
 function CreateMOSRotating(n,m) return {name=n} end
 function CreateMOPixel(n,m) return {name=n} end
+function CreateSoundContainer() return {Play=function(self) self.playCount=(self.playCount or 0)+1 end} end
 function CreateTerrainObject(name) return {name=name} end
-local actors={}; MovableMan={Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(), AddActor=function(s,a) table.insert(actors,a) end, AddParticle=function(s,p) s.lastParticle=p; s.particleCount=(s.particleCount or 0)+1 end, IsActor=function(s,a) return a~=nil end}
+local actors={}; MovableMan={Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(), AddActor=function(s,a) table.insert(actors,a) end, AddParticle=function(s,p) s.lastParticle=p; s.particleCount=(s.particleCount or 0)+1; s.particles=s.particles or {}; table.insert(s.particles,p) end, IsActor=function(s,a) return a~=nil end}
 function IsAHuman(a) return not a.vehicle end; function IsACrab(a) return a.vehicle==true end
 local sceneObjects={}
 SceneMan={SceneWidth=5200, SceneHeight=800, CastMaterialRay=function() return false end, AddSceneObject=function(_,o) table.insert(sceneObjects,o) end, MovePointToGround=function(_,p) return Vector(p.X,600) end}; MusicMan={PlayDynamicSong=function() end}
@@ -112,7 +113,14 @@ assert(c:CallIn(0,'orbital',2)); assert(ct.funds==1070 and #c.pendingOrbitals==1
 local salvo=c.pendingOrbitals[1]; previous=MovableMan.particleCount
 salvo.timer.ElapsedSimTimeMS=2999; c:UpdateCallIns(); assert(MovableMan.particleCount==previous)
 salvo.timer.ElapsedSimTimeMS=3000; c:UpdateCallIns(); assert(MovableMan.particleCount==previous+1)
-salvo.timer.ElapsedSimTimeMS=3000+19*120; c:UpdateCallIns(); assert(#c.pendingOrbitals==0 and MovableMan.particleCount==previous+20)
+salvo.timer.ElapsedSimTimeMS=3000+95*45; c:UpdateCallIns(); assert(#c.pendingOrbitals==0 and MovableMan.particleCount==previous+96)
+local minX,maxX=math.huge,-math.huge
+for i=#MovableMan.particles-95,#MovableMan.particles do
+    local round=MovableMan.particles[i]; assert(round.name=='Frontline Orbital Round')
+    minX=math.min(minX,round.Pos.X); maxX=math.max(maxX,round.Pos.X)
+    assert(math.abs(round.Pos.X-c.outposts[2].x)<=150 and round.Team==0)
+end
+assert(maxX-minX>200 and salvo.sound.playCount==24)
 assert(not c:CallIn(0,'orbital',2))
 print('Cover, mines, bomb and timed orbital salvo costs, effects and cooldowns passed')
 
@@ -132,7 +140,7 @@ dt.timer.ElapsedSimTimeMS=10000; d.outposts[2].owner=1; assert(not d:Deploy(0))
 d.outposts[1].owner=0; dt.funds=5000; assert(d:Research(0,8)); assert(d:Research(0,9))
 assert(d:CallIn(0,'shield',1)); assert(d:ShieldBlocks(d.outposts[1],1) and not d:ShieldBlocks(d.outposts[1],0))
 assert(not d:CallIn(1,'bomb',1)); d.jamFields[1].timer.ElapsedSimTimeMS=20000; assert(not d:ShieldBlocks(d.outposts[1],1))
-assert(d:CallIn(0,'orbital',3)); assert(d.pendingOrbitals[1].total==30)
+assert(d:CallIn(0,'orbital',3)); assert(d.pendingOrbitals[1].total==144)
 -- Brain damage is tracked as health lost, including non-player causes.
 d.brains[1].Health=70; d:RecordBrainLoss(); assert(dt.stats.brainDamage==30)
 local target=CreateAHuman('Dummy','Dummy.rte'); target.Team=1; target.Pos=Vector(3000,565); MovableMan:AddActor(target)
@@ -456,3 +464,17 @@ local funds=counter.teams[0].funds
 assert(not counter:CallIn(0,'cover',contested) and counter.teams[0].funds==funds)
 assert(counter:CallIn(1,'cover',contested))
 print('Enemy jammer intercepts queued strikes and preserves friendly support')
+
+-- An enemy jammer pauses an active barrage and fire resumes after expiry.
+actors={}; local jamBurst=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+jamBurst:StartActivity(); jamBurst:StartBattle(); jamBurst.matchTimer.ElapsedSimTimeMS=15001
+for team=0,1 do jamBurst.teams[team].funds=2000; jamBurst.teams[team].orbitalTimer.ElapsedSimTimeMS=75001; jamBurst.teams[team].shieldTimer.ElapsedSimTimeMS=60001 end
+local burstPoint={name='open ground',x=2200,groundY=600}
+assert(jamBurst:CallIn(0,'orbital',burstPoint))
+local burst=jamBurst.pendingOrbitals[1]; local beforeRounds=MovableMan.particleCount or 0
+burst.timer.ElapsedSimTimeMS=3000; jamBurst:UpdateCallIns(); assert(MovableMan.particleCount==beforeRounds+1)
+assert(jamBurst:CallIn(1,'shield',burstPoint))
+burst.timer.ElapsedSimTimeMS=3000+10*45; jamBurst:UpdateCallIns(); assert(MovableMan.particleCount==beforeRounds+1)
+jamBurst.jamFields[1].timer.ElapsedSimTimeMS=20001
+burst.timer.ElapsedSimTimeMS=3000+11*45; jamBurst:UpdateCallIns(); assert(MovableMan.particleCount==beforeRounds+2)
+print('Enemy jammers suppress an active orbital burst until their field expires')
