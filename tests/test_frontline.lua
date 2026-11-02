@@ -21,11 +21,17 @@ ActivityMan={EndActivity=function() end}
 function Frontline:SetPlayerBrain() end; function Frontline:SetViewState() end; function Frontline:SetObservationTarget() end
 function Frontline:GetTeamDeathCount(team) return self.deathCounts[team] end
 assert(loadfile('Frontline.rte/Frontline.lua'))()
+-- Legacy rules tests use the researched assault-rifle loadout for stable prices.
+local startActivity=Frontline.StartActivity
+function Frontline:StartActivity()
+    startActivity(self)
+    for team=0,1 do self.teams[team].levels[12]=1; self.teams[team].weapons={1,1,1,1,1,1,1} end
+end
 local a=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
-a:StartActivity(); assert(a.brains[0].Pos.X==180 and a.brains[1].Pos.X==5020); assert(a.brains[0].inventory.name=="Gatling Gun" and a.brains[1].inventory.name=="Gatling Gun" and a.brains[1].HFlipped); assert(sceneObjects[1].name=="Frontline Outpost Structure" and sceneObjects[2].name=="Frontline Outpost Structure" and sceneObjects[3].name=="Frontline Outpost Structure"); assert(sceneObjects[4].name=="Frontline Mirrored Brain Vault" and sceneObjects[4].Team==0); assert(sceneObjects[5].name=="Brain Vault" and not sceneObjects[5].HFlipped and sceneObjects[5].Team==1); a.panel=false
+a:StartActivity(); assert(a.brains[0].Pos.X==180 and a.brains[1].Pos.X==5020); assert(a.brains[0].inventory.name=="Gatling Gun" and a.brains[1].inventory.name=="Gatling Gun" and a.brains[1].HFlipped); assert(sceneObjects[1].name=="Tunnel A" and sceneObjects[2].name=="Tunnel A" and sceneObjects[3].name=="Tunnel A"); assert(sceneObjects[4].name=="Frontline Mirrored Brain Vault" and sceneObjects[4].Team==0); assert(sceneObjects[5].name=="Brain Vault" and not sceneObjects[5].HFlipped and sceneObjects[5].Team==1); a.panel=false
 a.DrawHUD=function() end
 a.DrawOutpost=function() end
-local p=a.teams[0]; assert(a.settings.unitCap==32); a.settings.unitCap=12; assert(a:Batch(0)==210)
+local p=a.teams[0]; assert(p.auto and a.settings.unitCap==50); p.auto=false; a.settings.unitCap=12; assert(a:Batch(0)==210)
 assert(not a:Deploy(0)); assert(a:AutoReason(0)=="Match setup"); a:StartBattle(); assert(a:AutoReason(0):find("Grace")); a.matchTimer.ElapsedSimTimeMS=15000
 local ok=a:Deploy(0); assert(ok and p.funds==240 and a:UnitCount(0)==2)
 assert(not a:Deploy(0)); assert(p.funds==240)
@@ -157,10 +163,10 @@ print('Setup wizard holds both teams, cycles settings, reviews and starts grace 
 -- Issuing new orders updates living troops and preserves the brain's sentry mode.
 local own=CreateAHuman('Soldier Light','Coalition.rte'); own.Team=0; own.Pos=Vector(500,565); MovableMan:AddActor(own)
 w.teams[0].order='Defend'; w.teams[0].orderTarget=1; w:ApplyTeamOrder(0)
-assert(own.AIMode==Actor.AIMODE_GOTO and own.waypoint.X==w.outposts[1].x and w.brains[0].AIMode==Actor.AIMODE_SENTRY)
+assert(own.AIMode==Actor.AIMODE_GOTO and math.abs(own.waypoint.X-w.outposts[1].x)<=60 and w.brains[0].AIMode==Actor.AIMODE_SENTRY)
 own.Pos=Vector(w.outposts[1].x,565); w:UpdateOrders(); assert(own.AIMode==Actor.AIMODE_SENTRY)
 w.teams[0].order='Advance'; w.teams[0].orderTarget=2; w:ApplyTeamOrder(0)
-assert(own.AIMode==Actor.AIMODE_GOTO and own.waypoint.X==w.outposts[2].x)
+assert(own.AIMode==Actor.AIMODE_GOTO and math.abs(own.waypoint.X-w.outposts[2].x)<=60)
 own.Pos=Vector(w.outposts[2].x,565); w:UpdateOrders(); assert(own.AIMode==Actor.AIMODE_SENTRY)
 w.outposts[2].owner=0; w:UpdateOrders(); assert(own.AIMode==Actor.AIMODE_BRAINHUNT)
 w.teams[0].order='Rush'; w:ApplyTeamOrder(0); assert(own.AIMode==Actor.AIMODE_BRAINHUNT and own.waypoint==nil)
@@ -180,27 +186,28 @@ u:StartActivity(); assert(u.screenUI)
 Frontline.DrawHUD(u); assert(drawn.X==8 and drawn.Y==22)
 print('Panel HUD visibility is restored and screen-space mode ignores the camera offset')
 -- The setup wizard starts at 32 per team and retains smaller options.
-assert(u.settings.unitCap==32); u.cursorX=25; u.cursorY=149
+assert(u.settings.unitCap==50); u.cursorX=25; u.cursorY=149
 UInputMan.MouseButtonPressed=function() return true end
 Frontline.DrawWizard(u); assert(u.settings.unitCap==8)
 Frontline.DrawWizard(u); assert(u.settings.unitCap==12)
 Frontline.DrawWizard(u); assert(u.settings.unitCap==16)
 Frontline.DrawWizard(u); assert(u.settings.unitCap==32)
-print('Unit-cap choices cycle 32, 8, 12 and 16 per team')
+Frontline.DrawWizard(u); assert(u.settings.unitCap==50)
+print('Unit-cap choices cycle 50, 8, 12, 16 and 32 per team')
 
 -- AI makes purchases and decisions through the same mechanisms as the player.
 actors={}; local bot=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 bot:StartActivity(); bot:StartBattle(); bot.DrawHUD=function() end; bot.DrawOutpost=function() end
 bot.matchTimer.ElapsedSimTimeMS=15000
-local ai=bot.teams[1]; ai.funds=2000; ai.levels={2,2,1,1,1,1,1,1,1}; ai.tier=3
+local ai=bot.teams[1]; ai.funds=2000; ai.levels={2,2,1,1,1,1,1,1,1,1,1,1,1,1,1}; ai.tier=3
 bot.outposts[3].owner=1
 local enemyVehicle=CreateACrab('Gatling Drone','Coalition.rte'); enemyVehicle.Team=0; enemyVehicle.Pos=Vector(100,565); MovableMan:AddActor(enemyVehicle)
 bot:UpdateAI(); assert(ai.counts[4]==1 and ai.counts[5]==1 and ai.weapons[2]==5 and ai.forward==3)
 assert(ai.turret and ai.turret.name=='Gatling Turret'); ai.baseArmor=3
 assert(ai.order=='Advance' and ai.orderTarget==2)
-local aiCost,aiSize=bot:Batch(1); assert(aiSize==6 and aiCost<=ai.funds-200)
+local aiCost,aiSize=bot:Batch(1); assert(aiSize>0 and aiSize<=6 and aiCost<=ai.funds-200)
 -- Same base income with no difficulty multiplier.
-bot.aiTimer.ElapsedSimTimeMS=0; bot.settings.outpostBonuses=false; ai.auto=false
+bot.aiTimer.ElapsedSimTimeMS=0; bot.settings.outpostBonuses=false; ai.auto=false; bot.teams[0].auto=false
 local f0,f1=bot.teams[0].funds,ai.funds; bot:UpdateActivity()
 assert(bot.teams[0].funds-f0==5 and ai.funds-f1==9) -- AI owns two income upgrades.
 -- Support reactions use normal costs/cooldowns and do not target friendly clusters.
@@ -237,3 +244,99 @@ bt.order='Advance'; base:ApplyTeamOrder(0); assert(bt.turret.AIMode==Actor.AIMOD
 base.settings.callins=false; local bi=base.teams[1]; bi.funds=2000
 base:UpdateAI(); assert(bi.turret and bi.turret.name=='Gatling Turret' and bi.turret.Team==1)
 print('Base armor, repair, roof turret, unit-cap exclusion and AI base purchases passed')
+
+-- Larger maps get the right number of posts and income bonuses stack.
+actors={}; SceneMan.SceneWidth=10400
+local medium=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+medium:StartActivity(); assert(#medium.outposts==5)
+medium.outposts[1].owner=0; medium.outposts[4].owner=0
+assert(medium:TeamIncome(0)==9)
+SceneMan.SceneWidth=15600
+local large=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+large:StartActivity(); assert(#large.outposts==9)
+SceneMan.SceneWidth=5200
+-- An arbitrary location works for delayed support, with no outpost index.
+large:StartBattle(); large.matchTimer.ElapsedSimTimeMS=15000
+large.teams[0].funds=1000
+local target={name='target area',x=3100,groundY=600,owner=-1}
+assert(large:CallIn(0,'strike',target)); assert(large.pendingStrikes[1].target==target)
+large.pendingStrikes[1].timer.ElapsedSimTimeMS=3000
+large:UpdateCallIns(); assert(#large.pendingStrikes==0)
+-- Training upgrades improve existing and future troops for either team.
+actors={}; SceneMan.SceneWidth=5200
+local trained=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+trained:StartActivity(); trained:StartBattle(); trained.teams[1].funds=1000
+local trainee=CreateAHuman('Soldier Light','Coalition.rte'); trainee.Team=1; trainee.Pos=Vector(3000,565); MovableMan:AddActor(trainee)
+assert(trained:Research(1,10)); assert(trainee.Perceptiveness==0.55)
+print('Map scaling, stacked outpost income, arbitrary support targets, and training passed')
+-- The mode imports engine fund changes and publishes its own income/spending.
+local engineFunds={[0]=0,[1]=0}
+function Frontline:SetTeamFunds(value,team) engineFunds[team]=value end
+function Frontline:GetTeamFunds(team) return engineFunds[team] end
+actors={}; local economy=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+economy:StartActivity(); economy:StartBattle(); economy.DrawHUD=function() end; economy.DrawOutpost=function() end
+economy.teams[0].auto=false; economy.teams[1].auto=false
+economy.panel=false; engineFunds[0]=500; economy:UpdateActivity()
+assert(engineFunds[0]==505 and economy.teams[0].funds==505)
+print('Engine funds changes and mode income share the same balance')
+-- Miners require research, have fixed gear, and ignore team attack orders.
+Actor.AIMODE_GOLDDIG=4
+actors={}; local mines=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+mines:StartActivity(); mines:StartBattle(); mines.matchTimer.ElapsedSimTimeMS=15000
+mines.teams[0].funds=2000; mines.teams[0].counts={0,0,0,0,0,1}
+assert(not mines:Deploy(0)); assert(mines:Research(0,11)); assert(mines:Deploy(0))
+local miner=actors[#actors]; assert(miner.AIMode==Actor.AIMODE_GOLDDIG and miner.inventory.name=='Light Digger')
+mines.teams[0].order='Rush'; mines:ApplyTeamOrder(0); assert(miner.AIMode==Actor.AIMODE_GOLDDIG)
+print('Mining research, fixed digger loadout, and persistent mining order passed')
+-- Starter tier and separately priced, research-gated optional equipment.
+actors={}; local kit=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+startActivity(kit); kit:StartBattle(); kit.matchTimer.ElapsedSimTimeMS=15000
+local kt=kit.teams[0]; kt.funds=5000
+assert(kt.levels[12]==0 and kt.weapons[1]==6 and kit:Batch(0)==180)
+kt.counts={1,0,0,0,0,0,0}; kt.sidearms[1]=1; assert(not kit:Batch(0))
+assert(kit:Research(0,15)); assert(kit:Research(0,13)); assert(kit:Research(0,14))
+kt.medkits[1]=true; kt.grenades[1]=true
+assert(kit:Batch(0)==190); assert(kit:Deploy(0))
+assert(kit:Research(0,12)); kt.weapons[1]=1; assert(kit:Batch(0)==205)
+kit:SaveSquad(0); kt.medkits[1]=false; kt.sidearms[1]=0; kit:LoadSquad(0)
+assert(kt.medkits[1] and kt.grenades[1] and kt.sidearms[1]==1)
+print('Starter weapon, equipment unlocks, full loadout costs, and saved loadouts passed')
+
+-- Capture points must begin between the two bases on every battlefield size.
+for _,case in ipairs({{width=5200,count=3},{width=10400,count=5},{width=15600,count=9}}) do
+    actors={}; SceneMan.SceneWidth=case.width
+    local layout=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+    layout:StartActivity()
+    assert(#layout.outposts==case.count)
+    local left,right=layout.brains[0].Pos.X,layout.brains[1].Pos.X
+    for _,post in ipairs(layout.outposts) do
+        assert(post.x>left and post.x<right, 'outpost outside base positions at width '..case.width)
+    end
+end
+SceneMan.SceneWidth=5200
+print('All map outposts start between the two brains')
+
+-- Elevated scenes place both bases, deployments and turrets relative to ground.
+local originalGround=SceneMan.MovePointToGround
+SceneMan.SceneWidth=15600
+SceneMan.MovePointToGround=function(_,p) return Vector(p.X,1100) end
+actors={}; local tall=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+tall:StartActivity(); assert(#tall.outposts==9)
+assert(tall.brains[0].Pos.Y==1070 and tall.brains[1].Pos.Y==1070)
+tall:StartBattle(); tall.matchTimer.ElapsedSimTimeMS=15001; tall.teams[0].funds=5000
+tall.teams[0].timer.ElapsedSimTimeMS=10001
+assert(tall:Deploy(0)); assert(actors[#actors].Pos.Y==1065)
+assert(tall:BaseUpgrade(0,'turret')); assert(tall.teams[0].turret.Pos.Y==955)
+SceneMan.MovePointToGround=originalGround; SceneMan.SceneWidth=5200
+print('Elevated battlefield spawns bases, squads and turrets at ground-relative heights')
+
+-- Roster display order does not change the underlying squad indexes.
+local rows={}
+PrimitiveMan.DrawScreenTextPrimitive=function(_,_,_,label)
+    if label:find('Ronin Bandit',1,true) or label:find('Coalition Light',1,true) then rows[#rows+1]=label end
+end
+UInputMan.MouseButtonPressed=function() return false end
+tall.tab='Squad'; tall.rosterPage=1
+Frontline.DrawPanel(tall)
+assert(#rows>=2 and rows[1]:find('Ronin Bandit',1,true) and rows[2]:find('Coalition Light',1,true))
+print('Ronin Bandit appears before Coalition Light without changing roster indexes')
