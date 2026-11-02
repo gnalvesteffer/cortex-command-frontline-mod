@@ -395,3 +395,17 @@ local priorFunds=rt.funds; local priorDeployed=rt.stats.deployed
 Frontline.DrawPanel(reverse); assert(rt.funds==priorFunds and rt.stats.deployed==priorDeployed)
 reverse.cursorX=155; Frontline.DrawPanel(reverse); assert(rt.auto==false)
 print('Right click reverses settings, weapons, sidearms and spawn choices without triggering actions')
+
+-- Confirming support returns to the battlefield; cancelling reopens the panel.
+actors={}; local watch=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+watch:StartActivity(); watch:StartBattle(); watch.matchTimer.ElapsedSimTimeMS=15001
+watch.teams[0].funds=1000; watch.teams[0].strikeTimer.ElapsedSimTimeMS=45001
+watch.panel=false; watch.targeting='strike'; watch.cursorX=200; watch.cursorY=100
+UInputMan.MouseButtonPressed=function(_,button) return button==MouseButtons.MOUSE_LEFT end
+UInputMan.KeyPressed=function() return false end
+watch:UpdateTargeting(); assert(not watch.panel and watch.targeting==nil and #watch.pendingStrikes==1)
+watch.targeting='cover'; UInputMan.MouseButtonPressed=function() return false end
+UInputMan.KeyPressed=function() return true end
+watch:UpdateTargeting(); assert(watch.panel and watch.targeting==nil)
+UInputMan.KeyPressed=function() return false end
+print('Support confirmation leaves the panel closed; cancelling reopens it')

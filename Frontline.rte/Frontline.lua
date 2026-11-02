@@ -652,7 +652,9 @@ function Frontline:UpdateTargeting()
             target=nearest or target
         end
         local ok,msg=self:CallIn(0,self.targeting,target)
-        self.targeting=nil; self.panel=true
+        -- Leave the battlefield visible after confirming, including when the
+        -- order fails; the compact HUD shows the result and Tab reopens us.
+        self.targeting=nil; self.panel=false
         if not ok then self:Notify(msg) end
     end
 end
