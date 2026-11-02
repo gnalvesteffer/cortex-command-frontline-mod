@@ -6,6 +6,7 @@ local CONFIG = {
     FORWARD_SHIP_PASSENGERS = 3, FORWARD_LANDING_OFFSET = 150, FORWARD_SHIP_SEPARATION = 170, FORWARD_DROP_HEIGHT = 650,
     GRACE_MS = 15000, OUTPOST_CAPTURE_SECONDS = 8, OUTPOST_INCOME = 2, OUTPOST_RADIUS = 180,
     MINER_GOLD_SCAN_STEP = 24, MINER_CHECK_INTERVAL_MS = 1000, MINER_RESCAN_INTERVAL_MS = 15000, MINER_DIG_DISTANCE = 45,
+    ENEMY_BASE_SUPPORT_EXCLUSION_RADIUS = 600, -- Applied equally to both teams.
     CALLIN_STRIKE_COST = 220, CALLIN_STRIKE_COOLDOWN_MS = 45000,
     CALLIN_STRIKE_DELAY_MS = 3000, CALLIN_MEDIC_COST = 120,
     CALLIN_MEDIC_COOLDOWN_MS = 30000, CALLIN_HEAL = 35,
@@ -697,6 +698,13 @@ function Frontline:AutoReason(team)
     return "Ready"
 end
 
+-- Support cannot be targeted near the opposing starting bunker. This checks
+-- both teams and every call-in before charging funds or starting cooldowns.
+function Frontline:SupportTargetAllowed(team,x)
+    local enemyBaseX=team==0 and SceneMan.SceneWidth-180 or 180
+    return math.abs(x-enemyBaseX)>CONFIG.ENEMY_BASE_SUPPORT_EXCLUSION_RADIUS
+end
+
 -- Jammers belong to the deploying team and prevent hostile support orders
 -- within their horizontal radius. Friendly support is unaffected.
 function Frontline:ShieldBlocks(target,attacker)
@@ -737,12 +745,15 @@ function Frontline:UpdateTargeting()
     local x=math.max(30,math.min(SceneMan.SceneWidth-30,offset.X+self.cursorX))
     local ground=SceneMan:MovePointToGround(Vector(x,0),0,4)
     local label="TARGET: "..string.upper(self.targeting).." (CLICK)"
-    if self.targeting=="shield" then
+    local allowed=self:SupportTargetAllowed(0,x)
+    if self.targeting=="shield" and allowed then
         self:DrawShieldField({x=x,groundY=ground.Y},0)
         label="PLACE SUPPORT JAMMER (CLICK)"
     end
-    PrimitiveMan:DrawLinePrimitive(Vector(x-15,ground.Y-45),Vector(x+15,ground.Y-45),120)
-    PrimitiveMan:DrawLinePrimitive(Vector(x,ground.Y-60),Vector(x,ground.Y-30),120)
+    if not allowed then label="ENEMY BASE: SUPPORT RESTRICTED" end
+    local targetColor=allowed and 120 or 13
+    PrimitiveMan:DrawLinePrimitive(Vector(x-15,ground.Y-45),Vector(x+15,ground.Y-45),targetColor)
+    PrimitiveMan:DrawLinePrimitive(Vector(x,ground.Y-60),Vector(x,ground.Y-30),targetColor)
     PrimitiveMan:DrawTextPrimitive(Vector(x,ground.Y-70),label,true,1)
     if UInputMan:KeyPressed(Key.TAB) then self.targeting=nil; self.panel=true; return end
     if UInputMan:MouseButtonPressed(MouseButtons.MOUSE_LEFT) then
@@ -773,6 +784,7 @@ function Frontline:CallIn(team,kind,index)
     }
     local option=options[kind]
     if not option then return false,"Unknown call-in" end
+    if not self:SupportTargetAllowed(team,outpost.x) then return false,"Support restricted near enemy base" end
     if self:ShieldBlocks(outpost,team) then return false,"Enemy jammer blocks support here" end
     local timer,cooldown,cost=option.timer,self:CallinCooldown(team,option.cooldown),option.cost
     if not timer:IsPastSimMS(cooldown) then return false,"Call-in cooling down" end
@@ -1464,6 +1476,7 @@ function Frontline:DrawPanel()
         text(15,245,"Blocks hostile call-ins aimed inside the outlined area.")
         text(15,260,"Does not stop weapons, grenades, or bombs already falling.")
         text(15,277,"Friendly support works normally. Radius: 180 pixels.")
+        text(15,293,"Support is restricted within 600px of the enemy base.")
     elseif self.tab=="Base" then
         local brain=self.brains[0]
         text(15,84,"BASE DEFENSES")

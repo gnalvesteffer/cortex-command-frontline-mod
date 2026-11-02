@@ -550,3 +550,22 @@ highTransit.outposts[1].owner=0; local ht=highTransit.teams[0]; ht.forward=1; ht
 assert(highTransit:Deploy(0)); assert(highTransit.deliveries[1].ship.Pos.Y==450 and highTransit:UnitCount(0)==1)
 SceneMan.SceneWidth=5200; SceneMan.MovePointToGround=originalHighGround
 print('Forward dropship approach height follows tall battlefield terrain')
+
+-- Every support respects both teams' enemy-base exclusion before charging.
+actors={}; local restricted=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+restricted:StartActivity(); restricted:StartBattle(); restricted.matchTimer.ElapsedSimTimeMS=15001
+for team=0,1 do
+    local t=restricted.teams[team]; t.funds=5000
+    local enemyX=team==0 and SceneMan.SceneWidth-180 or 180
+    local sign=team==0 and -1 or 1
+    assert(not restricted:SupportTargetAllowed(team,enemyX+sign*600))
+    assert(restricted:SupportTargetAllowed(team,enemyX+sign*601))
+    for _,kind in ipairs({'strike','medic','cover','mines','bomb','orbital','shield'}) do
+        local before=t.funds
+        local ok,reason=restricted:CallIn(team,kind,{name='enemy base',x=enemyX,groundY=600})
+        assert(not ok and reason:find('restricted',1,true) and t.funds==before)
+    end
+end
+-- Allied bases are not excluded for a defensive support call.
+assert(restricted:SupportTargetAllowed(0,180) and restricted:SupportTargetAllowed(1,SceneMan.SceneWidth-180))
+print('Enemy-base support exclusion applies to both teams and all call-ins')
