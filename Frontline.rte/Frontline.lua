@@ -949,12 +949,17 @@ function Frontline:RecordBrainLoss()
     end
 end
 
+function Frontline:MatchTimeText()
+    local seconds=self.battleStarted and math.floor(self.matchTimer.ElapsedSimTimeMS/1000) or 0
+    return string.format("%d:%02d",math.floor(seconds/60),seconds%60)
+end
+
 function Frontline:EndActivity()
     FrameMan:SetHudDisabled(self.originalHudDisabled,0)
     if not self.resultReady then return end
     local t=self.teams[0]
     local result=self.WinnerTeam==0 and "VICTORY" or (self.WinnerTeam==1 and "DEFEAT" or "DRAW")
-    local summary=result.."\nDeployed: "..t.stats.deployed.."   Friendly losses: "..self:GetTeamDeathCount(0).."\nEnemy losses: "..self:GetTeamDeathCount(1).."   Captures: "..t.stats.captures.."\nFunds earned: "..math.floor(t.stats.earned).."   Enemy brain health lost: "..math.floor(t.stats.brainDamage).."\nEnemy troop health lost (observed): "..math.floor(t.stats.troopDamage)
+    local summary=result.."   Match time: "..self:MatchTimeText().."\nDeployed: "..t.stats.deployed.."   Friendly losses: "..self:GetTeamDeathCount(0).."\nEnemy losses: "..self:GetTeamDeathCount(1).."   Captures: "..t.stats.captures.."\nFunds earned: "..math.floor(t.stats.earned).."   Enemy brain health lost: "..math.floor(t.stats.brainDamage).."\nEnemy troop health lost (observed): "..math.floor(t.stats.troopDamage)
     FrameMan:SetScreenText(summary,0,0,-1,true)
 end
 
@@ -1260,13 +1265,18 @@ function Frontline:DrawHUD()
     local owned=self:OutpostCount(0).."-"..self:OutpostCount(1)
     local function pos(x,y) return self.screenUI and Vector(x,y) or offset+Vector(x,y) end
     local function text(y,s) self:UIDrawText(0,pos(14,y),s,true,0) end
-    self:UIDrawBoxFill(0,pos(8,22),pos(360,97),245)
-    self:UIDrawBox(0,pos(8,22),pos(360,97),120)
+    self:UIDrawBoxFill(0,pos(8,22),pos(400,122),245)
+    self:UIDrawBox(0,pos(8,22),pos(400,122),120)
     text(26,"FRONTLINE   |   TAB: COMMAND")
     text(38,"Funds: "..math.floor(t.funds).."  +"..income.."/s   Bounty: "..(CONFIG.BOUNTY+15*t.levels[2]))
     text(50,"Batch: "..(count or 0).." / "..(cost or 0).." oz   Units: "..self:UnitCount(0).." vs "..self:UnitCount(1).." / "..self.settings.unitCap)
     text(62,"Deploy: "..self:AutoReason(0).."   Auto: "..(t.auto and "ON" or "OFF").."   Posts: "..owned)
-    if not self.noticeTimer:IsPastSimMS(5000) then text(76,self.message) end
+    local bonusIncome=self:PostBonusCount(0,1)*CONFIG.OUTPOST_INCOME
+    local researchDiscount=self:PostBonusCount(0,2)>0 and 20 or 0
+    local supportDiscount=self:PostBonusCount(0,3)>0 and 20 or 0
+    text(74,"Post bonuses: +"..bonusIncome.."/s  Research -"..researchDiscount.."%  Support -"..supportDiscount.."%")
+    text(86,"Deaths: "..self:GetTeamDeathCount(0).." / "..self:GetTeamDeathCount(1).."   Match time: "..self:MatchTimeText())
+    if not self.noticeTimer:IsPastSimMS(5000) then text(100,self.message) end
 end
 
 function Frontline:DrawWizard()

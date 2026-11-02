@@ -569,3 +569,22 @@ end
 -- Allied bases are not excluded for a defensive support call.
 assert(restricted:SupportTargetAllowed(0,180) and restricted:SupportTargetAllowed(1,SceneMan.SceneWidth-180))
 print('Enemy-base support exclusion applies to both teams and all call-ins')
+
+-- Compact HUD totals stacked income, non-stacking discounts, both sides' deaths
+-- and elapsed match time. Disabled outpost bonuses must not be advertised.
+actors={}; SceneMan.SceneWidth=15600
+local scoreboard=setmetatable({deathCounts={[0]=4,[1]=7}}, {__index=Frontline})
+scoreboard:StartActivity(); scoreboard:StartBattle(); scoreboard.matchTimer.ElapsedSimTimeMS=125000
+scoreboard.outposts[1].owner=0; scoreboard.outposts[4].owner=0
+scoreboard.outposts[2].owner=0; scoreboard.outposts[5].owner=0; scoreboard.outposts[3].owner=0
+local hudText={}; PrimitiveMan.DrawScreenTextPrimitive=function(_,_,_,label) hudText[#hudText+1]=label end
+Frontline.DrawHUD(scoreboard); local hud=table.concat(hudText,' | ')
+assert(hud:find('Post bonuses: +4/s',1,true) and hud:find('Research -20%',1,true) and hud:find('Support -20%',1,true))
+assert(hud:find('Deaths: 4 / 7',1,true) and hud:find('Match time: 2:05',1,true))
+scoreboard.settings.outpostBonuses=false; hudText={}; Frontline.DrawHUD(scoreboard); hud=table.concat(hudText,' | ')
+assert(hud:find('Post bonuses: +0/s',1,true) and hud:find('Research -0%',1,true) and hud:find('Support -0%',1,true))
+scoreboard.WinnerTeam=0; scoreboard.resultReady=true; local finalReport
+FrameMan.SetScreenText=function(_,message) finalReport=message end
+scoreboard:EndActivity(); assert(finalReport:find('Match time: 2:05',1,true) and finalReport:find('Friendly losses: 4',1,true) and finalReport:find('Enemy losses: 7',1,true))
+SceneMan.SceneWidth=5200
+print('HUD shows actual combined outpost bonuses, team deaths and match time')
