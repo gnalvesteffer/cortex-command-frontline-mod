@@ -626,6 +626,34 @@ function Frontline:ShieldBlocks(target,attacker)
     return false
 end
 
+-- The field is a visual outline of the call-in interception radius. It is
+-- not a physical wall and does not block weapon fire or ordinary explosions.
+function Frontline:DrawShieldField(outpost,team)
+    local color=team==0 and 215 or 13
+    local previousX,previousY
+    for i=0,24 do
+        local angle=math.pi*i/24
+        local x=outpost.x+math.cos(angle)*CONFIG.OUTPOST_RADIUS
+        local y=outpost.groundY-12-math.sin(angle)*130
+        if previousX then
+            PrimitiveMan:DrawLinePrimitive(Vector(previousX,previousY),Vector(x,y),color)
+            PrimitiveMan:DrawLinePrimitive(Vector(previousX,previousY-1),Vector(x,y-1),color)
+        end
+        previousX,previousY=x,y
+    end
+end
+
+function Frontline:FindShieldPost(team,x)
+    local best,bestDistance
+    for _,post in ipairs(self.outposts) do
+        local distance=math.abs(post.x-x)
+        if post.owner==team and distance<=CONFIG.OUTPOST_RADIUS and (not bestDistance or distance<bestDistance) then
+            best,bestDistance=post,distance
+        end
+    end
+    return best
+end
+
 function Frontline:BeginTargeting(kind)
     self.targeting=kind
     self.panel=false
@@ -640,17 +668,23 @@ function Frontline:UpdateTargeting()
     self.cursorY=math.max(8,math.min(FrameMan.PlayerScreenHeight-8,self.cursorY+move.Y))
     local x=math.max(30,math.min(SceneMan.SceneWidth-30,offset.X+self.cursorX))
     local ground=SceneMan:MovePointToGround(Vector(x,0),0,4)
+    local shieldPost=self.targeting=="shield" and self:FindShieldPost(0,x) or nil
+    local label="TARGET: "..string.upper(self.targeting).." (CLICK)"
+    if self.targeting=="shield" then
+        if shieldPost then
+            self:DrawShieldField(shieldPost,0)
+            label="SHIELD "..shieldPost.name.." (CLICK)"
+        else
+            label="SHIELD: SELECT YOUR OUTPOST"
+        end
+    end
     PrimitiveMan:DrawLinePrimitive(Vector(x-15,ground.Y-45),Vector(x+15,ground.Y-45),120)
     PrimitiveMan:DrawLinePrimitive(Vector(x,ground.Y-60),Vector(x,ground.Y-30),120)
-    PrimitiveMan:DrawTextPrimitive(Vector(x,ground.Y-70),"TARGET: "..string.upper(self.targeting).." (CLICK)",true,1)
+    PrimitiveMan:DrawTextPrimitive(Vector(x,ground.Y-70),label,true,1)
     if UInputMan:KeyPressed(Key.TAB) then self.targeting=nil; self.panel=true; return end
     if UInputMan:MouseButtonPressed(MouseButtons.MOUSE_LEFT) then
         local target={name="target area",x=x,groundY=ground.Y,owner=-1}
-        if self.targeting=="shield" then
-            local nearest=nil
-            for _,post in ipairs(self.outposts) do if post.owner==0 and math.abs(post.x-x)<=CONFIG.OUTPOST_RADIUS then nearest=post; break end end
-            target=nearest or target
-        end
+        if self.targeting=="shield" then target=shieldPost or target end
         local ok,msg=self:CallIn(0,self.targeting,target)
         -- Leave the battlefield visible after confirming, including when the
         -- order fails; the compact HUD shows the result and Tab reopens us.
@@ -687,7 +721,7 @@ function Frontline:CallIn(team,kind,index)
         if outpost.owner~=team then return false,"Shield requires your outpost" end
         outpost.shieldTeam=team
         outpost.shieldTimer=Timer()
-        self:Notify(outpost.name.." shield active for 20s")
+        self:Notify(outpost.name.." support shield active for 20s")
     elseif kind=="orbital" then
         local probe=CreateMOPixel("Frontline Orbital Round","Frontline.rte")
         if not probe then return false,"Orbital ammunition unavailable" end
@@ -1106,6 +1140,12 @@ function Frontline:DrawOutpost()
     for _,outpost in ipairs(self.outposts) do
         local x,y=outpost.x,outpost.groundY
         local color=outpost.owner==0 and 120 or (outpost.owner==1 and 13 or 86)
+        if outpost.shieldTimer and not outpost.shieldTimer:IsPastSimMS(CONFIG.CALLIN_SHIELD_DURATION_MS) then
+            self:DrawShieldField(outpost,outpost.shieldTeam)
+            local seconds=math.max(0,math.ceil((CONFIG.CALLIN_SHIELD_DURATION_MS-outpost.shieldTimer.ElapsedSimTimeMS)/1000))
+            local label=outpost.shieldTeam==0 and "SUPPORT SHIELD " or "ENEMY SUPPORT SHIELD "
+            PrimitiveMan:DrawTextPrimitive(Vector(x,y-165),label..seconds.."s",true,1)
+        end
         PrimitiveMan:DrawLinePrimitive(Vector(x,y-8),Vector(x,y-105),color)
         PrimitiveMan:DrawTextPrimitive(Vector(x,y-125),outpost.name.." "..outpost.bonus,true,1)
         PrimitiveMan:DrawBoxPrimitive(Vector(x-40,y-112),Vector(x+40,y-107),120)
@@ -1349,8 +1389,10 @@ function Frontline:DrawPanel()
         text(225,185,"3s warning; sustained burst")
         local shieldLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_SHIELD_COOLDOWN_MS)-t.shieldTimer.ElapsedSimTimeMS)/1000))
         button(15,207,205,"SHIELD "..CONFIG.CALLIN_SHIELD_COST.." "..(shieldLeft>0 and shieldLeft.."s" or "READY"),shieldLeft==0 and t.funds>=CONFIG.CALLIN_SHIELD_COST and "available" or "disabled",function() self:BeginTargeting("shield") end)
-        text(15,230,"Shield blocks hostile strikes, bombs and orbital fire for 20s.")
-        text(15,245,"Buy Support research for larger deliveries or longer bursts.")
+        text(15,230,"Shield: click your outpost for 20s of support protection.")
+        text(15,245,"Blocks enemy strikes, bombs and orbital fire aimed nearby.")
+        text(15,260,"Does not stop bullets, grenades, or nearby explosions.")
+        text(15,277,"The outlined field shows the 180-pixel targeting radius.")
     elseif self.tab=="Base" then
         local brain=self.brains[0]
         text(15,84,"BASE DEFENSES")

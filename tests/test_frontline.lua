@@ -409,3 +409,26 @@ UInputMan.KeyPressed=function() return true end
 watch:UpdateTargeting(); assert(watch.panel and watch.targeting==nil)
 UInputMan.KeyPressed=function() return false end
 print('Support confirmation leaves the panel closed; cancelling reopens it')
+
+-- Shield targeting previews the actual post and active fields show their time.
+actors={}; local visual=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+visual:StartActivity(); visual:StartBattle(); visual.matchTimer.ElapsedSimTimeMS=15001
+visual.teams[0].funds=1000; visual.teams[0].shieldTimer.ElapsedSimTimeMS=60001
+local vp=visual.outposts[1]; vp.owner=0
+assert(visual:FindShieldPost(0,vp.x+180)==vp and not visual:FindShieldPost(0,vp.x+181))
+assert(visual:CallIn(0,'shield',1)); assert(visual:ShieldBlocks({x=vp.x+180},1) and not visual:ShieldBlocks({x=vp.x+181},1))
+local lineCount,shieldText=0,false
+PrimitiveMan.DrawLinePrimitive=function() lineCount=lineCount+1 end
+PrimitiveMan.DrawTextPrimitive=function(_,_,label) if label:find('SUPPORT SHIELD 20s',1,true) then shieldText=true end end
+Frontline.DrawOutpost(visual); assert(lineCount>40 and shieldText)
+vp.shieldTimer.ElapsedSimTimeMS=20001; lineCount=0; shieldText=false
+Frontline.DrawOutpost(visual); assert(lineCount==#visual.outposts and not shieldText)
+vp.shieldTimer=nil; cameraOffset=Vector(1000,80); visual.targeting='shield'; visual.cursorX=300; visual.cursorY=100
+local prompt=''; PrimitiveMan.DrawTextPrimitive=function(_,_,label) prompt=label end
+UInputMan.MouseButtonPressed=function() return false end; UInputMan.KeyPressed=function() return false end
+visual:UpdateTargeting(); assert(prompt:find('SHIELD WEST',1,true))
+vp.owner=-1; visual:UpdateTargeting(); assert(prompt:find('SELECT YOUR OUTPOST',1,true))
+local fundsBefore=visual.teams[0].funds
+UInputMan.MouseButtonPressed=function(_,button) return button==MouseButtons.MOUSE_LEFT end
+visual:UpdateTargeting(); assert(visual.teams[0].funds==fundsBefore and not visual.panel)
+print('Shield preview, field radius, countdown, expiry and invalid placement passed')
