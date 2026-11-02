@@ -1,5 +1,5 @@
 Frontline={}; Actor={AIMODE_SENTRY=1,AIMODE_BRAINHUNT=2,AIMODE_GOTO=3}; Activity={OBSERVE=1,OVER=2,NOTEAM=-1}
-Key={TAB=1}; MouseButtons={MOUSE_LEFT=1}; rte={goldID=2}
+Key={TAB=1}; MouseButtons={MOUSE_LEFT=1,MOUSE_RIGHT=2}; rte={goldID=2}
 function Timer() return {ElapsedSimTimeMS=0, IsPastSimMS=function(s,n) return s.ElapsedSimTimeMS>=n end, Reset=function(s) s.ElapsedSimTimeMS=0 end} end
 function Vector(x,y) return setmetatable({X=x,Y=y},{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
 local nextId=0
@@ -365,3 +365,33 @@ goldLodes[2].active=false; seeker:UpdateMiners(); assert(goldMiner.AIMode==Actor
 seeker.teams[0].order='Rush'; seeker:ApplyTeamOrder(0); assert(goldMiner.AIMode==Actor.AIMODE_SENTRY)
 SceneMan.CastMaterialRay=function() return false end
 print('Miners seek nearby gold, dig only at the deposit, and retarget when depleted')
+
+-- Right click cycles option controls backwards, but never performs purchases
+-- or wizard navigation. Locked weapons are skipped in both directions.
+actors={}; local reverse=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+reverse:StartActivity()
+local pressed=MouseButtons.MOUSE_RIGHT
+UInputMan.MouseButtonPressed=function(_,button) return button==pressed end
+reverse.cursorX=25; reverse.cursorY=90; Frontline.DrawWizard(reverse)
+assert(reverse.settings.startFunds==250)
+Frontline.DrawWizard(reverse); assert(reverse.settings.startFunds==750)
+pressed=MouseButtons.MOUSE_LEFT; Frontline.DrawWizard(reverse); assert(reverse.settings.startFunds==250)
+pressed=MouseButtons.MOUSE_RIGHT; reverse.cursorY=120; Frontline.DrawWizard(reverse); assert(reverse.settings.income==3)
+Frontline.DrawWizard(reverse); assert(reverse.settings.income==25)
+reverse.cursorY=149; Frontline.DrawWizard(reverse); assert(reverse.settings.unitCap==32)
+reverse.cursorY=275; Frontline.DrawWizard(reverse); assert(reverse.setupStep==1)
+reverse:StartBattle(); reverse.tab='Squad'; reverse.rosterPage=1
+local rt=reverse.teams[0]; rt.weapons[7]=6
+reverse.cursorX=25; reverse.cursorY=115; Frontline.DrawPanel(reverse); assert(rt.weapons[7]==1)
+pressed=MouseButtons.MOUSE_LEFT; Frontline.DrawPanel(reverse); assert(rt.weapons[7]==6)
+rt.levels[15]=1; pressed=MouseButtons.MOUSE_RIGHT; reverse.cursorX=140
+Frontline.DrawPanel(reverse); assert(rt.sidearms[7]==1) -- skip locked RPG
+pressed=MouseButtons.MOUSE_LEFT; Frontline.DrawPanel(reverse); assert(rt.sidearms[7]==0)
+rt.levels[7]=1; pressed=MouseButtons.MOUSE_RIGHT; Frontline.DrawPanel(reverse); assert(rt.sidearms[7]==2)
+reverse.cursorX=315; reverse.cursorY=124; Frontline.DrawPanel(reverse); assert(rt.forward==3)
+pressed=MouseButtons.MOUSE_LEFT; Frontline.DrawPanel(reverse); assert(rt.forward==0)
+pressed=MouseButtons.MOUSE_RIGHT; reverse.cursorX=20; reverse.cursorY=352
+local priorFunds=rt.funds; local priorDeployed=rt.stats.deployed
+Frontline.DrawPanel(reverse); assert(rt.funds==priorFunds and rt.stats.deployed==priorDeployed)
+reverse.cursorX=155; Frontline.DrawPanel(reverse); assert(rt.auto==false)
+print('Right click reverses settings, weapons, sidearms and spawn choices without triggering actions')

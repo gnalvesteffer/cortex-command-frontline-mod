@@ -53,6 +53,14 @@ local CONFIG = {
     }
 }
 
+-- A right click walks through the same ordered options in reverse.
+local function cycleOption(options,current,direction)
+    for i,value in ipairs(options) do
+        if value==current then return options[(i-1+direction)%#options+1] end
+    end
+    return options[1]
+end
+
 local function freshTeam()
     return {funds=CONFIG.START_FUNDS, levels={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}, tier=0,
         counts={2,0,0,0,0}, weapons={6,6,6,6,6,6,6}, sidearms={}, medkits={}, grenades={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), deaths=0, preset="Custom", strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
@@ -1142,31 +1150,34 @@ function Frontline:DrawWizard()
     self.cursorX=math.max(8,math.min(465,self.cursorX+move.X))
     self.cursorY=math.max(8,math.min(400,self.cursorY+move.Y))
     local click=UInputMan:MouseButtonPressed(MouseButtons.MOUSE_LEFT)
+    local rightClick=UInputMan:MouseButtonPressed(MouseButtons.MOUSE_RIGHT)
     local function pos(x,y) return self.screenUI and Vector(x,y) or offset+Vector(x,y) end
     local function text(x,y,label) self:UIDrawText(0,pos(x,y),label,#label>42,0) end
-    local function button(x,y,w,label,action)
+    local function button(x,y,w,label,action,reversible)
         self:UIDrawBoxFill(0,pos(x,y),pos(x+w,y+18),182)
         self:UIDrawBox(0,pos(x,y),pos(x+w,y+18),206)
         self:UIDrawText(0,pos(x+4,y+3),label,#label*7>w-8,0)
-        if click and self.cursorX>=x and self.cursorX<=x+w and self.cursorY>=y and self.cursorY<=y+18 then action() end
+        if self.cursorX>=x and self.cursorX<=x+w and self.cursorY>=y and self.cursorY<=y+18 then
+            if click then action(1) elseif rightClick and reversible then action(-1) end
+        end
     end
     self:UIDrawBoxFill(0,pos(8,8),pos(465,400),245)
     self:UIDrawBox(0,pos(8,8),pos(465,400),120)
     text(20,18,"FRONTLINE MATCH SETUP")
     if self.setupStep==1 then
         text(20,44,"STEP 1 OF 2: CHOOSE MATCH SETTINGS")
-        text(20,62,"Click each option to cycle its value. Both teams use it.")
-        button(20,86,300,"STARTING FUNDS: "..self.settings.startFunds,function()
-            local new=self.settings.startFunds==450 and 750 or (self.settings.startFunds==750 and 250 or 450)
+        text(20,62,"Left click: next; right click: previous. Both teams use it.")
+        button(20,86,300,"STARTING FUNDS: "..self.settings.startFunds,function(step)
+            local new=cycleOption({250,450,750},self.settings.startFunds,step)
             local delta=new-self.settings.startFunds
             self.teams[0].funds=self.teams[0].funds+delta
             self.teams[1].funds=self.teams[1].funds+delta
             self.settings.startFunds=new
-        end)
-        button(20,115,300,"BASE INCOME / SEC: "..self.settings.income,function() self.settings.income=({[3]=5,[5]=8,[8]=10,[10]=15,[15]=20,[20]=25,[25]=3})[self.settings.income] or 5 end)
-        button(20,144,300,"TEAM UNIT CAP: "..self.settings.unitCap,function() self.settings.unitCap=({[8]=12,[12]=16,[16]=32,[32]=50,[50]=8})[self.settings.unitCap] or 50 end)
-        button(20,173,300,"OUTPOST BONUSES: "..(self.settings.outpostBonuses and "ON" or "OFF"),function() self.settings.outpostBonuses=not self.settings.outpostBonuses end)
-        button(20,202,300,"CALL-INS: "..(self.settings.callins and "ON" or "OFF"),function() self.settings.callins=not self.settings.callins end)
+        end,true)
+        button(20,115,300,"BASE INCOME / SEC: "..self.settings.income,function(step) self.settings.income=cycleOption({3,5,8,10,15,20,25},self.settings.income,step) end,true)
+        button(20,144,300,"TEAM UNIT CAP: "..self.settings.unitCap,function(step) self.settings.unitCap=cycleOption({8,12,16,32,50},self.settings.unitCap,step) end,true)
+        button(20,173,300,"OUTPOST BONUSES: "..(self.settings.outpostBonuses and "ON" or "OFF"),function() self.settings.outpostBonuses=not self.settings.outpostBonuses end,true)
+        button(20,202,300,"CALL-INS: "..(self.settings.callins and "ON" or "OFF"),function() self.settings.callins=not self.settings.callins end,true)
         text(20,235,"Difficulty is selected in the game's match setup.")
         button(20,270,150,"NEXT: REVIEW",function() self.setupStep=2 end)
     else
@@ -1192,6 +1203,7 @@ function Frontline:DrawPanel()
     self.cursorY=math.max(8,math.min(430,self.cursorY+move.Y))
     local mouse=Vector(self.cursorX,self.cursorY)
     local click=UInputMan:MouseButtonPressed(MouseButtons.MOUSE_LEFT)
+    local rightClick=UInputMan:MouseButtonPressed(MouseButtons.MOUSE_RIGHT)
     local function pos(x,y) return self.screenUI and Vector(x,y) or offset+Vector(x,y) end
     -- Larger game font for short labels; long lines stay small so they fit.
     local function text(x,y,s,small)
@@ -1199,7 +1211,7 @@ function Frontline:DrawPanel()
         self:UIDrawText(screen,pos(x,y),s,small,0)
     end
     -- Dark fills preserve contrast with the game's pale text at both font sizes.
-    local function button(x,y,w,label,state,action)
+    local function button(x,y,w,label,state,action,reversible)
         local colors={selected=192,available=182,disabled=247,locked=242}
         self:UIDrawBoxFill(screen,pos(x,y),pos(x+w,y+15),colors[state] or colors.available)
         local border=state=="selected" and 120 or ((state=="disabled" or state=="locked") and 94 or 206)
@@ -1207,7 +1219,9 @@ function Frontline:DrawPanel()
         -- The large font is roughly seven pixels per character in this UI.
         -- Keep long button labels in the small font rather than clipping them.
         text(x+3,y+2,label,#label*7>w-6)
-        if click and mouse.X>=x and mouse.X<=x+w and mouse.Y>=y and mouse.Y<=y+15 then action() end
+        if mouse.X>=x and mouse.X<=x+w and mouse.Y>=y and mouse.Y<=y+15 then
+            if click then action(1) elseif rightClick and reversible then action(-1) end
+        end
     end
     self:UIDrawBoxFill(screen,pos(8,8),pos(465,430),245)
     self:UIDrawBox(screen,pos(8,8),pos(465,430),120)
@@ -1236,28 +1250,28 @@ function Frontline:DrawPanel()
             end)
             local weapon=CONFIG.weapons[t.weapons[i] or 6]
             local special=r.vehicle or r.miner
-            button(15,y+14,special and 280 or 115,(r.vehicle and "Built-in gatling" or (r.miner and "FIXED: Pistol + Light Digger (+25/unit)" or (weapon.name.." +"..weapon.price))),unlocked and "available" or "locked",function()
+            button(15,y+14,special and 280 or 115,(r.vehicle and "Built-in gatling" or (r.miner and "FIXED: Pistol + Light Digger (+25/unit)" or (weapon.name.." +"..weapon.price))),unlocked and "available" or "locked",function(step)
                 if unlocked and not special then
-                    local nextIndex=(t.weapons[i] or 6)%#CONFIG.weapons+1
-                    while not weaponUnlocked(t,CONFIG.weapons[nextIndex]) do nextIndex=nextIndex%#CONFIG.weapons+1 end
+                    local nextIndex=((t.weapons[i] or 6)-1+step)%#CONFIG.weapons+1
+                    while not weaponUnlocked(t,CONFIG.weapons[nextIndex]) do nextIndex=(nextIndex-1+step)%#CONFIG.weapons+1 end
                     t.weapons[i]=nextIndex; t.preset="Custom"
                 end
-            end)
+            end,true)
             if not special then
                 local side=t.sidearms[i] or 0
-                button(132,y+14,70,side==0 and "SIDE: -" or (side==1 and "Pistol +10" or "RPG +95"),unlocked and (t.levels[15] or 0)>0 and "available" or "locked",function()
+                button(132,y+14,70,side==0 and "SIDE: -" or (side==1 and "Pistol +10" or "RPG +95"),unlocked and (t.levels[15] or 0)>0 and "available" or "locked",function(step)
                     if unlocked and (t.levels[15] or 0)>0 then
-                        local nextSide=(side+1)%3
-                        if nextSide==2 and (t.levels[7] or 0)==0 then nextSide=0 end
+                        local nextSide=(side+step)%3
+                        if nextSide==2 and (t.levels[7] or 0)==0 then nextSide=(nextSide+step)%3 end
                         t.sidearms[i]=nextSide; t.preset="Custom"
                     end
-                end)
-                button(204,y+14,43,t.medkits[i] and "MED X" or "MED",unlocked and (t.levels[13] or 0)>0 and (t.medkits[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[13] or 0)>0 then t.medkits[i]=not t.medkits[i]; t.preset="Custom" end end)
-                button(249,y+14,46,t.grenades[i] and "GRN X" or "GRN",unlocked and (t.levels[14] or 0)>0 and (t.grenades[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[14] or 0)>0 then t.grenades[i]=not t.grenades[i]; t.preset="Custom" end end)
+                end,true)
+                button(204,y+14,43,t.medkits[i] and "MED X" or "MED",unlocked and (t.levels[13] or 0)>0 and (t.medkits[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[13] or 0)>0 then t.medkits[i]=not t.medkits[i]; t.preset="Custom" end end,true)
+                button(249,y+14,46,t.grenades[i] and "GRN X" or "GRN",unlocked and (t.levels[14] or 0)>0 and (t.grenades[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[14] or 0)>0 then t.grenades[i]=not t.grenades[i]; t.preset="Custom" end end,true)
             end
           end
         end
-        button(310,238,140,"UNITS PAGE "..self.rosterPage.." / 2","available",function() self.rosterPage=self.rosterPage==1 and 2 or 1 end)
+        button(310,238,140,"UNITS PAGE "..self.rosterPage.." / 2","available",function() self.rosterPage=self.rosterPage==1 and 2 or 1 end,true)
         text(310,83,"ORDERS: all troops")
         for i,order in ipairs({"Rush","Advance","Defend"}) do
             button(310+(i-1)*47,96,45,order,t.order==order and "selected" or "available",function()
@@ -1265,7 +1279,7 @@ function Frontline:DrawPanel()
             end)
         end
         local deployment=t.forward==0 and "BASE" or self.outposts[t.forward].name
-        button(310,119,140,"SPAWN: "..deployment..(t.forward>0 and " (+25/unit)" or ""),"available",function() t.forward=(t.forward+1)%(#self.outposts+1) end)
+        button(310,119,140,"SPAWN: "..deployment..(t.forward>0 and " (+25/unit)" or ""),"available",function(step) t.forward=(t.forward+step)%(#self.outposts+1) end,true)
         text(310,143,t.order=="Rush" and "RUSH: enemy brain" or ("TARGET: "..self.outposts[t.orderTarget].name))
         button(310,158,64,"< PREV","available",function()
             t.orderTarget=(t.orderTarget-2)%#self.outposts+1
@@ -1289,7 +1303,7 @@ function Frontline:DrawPanel()
     elseif self.tab=="Research" then
         text(15,80,"ECONOMY: repeatable income and bounty upgrades")
         text(15,94,"INFANTRY / EQUIPMENT / FACTIONS: unlock tiers in order")
-        button(350,80,100,"PAGE "..self.researchPage.." / 2","available",function() self.researchPage=self.researchPage==1 and 2 or 1 end)
+        button(350,80,100,"PAGE "..self.researchPage.." / 2","available",function() self.researchPage=self.researchPage==1 and 2 or 1 end,true)
         for i,r in ipairs(CONFIG.research) do
           if math.floor((i-1)/9)+1==self.researchPage then
             local y=106+((i-1)%9)*23
@@ -1371,10 +1385,10 @@ function Frontline:DrawPanel()
         text(15,266,"Difficulty is chosen in the game setup screen.")
     end
     button(15,348,125,"DEPLOY ("..(cost or 0).." oz)",self:AutoReason(0)=="Ready" and "available" or "disabled",function() local _,msg=self:Deploy(0); if msg~="Batch deployed" then self:Notify(msg) end end)
-    button(150,348,100,"AUTO: "..(t.auto and "ON" or "OFF"),t.auto and "selected" or "available",function() t.auto=not t.auto end)
+    button(150,348,100,"AUTO: "..(t.auto and "ON" or "OFF"),t.auto and "selected" or "available",function() t.auto=not t.auto end,true)
     text(260,352,self:AutoReason(0))
     text(15,375,self.message)
-    text(15,393,"Blue = selected; gray = unavailable; red = locked")
+    text(15,393,"L/R: next/previous; blue = selected; red = locked",true)
     text(15,407,"The battle continues while this panel is open.")
     self:UIDrawBoxFill(screen,pos(mouse.X-2,mouse.Y-2),pos(mouse.X+2,mouse.Y+2),120)
 end
