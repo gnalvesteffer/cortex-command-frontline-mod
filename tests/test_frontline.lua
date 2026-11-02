@@ -1,18 +1,24 @@
-Frontline={}; Actor={AIMODE_SENTRY=1,AIMODE_BRAINHUNT=2,AIMODE_GOTO=3}; Activity={OBSERVE=1,OVER=2,NOTEAM=-1}
+Frontline={}; Actor={AIMODE_SENTRY=1,AIMODE_BRAINHUNT=2,AIMODE_GOTO=3,AIMODE_DELIVER=5}; Controller={CIM_AI=1}; Activity={OBSERVE=1,OVER=2,NOTEAM=-1}
 Key={TAB=1}; MouseButtons={MOUSE_LEFT=1,MOUSE_RIGHT=2}; rte={goldID=2}
 function Timer() return {ElapsedSimTimeMS=0, IsPastSimMS=function(s,n) return s.ElapsedSimTimeMS>=n end, Reset=function(s) s.ElapsedSimTimeMS=0 end} end
 function Vector(x,y) return setmetatable({X=x,Y=y},{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
 local nextId=0
 function CreateAHuman(n,m) nextId=nextId+1; return {Team=0,UniqueID=nextId,name=n,Health=100,MaxHealth=100,Height=70,AddInventoryItem=function(self,item) self.inventory=item end,ClearAIWaypoints=function(self) self.waypoint=nil end,AddAISceneWaypoint=function(self,v) self.waypoint=v end} end
 function CreateACrab(n,m) local a=CreateAHuman(n,m); a.vehicle=true; return a end
+function CreateACDropShip(n,m)
+    nextId=nextId+1
+    return {name=n,ship=true,UniqueID=nextId,MaxPassengers=4,MaxInventoryMass=800,InventorySize=0,cargo={},
+        SetControllerMode=function(self,mode) self.controller=mode end,
+        AddInventoryItem=function(self,item) table.insert(self.cargo,item); self.InventorySize=#self.cargo end}
+end
 function CreateHDFirearm(n,m) return {name=n} end
 function CreateTDExplosive(n,m) return {name=n,GibThis=function(self) self.gibbed=true end,Activate=function(self) self.activated=true end} end
 function CreateMOSRotating(n,m) return {name=n} end
 function CreateMOPixel(n,m) return {name=n} end
 function CreateSoundContainer() return {Play=function(self) self.playCount=(self.playCount or 0)+1 end} end
 function CreateTerrainObject(name) return {name=name} end
-local actors={}; MovableMan={Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(), AddActor=function(s,a) table.insert(actors,a) end, AddParticle=function(s,p) s.lastParticle=p; s.particleCount=(s.particleCount or 0)+1; s.particles=s.particles or {}; table.insert(s.particles,p) end, IsActor=function(s,a) return a~=nil end}
-function IsAHuman(a) return not a.vehicle end; function IsACrab(a) return a.vehicle==true end
+local actors={}; MovableMan={Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(), AddActor=function(s,a) table.insert(actors,a) end, AddParticle=function(s,p) s.lastParticle=p; s.particleCount=(s.particleCount or 0)+1; s.particles=s.particles or {}; table.insert(s.particles,p) end, IsActor=function(s,a) return a~=nil and not a.deleted end}
+function IsAHuman(a) return not a.vehicle and not a.ship end; function IsACrab(a) return a.vehicle==true end
 local sceneObjects={}
 SceneMan={SceneWidth=5200, SceneHeight=800, CastMaterialRay=function() return false end, AddSceneObject=function(_,o) table.insert(sceneObjects,o) end, MovePointToGround=function(_,p) return Vector(p.X,600) end}; MusicMan={PlayDynamicSong=function() end}
 FrameMan={IsHudDisabled=function() return false end,SetHudDisabled=function() end}
@@ -133,8 +139,11 @@ d.outposts[1].owner=0; d.outposts[2].owner=0; d.outposts[3].owner=0
 assert(d:TeamIncome(0)==7 and d:ResearchCost(0,3)==160 and d:CallinCooldown(0,45000)==36000)
 d.settings.outpostBonuses=false; assert(d:TeamIncome(0)==5 and d:ResearchCost(0,3)==200); d.settings.outpostBonuses=true
 dt.tier=2; dt.counts={0,0,0,0,1}; dt.weapons={1,1,1,1,1}; dt.forward=2; dt.order='Advance'
-assert(d:Batch(0)==285); assert(d:Deploy(0)); local vehicle=actors[#actors]
-assert(vehicle.vehicle and vehicle.waypoint.X==d.outposts[2].x and vehicle.Pos.X==d.outposts[2].x-60)
+assert(d:Batch(0)==285); assert(d:Deploy(0)); local ship=actors[#actors]
+assert(ship.ship and ship.AIMode==Actor.AIMODE_DELIVER and ship.InventorySize==1 and d:UnitCount(0)==1)
+local vehicle=table.remove(ship.cargo); ship.InventorySize=#ship.cargo
+vehicle.Pos=Vector(d.outposts[2].x-150,565); MovableMan:AddActor(vehicle); d:UpdateDeliveries()
+assert(vehicle.vehicle and vehicle.AIMode==Actor.AIMODE_GOTO and math.abs(vehicle.waypoint.X-d.outposts[2].x)<=60 and d:UnitCount(0)==1)
 dt.timer.ElapsedSimTimeMS=10000; d.outposts[2].owner=1; assert(not d:Deploy(0))
 -- Support research upgrades and temporary shield interception.
 d.outposts[1].owner=0; dt.funds=5000; assert(d:Research(0,8)); assert(d:Research(0,9))
@@ -478,3 +487,66 @@ burst.timer.ElapsedSimTimeMS=3000+10*45; jamBurst:UpdateCallIns(); assert(Movabl
 jamBurst.jamFields[1].timer.ElapsedSimTimeMS=20001
 burst.timer.ElapsedSimTimeMS=3000+11*45; jamBurst:UpdateCallIns(); assert(MovableMan.particleCount==beforeRounds+2)
 print('Enemy jammers suppress an active orbital burst until their field expires')
+
+-- Forward batches arrive in actual craft, reserve capacity in flight, and
+-- receive the current order after disembarking. Destroyed craft free slots.
+actors={}; local transport=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+transport:StartActivity(); transport:StartBattle(); transport.matchTimer.ElapsedSimTimeMS=15001
+local tt=transport.teams[0]; tt.funds=5000; tt.timer.ElapsedSimTimeMS=10001; tt.levels[11]=1
+transport.outposts[2].owner=0; transport.settings.unitCap=6; tt.forward=2; tt.counts={5,0,0,0,0,1}
+local transportCost=transport:Batch(0); assert(transportCost==800)
+assert(transport:Deploy(0)); assert(tt.funds==4200 and #transport.deliveries==2 and transport:UnitCount(0)==6)
+local firstShip,secondShip=transport.deliveries[1].ship,transport.deliveries[2].ship
+assert(firstShip.InventorySize==3 and secondShip.InventorySize==3 and firstShip.Team==0 and secondShip.Team==0)
+assert(firstShip.AIMode==Actor.AIMODE_DELIVER and firstShip.Pos.X<transport.outposts[2].x)
+tt.timer.ElapsedSimTimeMS=10001; tt.counts={1,0,0,0,0,0}; assert(not transport:Deploy(0))
+-- Change orders while aboard; the passenger uses the latest order on arrival.
+tt.order='Advance'; tt.orderTarget=3; tt.levels[10]=2
+local firstPassenger=table.remove(firstShip.cargo,1); firstShip.InventorySize=#firstShip.cargo
+firstPassenger.Pos=Vector(firstShip.Pos.X,565); MovableMan:AddActor(firstPassenger); transport:UpdateDeliveries()
+assert(firstPassenger.AIMode==Actor.AIMODE_GOTO and math.abs(firstPassenger.waypoint.X-transport.outposts[3].x)<=60)
+assert(firstPassenger.Perceptiveness==0.6 and transport:UnitCount(0)==6)
+-- Miners resume seeking gold on disembark rather than receiving combat orders.
+local forwardMiner=table.remove(secondShip.cargo,3); secondShip.InventorySize=#secondShip.cargo
+forwardMiner.Pos=Vector(secondShip.Pos.X,565); MovableMan:AddActor(forwardMiner); transport:UpdateDeliveries()
+assert(transport.miners[forwardMiner.UniqueID] and forwardMiner.AIMode==Actor.AIMODE_SENTRY and transport:UnitCount(0)==6)
+secondShip.deleted=true; transport:UpdateDeliveries(); assert(transport:UnitCount(0)==6)
+transport.deliveries[2].lostTimer.ElapsedSimTimeMS=2001; transport:UpdateDeliveries()
+assert(#transport.deliveries==1 and transport:UnitCount(0)==4)
+-- Missing transport fails atomically, with neither cost nor cooldown consumed.
+actors={}; local missing=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+missing:StartActivity(); missing:StartBattle(); missing.matchTimer.ElapsedSimTimeMS=15001
+missing.outposts[1].owner=0; missing.teams[0].forward=1; missing.teams[0].funds=1000; missing.teams[0].timer.ElapsedSimTimeMS=10001
+local originalFactory=CreateACDropShip; CreateACDropShip=function() return nil end
+local success,reason=missing:Deploy(0)
+CreateACDropShip=originalFactory
+assert(not success and reason:find('Dropship',1,true) and missing.teams[0].funds==1000 and missing.teams[0].timer.ElapsedSimTimeMS==10001 and #missing.deliveries==0)
+print('Forward dropships reserve slots, deliver current orders, handle miners and release lost cargo slots')
+
+-- Craft loads respect both the native passenger and mass limits.
+actors={}; local payload=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+payload:StartActivity(); payload:StartBattle(); payload.matchTimer.ElapsedSimTimeMS=15001
+payload.outposts[2].owner=1; local pt=payload.teams[1]; pt.forward=2; pt.funds=5000; pt.timer.ElapsedSimTimeMS=10001; pt.counts={3,0,0,0,0,0}
+local originalHuman=CreateAHuman
+CreateAHuman=function(n,m) local unit=originalHuman(n,m); unit.Mass=500; return unit end
+assert(payload:Deploy(1)); assert(#payload.deliveries==3 and payload:UnitCount(1)==3)
+for _,delivery in ipairs(payload.deliveries) do
+    assert(delivery.ship.InventorySize==1 and delivery.ship.Pos.X>payload.outposts[2].x)
+end
+actors={}; local overweight=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+CreateAHuman=originalHuman; overweight:StartActivity(); overweight:StartBattle(); overweight.matchTimer.ElapsedSimTimeMS=15001
+overweight.outposts[1].owner=0; local ot=overweight.teams[0]; ot.forward=1; ot.funds=1000; ot.timer.ElapsedSimTimeMS=10001; ot.counts={1,0,0,0,0,0}
+CreateAHuman=function(n,m) local unit=originalHuman(n,m); unit.Mass=900; return unit end
+local okHeavy,heavyReason=overweight:Deploy(0); CreateAHuman=originalHuman
+assert(not okHeavy and heavyReason:find('heavy',1,true) and ot.funds==1000 and ot.timer.ElapsedSimTimeMS==10001 and #overweight.deliveries==0)
+print('Dropship loads honor mass limits and reject overweight batches atomically')
+
+-- On taller scenes the craft starts at a consistent height above its landing zone.
+local originalHighGround=SceneMan.MovePointToGround
+SceneMan.SceneWidth=15600; SceneMan.MovePointToGround=function(_,p) return Vector(p.X,1100) end
+actors={}; local highTransit=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+highTransit:StartActivity(); highTransit:StartBattle(); highTransit.matchTimer.ElapsedSimTimeMS=15001
+highTransit.outposts[1].owner=0; local ht=highTransit.teams[0]; ht.forward=1; ht.funds=1000; ht.timer.ElapsedSimTimeMS=10001; ht.counts={1,0,0,0,0,0}
+assert(highTransit:Deploy(0)); assert(highTransit.deliveries[1].ship.Pos.Y==450 and highTransit:UnitCount(0)==1)
+SceneMan.SceneWidth=5200; SceneMan.MovePointToGround=originalHighGround
+print('Forward dropship approach height follows tall battlefield terrain')

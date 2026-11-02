@@ -3,6 +3,7 @@ local CONFIG = {
     DEPLOY_COOLDOWN_MS = 10000, -- Shared by manual and automatic deployment.
     START_FUNDS = 450, INCOME_PER_SECOND = 5, BOUNTY = 35,
     TEAM_UNIT_CAP = 50, MAX_BATCH = 6,
+    FORWARD_SHIP_PASSENGERS = 3, FORWARD_LANDING_OFFSET = 150, FORWARD_SHIP_SEPARATION = 170, FORWARD_DROP_HEIGHT = 650,
     GRACE_MS = 15000, OUTPOST_CAPTURE_SECONDS = 8, OUTPOST_INCOME = 2, OUTPOST_RADIUS = 180,
     MINER_GOLD_SCAN_STEP = 24, MINER_CHECK_INTERVAL_MS = 1000, MINER_RESCAN_INTERVAL_MS = 15000, MINER_DIG_DISTANCE = 45,
     CALLIN_STRIKE_COST = 220, CALLIN_STRIKE_COOLDOWN_MS = 45000,
@@ -79,6 +80,8 @@ function Frontline:StartActivity()
     self.callinTarget=2
     self.orderAssignments={}
     self.miners={}
+    self.deliveries={}
+    self.inTransit={}
     self.goldSites={}
     self.minerTimer=Timer()
     self.goldRescanTimer=Timer()
@@ -336,11 +339,47 @@ function Frontline:BaseUpgrade(team,kind)
 end
 
 function Frontline:UnitCount(team)
-    local count=0
+    local count,active=0,{}
     for actor in MovableMan.Actors do
-        if actor.Team==team and self:IsFieldUnit(actor) then count=count+1 end
+        if actor.Team==team and self:IsFieldUnit(actor) then
+            count=count+1
+            active[actor.UniqueID]=true
+        end
+    end
+    -- Reserve each passenger's slot until they appear in the world or their
+    -- destroyed craft's survivor grace expires; never count both at once.
+    for id,passenger in pairs(self.inTransit) do
+        if passenger.team==team and not active[id] then count=count+1 end
     end
     return count
+end
+
+-- Reapply current orders after a passenger leaves its ship. A short grace
+-- period after a destroyed craft lets any ejected survivors enter the scene.
+function Frontline:UpdateDeliveries()
+    for actor in MovableMan.Actors do
+        local passenger=self.inTransit[actor.UniqueID]
+        if passenger then
+            self.inTransit[actor.UniqueID]=nil
+            actor.Perceptiveness=math.min(1,0.5+0.05*(self.teams[passenger.team].levels[10] or 0))
+            if passenger.miner then
+                self.miners[actor.UniqueID]={}
+                self:UpdateMiner(actor,self.miners[actor.UniqueID])
+            else
+                self:AssignOrder(actor,passenger.team)
+            end
+        end
+    end
+    for i=#self.deliveries,1,-1 do
+        local delivery=self.deliveries[i]
+        if not MovableMan:IsActor(delivery.ship) then
+            if not delivery.lostTimer then delivery.lostTimer=Timer()
+            elseif delivery.lostTimer:IsPastSimMS(2000) then
+                for _,id in ipairs(delivery.passengers) do self.inTransit[id]=nil end
+                table.remove(self.deliveries,i)
+            end
+        end
+    end
 end
 
 local function weaponUnlocked(t,weapon)
@@ -456,29 +495,65 @@ function Frontline:Deploy(team)
             actor.Team=team
             actor.Perceptiveness=math.min(1,0.5+0.05*(t.levels[10] or 0))
             actor.HFlipped=team==1
-            if entry.miner then
+            table.insert(actors,{actor=actor,miner=entry.miner==true})
+        end
+    end
+    if t.forward>0 then
+        -- Construct every ship before committing the purchase. Split loads by
+        -- both passenger count and inventory mass so vanilla craft can fly.
+        local ships={}
+        for _,passenger in ipairs(actors) do
+            local group=ships[#ships]
+            local mass=passenger.actor.Mass or 0
+            if not group or #group.passengers>=group.capacity or (group.maxMass>=0 and group.mass+mass>group.maxMass) then
+                local ship=CreateACDropShip("Dropship MK1","Base.rte")
+                if not ship then return false,"Dropship preset unavailable" end
+                group={ship=ship,passengers={},mass=0,maxMass=ship.MaxInventoryMass,
+                    capacity=math.max(1,math.min(CONFIG.FORWARD_SHIP_PASSENGERS,ship.MaxPassengers))}
+                table.insert(ships,group)
+            end
+            if group.maxMass>=0 and mass>group.maxMass then return false,"Unit too heavy for dropship" end
+            table.insert(group.passengers,passenger)
+            group.mass=group.mass+mass
+        end
+        local post=self.outposts[t.forward]
+        for index,group in ipairs(ships) do
+            local ship=group.ship
+            local direction=team==0 and -1 or 1
+            local x=math.max(120,math.min(SceneMan.SceneWidth-120,post.x+direction*(CONFIG.FORWARD_LANDING_OFFSET+(index-1)*CONFIG.FORWARD_SHIP_SEPARATION)))
+            ship.Team=team
+            ship.Pos=Vector(x,math.max(-50,post.groundY-CONFIG.FORWARD_DROP_HEIGHT))
+            ship.AIMode=Actor.AIMODE_DELIVER
+            ship:SetControllerMode(Controller.CIM_AI,-1)
+            local delivery={ship=ship,team=team,passengers={}}
+            for _,passenger in ipairs(group.passengers) do
+                local actor=passenger.actor
+                local id=actor.UniqueID
+                self.inTransit[id]={team=team,miner=passenger.miner}
+                table.insert(delivery.passengers,id)
+                actor.AIMode=passenger.miner and Actor.AIMODE_SENTRY or Actor.AIMODE_BRAINHUNT
+                ship:AddInventoryItem(actor)
+            end
+            MovableMan:AddActor(ship)
+            table.insert(self.deliveries,delivery)
+        end
+    else
+        for i,passenger in ipairs(actors) do
+            local actor=passenger.actor
+            local x=(team==0 and 335 or SceneMan.SceneWidth-335)+(team==0 and 1 or -1)*((i-1)*32)
+            actor.Pos=Vector(x,self.baseGround[team]-35)
+            if passenger.miner then
                 self.miners[actor.UniqueID]={}
                 actor.AIMode=Actor.AIMODE_SENTRY
             else self:AssignOrder(actor,team) end
-            table.insert(actors,actor)
+            MovableMan:AddActor(actor)
+            if passenger.miner then self:UpdateMiner(actor,self.miners[actor.UniqueID]) end
         end
-    end
-    for i,actor in ipairs(actors) do
-        if t.forward>0 then
-            local post=self.outposts[t.forward]
-            local x=post.x+(team==0 and -1 or 1)*(60+(i-1)*32)
-            actor.Pos=SceneMan:MovePointToGround(Vector(x,0),actor.Height*0.3,2)
-        else
-            local x=(team==0 and 335 or SceneMan.SceneWidth-335)+(team==0 and 1 or -1)*((i-1)*32)
-            actor.Pos=Vector(x,self.baseGround[team]-35)
-        end
-        MovableMan:AddActor(actor)
-        if self.miners[actor.UniqueID] then self:UpdateMiner(actor,self.miners[actor.UniqueID]) end
     end
     t.funds=t.funds-cost
     t.stats.deployed=t.stats.deployed+count
     t.timer:Reset()
-    if team==0 then self:Notify("Squad deployed: "..count.." units") end
+    if team==0 then self:Notify(t.forward>0 and ("Dropship incoming: "..count.." units") or ("Squad deployed: "..count.." units")) end
     return true,"Batch deployed"
 end
 
@@ -1068,6 +1143,7 @@ function Frontline:UpdateActivity()
         return
     end
     self:UpdateOutpost(TimerMan.DeltaTimeSecs)
+    self:UpdateDeliveries()
     self:UpdateOrders()
     if self.minerTimer:IsPastSimMS(CONFIG.MINER_CHECK_INTERVAL_MS) then
         self.minerTimer:Reset()
@@ -1362,7 +1438,7 @@ function Frontline:DrawPanel()
         text(15,215,"YOUR UNITS: "..self:UnitCount(0).." / "..self.settings.unitCap)
         text(15,230,"ENEMY UNITS: "..self:UnitCount(1).." / "..self.settings.unitCap)
         text(15,245,"Opening grace: "..math.max(0,math.ceil((CONFIG.GRACE_MS-self.matchTimer.ElapsedSimTimeMS)/1000)).."s")
-        text(15,265,"In Squad, choose a captured outpost for forward deployment.")
+        text(15,265,"Forward deployments arrive by dropship at captured outposts.")
         text(15,280,"Rush attacks the brain. Advance captures then attacks.")
         text(15,295,"Defend goes to the selected outpost and holds there.")
     elseif self.tab=="Support" then
