@@ -962,6 +962,7 @@ function Frontline:MatchTimeText()
 end
 
 function Frontline:EndActivity()
+    self:ClearCompactHUD()
     FrameMan:SetHudDisabled(self.originalHudDisabled,0)
     if not self.resultReady then return end
     local t=self.teams[0]
@@ -1233,6 +1234,7 @@ function Frontline:UpdateActivity()
     if self.battleStarted and not self.targeting and UInputMan:KeyPressed(Key.TAB) then self.panel=not self.panel end
     FrameMan:SetHudDisabled(self.panel or self.originalHudDisabled,0)
     if self.panel then
+        self:ClearCompactHUD()
         -- Observation mode also consumes the mouse. Hold its camera still while
         -- the panel owns the cursor, and release it again when the panel closes.
         if not self.panelCameraOffset then
@@ -1247,7 +1249,7 @@ function Frontline:UpdateActivity()
         if self.battleStarted then self:DrawPanel() else self:DrawWizard() end
     else
         self.panelCameraOffset=nil
-        if self.targeting then self:UpdateTargeting() else self:DrawHUD() end
+        if self.targeting then self:ClearCompactHUD(); self:UpdateTargeting() else self:DrawHUD() end
     end
     if self.SetTeamFunds then for team=0,1 do self:SetTeamFunds(self.teams[team].funds,team) end end
 end
@@ -1287,16 +1289,24 @@ function Frontline:UIDrawText(screen,p,label,small,alignment)
     else PrimitiveMan:DrawTextPrimitive(screen,p,label,small,alignment) end
 end
 
+-- Stock engines offer fixed screen text but not screen-space drawing primitives.
+-- Use it for the compact HUD so camera interpolation cannot move it between
+-- the simulation update and the render pass.
+function Frontline:ClearCompactHUD()
+    if self.compactScreenText then
+        FrameMan:ClearScreenText(0)
+        self.compactScreenText=false
+    end
+end
+
 function Frontline:DrawHUD()
     local t=self.teams[0]
     local offset=CameraMan:GetOffset(0)
     local cost,count=self:Batch(0)
     local income=self:TeamIncome(0)
     local owned=self:OutpostCount(0).."-"..self:OutpostCount(1)
-    local function pos(x,y) return self.screenUI and Vector(x,y) or offset+Vector(x,y) end
-    local function text(y,s) self:UIDrawText(0,pos(14,y),s,true,0) end
-    self:UIDrawBoxFill(0,pos(8,22),pos(400,122),245)
-    self:UIDrawBox(0,pos(8,22),pos(400,122),120)
+    local lines={}
+    local function text(y,s) lines[#lines+1]={y=y,text=s} end
     text(26,"FRONTLINE   |   TAB: COMMAND")
     text(38,"Funds: "..math.floor(t.funds).."  +"..income.."/s   Bounty: "..(CONFIG.BOUNTY+15*t.levels[2]))
     text(50,"Batch: "..(count or 0).." / "..(cost or 0).." oz   Units: "..self:UnitCount(0).." vs "..self:UnitCount(1).." / "..self.settings.unitCap)
@@ -1307,6 +1317,18 @@ function Frontline:DrawHUD()
     text(74,"Post bonuses: +"..bonusIncome.."/s  Research -"..researchDiscount.."%  Support -"..supportDiscount.."%")
     text(86,"Deaths: "..self:GetTeamDeathCount(0).." / "..self:GetTeamDeathCount(1).."   Match time: "..self:MatchTimeText())
     if not self.noticeTimer:IsPastSimMS(5000) then text(100,self.message) end
+    local ok,screenText=pcall(function() return FrameMan.SetScreenText end)
+    if not self.screenUI and ok and screenText then
+        local values={}
+        for _,line in ipairs(lines) do values[#values+1]=line.text end
+        FrameMan:SetScreenText(table.concat(values,"\n"),0,0,-1,false)
+        self.compactScreenText=true
+    else
+        local function pos(x,y) return self.screenUI and Vector(x,y) or offset+Vector(x,y) end
+        self:UIDrawBoxFill(0,pos(8,22),pos(400,122),245)
+        self:UIDrawBox(0,pos(8,22),pos(400,122),120)
+        for _,line in ipairs(lines) do self:UIDrawText(0,pos(14,line.y),line.text,true,0) end
+    end
 end
 
 function Frontline:DrawWizard()

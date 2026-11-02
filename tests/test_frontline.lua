@@ -604,3 +604,19 @@ assert(plating:Batch(0)==505); assert(plating:Deploy(0)); assert(actors[#actors]
 local opponentArmor=plating.teams[1]; opponentArmor.funds=5000
 assert(plating:Research(1,16)); opponentArmor.armor[1]=true; opponentArmor.counts={1,0,0,0,0,0}; assert(plating:Batch(1)==165)
 print('Armor research, per-unit cost and health, saved squads, miners, drones and both teams passed')
+
+-- Stock builds use the engine's screen-space text instead of scene primitives.
+local compactText, compactCleared
+FrameMan.SetScreenText=function(_,value,screen,blink,duration,centered) compactText=value; assert(screen==0 and centered==false) end
+FrameMan.ClearScreenText=function() compactCleared=true end
+scoreboard.screenUI=false
+cameraOffset=Vector(123,456)
+Frontline.DrawHUD(scoreboard)
+assert(compactText:find('Post bonuses:',1,true) and compactText:find('Match time:',1,true))
+local before=compactText
+cameraOffset=Vector(900,20)
+Frontline.DrawHUD(scoreboard)
+assert(compactText==before)
+scoreboard:ClearCompactHUD()
+assert(compactCleared and not scoreboard.compactScreenText)
+print('Stock compact HUD uses camera-independent screen text and clears when hidden')
