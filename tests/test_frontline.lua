@@ -131,7 +131,7 @@ dt.timer.ElapsedSimTimeMS=10000; d.outposts[2].owner=1; assert(not d:Deploy(0))
 -- Support research upgrades and temporary shield interception.
 d.outposts[1].owner=0; dt.funds=5000; assert(d:Research(0,8)); assert(d:Research(0,9))
 assert(d:CallIn(0,'shield',1)); assert(d:ShieldBlocks(d.outposts[1],1) and not d:ShieldBlocks(d.outposts[1],0))
-assert(not d:CallIn(1,'bomb',1)); d.outposts[1].shieldTimer.ElapsedSimTimeMS=20000; assert(not d:ShieldBlocks(d.outposts[1],1))
+assert(not d:CallIn(1,'bomb',1)); d.jamFields[1].timer.ElapsedSimTimeMS=20000; assert(not d:ShieldBlocks(d.outposts[1],1))
 assert(d:CallIn(0,'orbital',3)); assert(d.pendingOrbitals[1].total==30)
 -- Brain damage is tracked as health lost, including non-player causes.
 d.brains[1].Health=70; d:RecordBrainLoss(); assert(dt.stats.brainDamage==30)
@@ -219,7 +219,7 @@ local foe2=CreateAHuman('Soldier Light','Coalition.rte'); foe2.Team=0; foe2.Pos=
 ai.funds=2000; bot:UpdateAI(); assert(#bot.pendingStrikes==1 and bot.pendingStrikes[1].team==1 and ai.funds==1780)
 -- A hostile warning on an owned post prompts the same paid shield call-in.
 local incoming={team=0,index=3,timer=Timer()}; table.insert(bot.pendingOrbitals,incoming)
-ai.funds=2000; bot:UpdateAI(); assert(bot.outposts[3].shieldTeam==1 and ai.funds==1800)
+ai.funds=2000; bot:UpdateAI(); assert(#bot.jamFields==1 and bot.jamFields[1].team==1 and ai.funds==1800)
 print('AI uses shared income, research, units, forward orders, medics, strikes and shields')
 -- The AI cycles through the other offensive call-ins and both fortification types.
 ai.funds=2000; bot:UpdateAI(); assert(MovableMan.lastParticle.name=='Standard Bomb' and MovableMan.lastParticle.activated and ai.funds==1740)
@@ -410,25 +410,49 @@ watch:UpdateTargeting(); assert(watch.panel and watch.targeting==nil)
 UInputMan.KeyPressed=function() return false end
 print('Support confirmation leaves the panel closed; cancelling reopens it')
 
--- Shield targeting previews the actual post and active fields show their time.
+-- Jammers can be placed away from outposts and block every enemy support.
 actors={}; local visual=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 visual:StartActivity(); visual:StartBattle(); visual.matchTimer.ElapsedSimTimeMS=15001
-visual.teams[0].funds=1000; visual.teams[0].shieldTimer.ElapsedSimTimeMS=60001
-local vp=visual.outposts[1]; vp.owner=0
-assert(visual:FindShieldPost(0,vp.x+180)==vp and not visual:FindShieldPost(0,vp.x+181))
-assert(visual:CallIn(0,'shield',1)); assert(visual:ShieldBlocks({x=vp.x+180},1) and not visual:ShieldBlocks({x=vp.x+181},1))
-local lineCount,shieldText=0,false
+visual.teams[0].funds=2000; visual.teams[1].funds=5000
+visual.teams[0].shieldTimer.ElapsedSimTimeMS=60001
+local target={name='target area',x=1500,groundY=600,owner=-1}
+assert(visual:CallIn(0,'shield',target)); assert(#visual.jamFields==1 and visual.jamFields[1].x==1500)
+assert(visual:ShieldBlocks({x=1680},1) and not visual:ShieldBlocks({x=1681},1))
+assert(not visual:ShieldBlocks(target,0))
+for _,kind in ipairs({'strike','medic','cover','mines','bomb','orbital','shield'}) do
+    local funds=visual.teams[1].funds
+    local ok,msg=visual:CallIn(1,kind,target)
+    assert(not ok and msg:find('jammer',1,true) and visual.teams[1].funds==funds)
+end
+assert(visual:CallIn(0,'cover',target)) -- allied support is not blocked
+assert(visual:CallIn(1,'bomb',{name='outside',x=1681,groundY=600}))
+local lineCount,jamText=0,false
 PrimitiveMan.DrawLinePrimitive=function() lineCount=lineCount+1 end
-PrimitiveMan.DrawTextPrimitive=function(_,_,label) if label:find('SUPPORT SHIELD 20s',1,true) then shieldText=true end end
-Frontline.DrawOutpost(visual); assert(lineCount>40 and shieldText)
-vp.shieldTimer.ElapsedSimTimeMS=20001; lineCount=0; shieldText=false
-Frontline.DrawOutpost(visual); assert(lineCount==#visual.outposts and not shieldText)
-vp.shieldTimer=nil; cameraOffset=Vector(1000,80); visual.targeting='shield'; visual.cursorX=300; visual.cursorY=100
+PrimitiveMan.DrawTextPrimitive=function(_,_,label) if label:find('SUPPORT JAMMER 20s',1,true) then jamText=true end end
+Frontline.DrawOutpost(visual); assert(lineCount>40 and jamText)
+visual.jamFields[1].timer.ElapsedSimTimeMS=20001; lineCount=0; jamText=false
+Frontline.DrawOutpost(visual); assert(lineCount==#visual.outposts and not jamText and not visual:ShieldBlocks(target,1))
+visual:UpdateCallIns(); assert(#visual.jamFields==0)
+-- The preview and confirmation work at a neutral point beyond any capture zone.
+visual.teams[0].shieldTimer.ElapsedSimTimeMS=60001
+cameraOffset=Vector(1000,80); visual.targeting='shield'; visual.cursorX=500; visual.cursorY=100
 local prompt=''; PrimitiveMan.DrawTextPrimitive=function(_,_,label) prompt=label end
 UInputMan.MouseButtonPressed=function() return false end; UInputMan.KeyPressed=function() return false end
-visual:UpdateTargeting(); assert(prompt:find('SHIELD WEST',1,true))
-vp.owner=-1; visual:UpdateTargeting(); assert(prompt:find('SELECT YOUR OUTPOST',1,true))
-local fundsBefore=visual.teams[0].funds
+visual:UpdateTargeting(); assert(prompt:find('PLACE SUPPORT JAMMER',1,true))
 UInputMan.MouseButtonPressed=function(_,button) return button==MouseButtons.MOUSE_LEFT end
-visual:UpdateTargeting(); assert(visual.teams[0].funds==fundsBefore and not visual.panel)
-print('Shield preview, field radius, countdown, expiry and invalid placement passed')
+visual:UpdateTargeting(); assert(#visual.jamFields==1 and visual.jamFields[1].x==1500 and not visual.panel)
+print('Free jammer placement, all support types, friendly access, radius, countdown and expiry passed')
+
+-- Jammers work for either team and can intercept an already queued strike.
+actors={}; local counter=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+counter:StartActivity(); counter:StartBattle(); counter.matchTimer.ElapsedSimTimeMS=15001
+for team=0,1 do counter.teams[team].funds=2000; counter.teams[team].strikeTimer.ElapsedSimTimeMS=45001; counter.teams[team].shieldTimer.ElapsedSimTimeMS=60001 end
+local contested={name='contested ground',x=2300,groundY=600}
+assert(counter:CallIn(0,'strike',contested)); assert(counter:CallIn(1,'shield',contested))
+local countBefore=MovableMan.particleCount or 0
+counter.pendingStrikes[1].timer.ElapsedSimTimeMS=3001; counter:UpdateCallIns()
+assert(#counter.pendingStrikes==0 and (MovableMan.particleCount or 0)==countBefore)
+local funds=counter.teams[0].funds
+assert(not counter:CallIn(0,'cover',contested) and counter.teams[0].funds==funds)
+assert(counter:CallIn(1,'cover',contested))
+print('Enemy jammer intercepts queued strikes and preserves friendly support')

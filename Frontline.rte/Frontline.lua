@@ -13,7 +13,7 @@ local CONFIG = {
     CALLIN_BOMB_COST = 260, CALLIN_BOMB_COOLDOWN_MS = 55000,
     CALLIN_ORBITAL_COST = 350, CALLIN_ORBITAL_COOLDOWN_MS = 75000,
     CALLIN_ORBITAL_DELAY_MS = 3000, CALLIN_ORBITAL_SHOTS = 20, CALLIN_ORBITAL_SPACING_MS = 120,
-    CALLIN_SHIELD_COST = 200, CALLIN_SHIELD_COOLDOWN_MS = 60000, CALLIN_SHIELD_DURATION_MS = 20000,
+    CALLIN_SHIELD_COST = 200, CALLIN_SHIELD_COOLDOWN_MS = 60000, CALLIN_SHIELD_DURATION_MS = 20000, CALLIN_JAM_RADIUS = 180,
     BASE_ARMOR_COST = 200, BASE_ARMOR_HEALTH = 50, BASE_ARMOR_LEVELS = 3,
     BASE_REPAIR_COST = 120, BASE_REPAIR_HEALTH = 50, BASE_TURRET_COST = 350,
     roster = {
@@ -84,6 +84,7 @@ function Frontline:StartActivity()
     self.rosterPage=1
     self.pendingStrikes={}
     self.pendingOrbitals={}
+    self.jamFields={}
     for team=0,1 do
         self.teams[team].strikeTimer.ElapsedSimTimeMS=CONFIG.CALLIN_STRIKE_COOLDOWN_MS
         self.teams[team].medicTimer.ElapsedSimTimeMS=CONFIG.CALLIN_MEDIC_COOLDOWN_MS
@@ -619,39 +620,29 @@ function Frontline:AutoReason(team)
     return "Ready"
 end
 
+-- Jammers belong to the deploying team and prevent hostile support orders
+-- within their horizontal radius. Friendly support is unaffected.
 function Frontline:ShieldBlocks(target,attacker)
-    for _,post in ipairs(self.outposts) do
-        if math.abs(post.x-target.x)<=CONFIG.OUTPOST_RADIUS and post.shieldTimer and post.shieldTeam~=attacker and not post.shieldTimer:IsPastSimMS(CONFIG.CALLIN_SHIELD_DURATION_MS) then return true end
+    for _,field in ipairs(self.jamFields) do
+        if math.abs(field.x-target.x)<=CONFIG.CALLIN_JAM_RADIUS and field.team~=attacker and not field.timer:IsPastSimMS(CONFIG.CALLIN_SHIELD_DURATION_MS) then return true end
     end
     return false
 end
 
--- The field is a visual outline of the call-in interception radius. It is
--- not a physical wall and does not block weapon fire or ordinary explosions.
-function Frontline:DrawShieldField(outpost,team)
+-- The outline shows the support-jamming area, not a physical shield.
+function Frontline:DrawShieldField(target,team)
     local color=team==0 and 215 or 13
     local previousX,previousY
     for i=0,24 do
         local angle=math.pi*i/24
-        local x=outpost.x+math.cos(angle)*CONFIG.OUTPOST_RADIUS
-        local y=outpost.groundY-12-math.sin(angle)*130
+        local x=target.x+math.cos(angle)*CONFIG.CALLIN_JAM_RADIUS
+        local y=target.groundY-12-math.sin(angle)*130
         if previousX then
             PrimitiveMan:DrawLinePrimitive(Vector(previousX,previousY),Vector(x,y),color)
             PrimitiveMan:DrawLinePrimitive(Vector(previousX,previousY-1),Vector(x,y-1),color)
         end
         previousX,previousY=x,y
     end
-end
-
-function Frontline:FindShieldPost(team,x)
-    local best,bestDistance
-    for _,post in ipairs(self.outposts) do
-        local distance=math.abs(post.x-x)
-        if post.owner==team and distance<=CONFIG.OUTPOST_RADIUS and (not bestDistance or distance<bestDistance) then
-            best,bestDistance=post,distance
-        end
-    end
-    return best
 end
 
 function Frontline:BeginTargeting(kind)
@@ -668,15 +659,10 @@ function Frontline:UpdateTargeting()
     self.cursorY=math.max(8,math.min(FrameMan.PlayerScreenHeight-8,self.cursorY+move.Y))
     local x=math.max(30,math.min(SceneMan.SceneWidth-30,offset.X+self.cursorX))
     local ground=SceneMan:MovePointToGround(Vector(x,0),0,4)
-    local shieldPost=self.targeting=="shield" and self:FindShieldPost(0,x) or nil
     local label="TARGET: "..string.upper(self.targeting).." (CLICK)"
     if self.targeting=="shield" then
-        if shieldPost then
-            self:DrawShieldField(shieldPost,0)
-            label="SHIELD "..shieldPost.name.." (CLICK)"
-        else
-            label="SHIELD: SELECT YOUR OUTPOST"
-        end
+        self:DrawShieldField({x=x,groundY=ground.Y},0)
+        label="PLACE SUPPORT JAMMER (CLICK)"
     end
     PrimitiveMan:DrawLinePrimitive(Vector(x-15,ground.Y-45),Vector(x+15,ground.Y-45),120)
     PrimitiveMan:DrawLinePrimitive(Vector(x,ground.Y-60),Vector(x,ground.Y-30),120)
@@ -684,7 +670,6 @@ function Frontline:UpdateTargeting()
     if UInputMan:KeyPressed(Key.TAB) then self.targeting=nil; self.panel=true; return end
     if UInputMan:MouseButtonPressed(MouseButtons.MOUSE_LEFT) then
         local target={name="target area",x=x,groundY=ground.Y,owner=-1}
-        if self.targeting=="shield" then target=shieldPost or target end
         local ok,msg=self:CallIn(0,self.targeting,target)
         -- Leave the battlefield visible after confirming, including when the
         -- order fails; the compact HUD shows the result and Tab reopens us.
@@ -711,6 +696,7 @@ function Frontline:CallIn(team,kind,index)
     }
     local option=options[kind]
     if not option then return false,"Unknown call-in" end
+    if self:ShieldBlocks(outpost,team) then return false,"Enemy jammer blocks support here" end
     local timer,cooldown,cost=option.timer,self:CallinCooldown(team,option.cooldown),option.cost
     if not timer:IsPastSimMS(cooldown) then return false,"Call-in cooling down" end
     if t.funds<cost then return false,"Not enough funds" end
@@ -718,10 +704,8 @@ function Frontline:CallIn(team,kind,index)
         table.insert(self.pendingStrikes,{team=team,index=type(index)=="number" and index or nil,target=outpost,timer=Timer()})
         self:Notify((team==0 and "Your" or "Enemy").." strike incoming at "..outpost.name.."! Friendly fire!")
     elseif kind=="shield" then
-        if outpost.owner~=team then return false,"Shield requires your outpost" end
-        outpost.shieldTeam=team
-        outpost.shieldTimer=Timer()
-        self:Notify(outpost.name.." support shield active for 20s")
+        table.insert(self.jamFields,{x=outpost.x,groundY=outpost.groundY,team=team,timer=Timer()})
+        self:Notify((team==0 and "Your" or "Enemy").." support jammer active for 20s")
     elseif kind=="orbital" then
         local probe=CreateMOPixel("Frontline Orbital Round","Frontline.rte")
         if not probe then return false,"Orbital ammunition unavailable" end
@@ -788,6 +772,9 @@ function Frontline:CallIn(team,kind,index)
 end
 
 function Frontline:UpdateCallIns()
+    for i=#self.jamFields,1,-1 do
+        if self.jamFields[i].timer:IsPastSimMS(CONFIG.CALLIN_SHIELD_DURATION_MS) then table.remove(self.jamFields,i) end
+    end
     for i=#self.pendingOrbitals,1,-1 do
         local salvo=self.pendingOrbitals[i]
         local post=salvo.target or self.outposts[salvo.index]
@@ -994,7 +981,7 @@ function Frontline:UpdateAI()
                     local target=pending.target or self.outposts[pending.index]
                     for i,post in ipairs(self.outposts) do
                         if target and post.owner==team and math.abs(post.x-target.x)<=CONFIG.OUTPOST_RADIUS then
-                            local ok=self:CallIn(team,"shield",i); if ok then return end
+                            local ok=self:CallIn(team,"shield",target); if ok then return end
                         end
                     end
                 end
@@ -1140,17 +1127,19 @@ function Frontline:DrawOutpost()
     for _,outpost in ipairs(self.outposts) do
         local x,y=outpost.x,outpost.groundY
         local color=outpost.owner==0 and 120 or (outpost.owner==1 and 13 or 86)
-        if outpost.shieldTimer and not outpost.shieldTimer:IsPastSimMS(CONFIG.CALLIN_SHIELD_DURATION_MS) then
-            self:DrawShieldField(outpost,outpost.shieldTeam)
-            local seconds=math.max(0,math.ceil((CONFIG.CALLIN_SHIELD_DURATION_MS-outpost.shieldTimer.ElapsedSimTimeMS)/1000))
-            local label=outpost.shieldTeam==0 and "SUPPORT SHIELD " or "ENEMY SUPPORT SHIELD "
-            PrimitiveMan:DrawTextPrimitive(Vector(x,y-165),label..seconds.."s",true,1)
-        end
         PrimitiveMan:DrawLinePrimitive(Vector(x,y-8),Vector(x,y-105),color)
         PrimitiveMan:DrawTextPrimitive(Vector(x,y-125),outpost.name.." "..outpost.bonus,true,1)
         PrimitiveMan:DrawBoxPrimitive(Vector(x-40,y-112),Vector(x+40,y-107),120)
         local progress=math.floor((outpost.progress+1)*40)
         PrimitiveMan:DrawBoxFillPrimitive(Vector(x-39,y-111),Vector(x-39+progress,y-108),color)
+    end
+    for _,field in ipairs(self.jamFields) do
+        if not field.timer:IsPastSimMS(CONFIG.CALLIN_SHIELD_DURATION_MS) then
+            self:DrawShieldField(field,field.team)
+            local seconds=math.max(0,math.ceil((CONFIG.CALLIN_SHIELD_DURATION_MS-field.timer.ElapsedSimTimeMS)/1000))
+            local label=field.team==0 and "SUPPORT JAMMER " or "ENEMY SUPPORT JAMMER "
+            PrimitiveMan:DrawTextPrimitive(Vector(field.x,field.groundY-165),label..seconds.."s",true,1)
+        end
     end
 end
 
@@ -1372,7 +1361,7 @@ function Frontline:DrawPanel()
         text(15,295,"Defend goes to the selected outpost and holds there.")
     elseif self.tab=="Support" then
         text(15,84,"Choose support, then click a location on the battlefield.")
-        text(15,99,"Tab cancels targeting. Shield requires a friendly outpost.")
+        text(15,99,"Tab cancels targeting. Place the jammer anywhere.")
         local strikeLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_STRIKE_COOLDOWN_MS)-t.strikeTimer.ElapsedSimTimeMS)/1000))
         local medicLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_MEDIC_COOLDOWN_MS)-t.medicTimer.ElapsedSimTimeMS)/1000))
         button(15,122,205,"STRIKE "..CONFIG.CALLIN_STRIKE_COST.." oz  "..(strikeLeft>0 and strikeLeft.."s" or "READY"),strikeLeft==0 and t.funds>=CONFIG.CALLIN_STRIKE_COST and "available" or "disabled",function() self:BeginTargeting("strike") end)
@@ -1388,11 +1377,11 @@ function Frontline:DrawPanel()
         button(15,181,205,"ORBITAL "..CONFIG.CALLIN_ORBITAL_COST.." "..(orbitalLeft>0 and orbitalLeft.."s" or "READY"),orbitalLeft==0 and t.funds>=CONFIG.CALLIN_ORBITAL_COST and "available" or "disabled",function() self:BeginTargeting("orbital") end)
         text(225,185,"3s warning; sustained burst")
         local shieldLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_SHIELD_COOLDOWN_MS)-t.shieldTimer.ElapsedSimTimeMS)/1000))
-        button(15,207,205,"SHIELD "..CONFIG.CALLIN_SHIELD_COST.." "..(shieldLeft>0 and shieldLeft.."s" or "READY"),shieldLeft==0 and t.funds>=CONFIG.CALLIN_SHIELD_COST and "available" or "disabled",function() self:BeginTargeting("shield") end)
-        text(15,230,"Shield: click your outpost for 20s of support protection.")
-        text(15,245,"Blocks enemy strikes, bombs and orbital fire aimed nearby.")
-        text(15,260,"Does not stop bullets, grenades, or nearby explosions.")
-        text(15,277,"The outlined field shows the 180-pixel targeting radius.")
+        button(15,207,205,"JAMMER "..CONFIG.CALLIN_SHIELD_COST.." "..(shieldLeft>0 and shieldLeft.."s" or "READY"),shieldLeft==0 and t.funds>=CONFIG.CALLIN_SHIELD_COST and "available" or "disabled",function() self:BeginTargeting("shield") end)
+        text(15,230,"Jammer: place anywhere to disrupt enemy support for 20s.")
+        text(15,245,"Blocks hostile call-ins aimed inside the outlined area.")
+        text(15,260,"Does not stop weapons, grenades, or bombs already falling.")
+        text(15,277,"Friendly support works normally. Radius: 180 pixels.")
     elseif self.tab=="Base" then
         local brain=self.brains[0]
         text(15,84,"BASE DEFENSES")
