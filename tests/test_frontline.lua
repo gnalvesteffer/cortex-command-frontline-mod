@@ -1,5 +1,5 @@
 Frontline={}; Actor={AIMODE_SENTRY=1,AIMODE_BRAINHUNT=2,AIMODE_GOTO=3}; Activity={OBSERVE=1,OVER=2,NOTEAM=-1}
-Key={TAB=1}; MouseButtons={MOUSE_LEFT=1}
+Key={TAB=1}; MouseButtons={MOUSE_LEFT=1}; rte={goldID=2}
 function Timer() return {ElapsedSimTimeMS=0, IsPastSimMS=function(s,n) return s.ElapsedSimTimeMS>=n end, Reset=function(s) s.ElapsedSimTimeMS=0 end} end
 function Vector(x,y) return setmetatable({X=x,Y=y},{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
 local nextId=0
@@ -13,7 +13,7 @@ function CreateTerrainObject(name) return {name=name} end
 local actors={}; MovableMan={Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(), AddActor=function(s,a) table.insert(actors,a) end, AddParticle=function(s,p) s.lastParticle=p; s.particleCount=(s.particleCount or 0)+1 end, IsActor=function(s,a) return a~=nil end}
 function IsAHuman(a) return not a.vehicle end; function IsACrab(a) return a.vehicle==true end
 local sceneObjects={}
-SceneMan={SceneWidth=5200, AddSceneObject=function(_,o) table.insert(sceneObjects,o) end, MovePointToGround=function(_,p) return Vector(p.X,600) end}; MusicMan={PlayDynamicSong=function() end}
+SceneMan={SceneWidth=5200, SceneHeight=800, CastMaterialRay=function() return false end, AddSceneObject=function(_,o) table.insert(sceneObjects,o) end, MovePointToGround=function(_,p) return Vector(p.X,600) end}; MusicMan={PlayDynamicSong=function() end}
 FrameMan={IsHudDisabled=function() return false end,SetHudDisabled=function() end}
 PrimitiveMan={}
 TimerMan={DeltaTimeSecs=1}; UInputMan={KeyPressed=function()return false end}
@@ -285,8 +285,8 @@ actors={}; local mines=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontl
 mines:StartActivity(); mines:StartBattle(); mines.matchTimer.ElapsedSimTimeMS=15000
 mines.teams[0].funds=2000; mines.teams[0].counts={0,0,0,0,0,1}
 assert(not mines:Deploy(0)); assert(mines:Research(0,11)); assert(mines:Deploy(0))
-local miner=actors[#actors]; assert(miner.AIMode==Actor.AIMODE_GOLDDIG and miner.inventory.name=='Light Digger')
-mines.teams[0].order='Rush'; mines:ApplyTeamOrder(0); assert(miner.AIMode==Actor.AIMODE_GOLDDIG)
+local miner=actors[#actors]; assert(miner.AIMode==Actor.AIMODE_SENTRY and miner.inventory.name=='Light Digger')
+mines.teams[0].order='Rush'; mines:ApplyTeamOrder(0); assert(miner.AIMode==Actor.AIMODE_SENTRY)
 print('Mining research, fixed digger loadout, and persistent mining order passed')
 -- Starter tier and separately priced, research-gated optional equipment.
 actors={}; local kit=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
@@ -340,3 +340,28 @@ tall.tab='Squad'; tall.rosterPage=1
 Frontline.DrawPanel(tall)
 assert(#rows>=2 and rows[1]:find('Ronin Bandit',1,true) and rows[2]:find('Coalition Light',1,true))
 print('Ronin Bandit appears before Coalition Light without changing roster indexes')
+
+-- Miners travel to gold before digging and seek a new site after depletion.
+local goldLodes={{left=900,right=944,y=630,active=true},{left=1500,right=1544,y=640,active=true}}
+SceneMan.CastMaterialRay=function(_,start,ray,material,hit)
+    for _,lode in ipairs(goldLodes) do
+        if lode.active and start.X>=lode.left and start.X<=lode.right then
+            hit.X=start.X; hit.Y=lode.y; return true
+        end
+    end
+    return false
+end
+actors={}; local seeker=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+seeker:StartActivity(); assert(#seeker.goldSites==2); seeker:StartBattle()
+seeker.matchTimer.ElapsedSimTimeMS=15001; seeker.teams[0].timer.ElapsedSimTimeMS=10001
+seeker.teams[0].funds=5000; seeker.teams[0].levels[11]=1; seeker.teams[0].counts={0,0,0,0,0,1}
+assert(seeker:Deploy(0)); local goldMiner=actors[#actors]
+assert(goldMiner.AIMode==Actor.AIMODE_GOTO and goldMiner.waypoint.X>=900 and goldMiner.waypoint.X<=944)
+goldMiner.Pos=Vector(goldMiner.waypoint.X,565); seeker:UpdateMiners()
+assert(goldMiner.AIMode==Actor.AIMODE_GOLDDIG)
+goldLodes[1].active=false; seeker:UpdateMiners()
+assert(goldMiner.AIMode==Actor.AIMODE_GOTO and goldMiner.waypoint.X>=1500 and goldMiner.waypoint.X<=1544)
+goldLodes[2].active=false; seeker:UpdateMiners(); assert(goldMiner.AIMode==Actor.AIMODE_SENTRY)
+seeker.teams[0].order='Rush'; seeker:ApplyTeamOrder(0); assert(goldMiner.AIMode==Actor.AIMODE_SENTRY)
+SceneMan.CastMaterialRay=function() return false end
+print('Miners seek nearby gold, dig only at the deposit, and retarget when depleted')

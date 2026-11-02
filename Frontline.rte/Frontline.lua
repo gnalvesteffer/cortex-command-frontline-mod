@@ -4,6 +4,7 @@ local CONFIG = {
     START_FUNDS = 450, INCOME_PER_SECOND = 5, BOUNTY = 35,
     TEAM_UNIT_CAP = 50, MAX_BATCH = 6,
     GRACE_MS = 15000, OUTPOST_CAPTURE_SECONDS = 8, OUTPOST_INCOME = 2, OUTPOST_RADIUS = 180,
+    MINER_GOLD_SCAN_STEP = 24, MINER_CHECK_INTERVAL_MS = 1000, MINER_RESCAN_INTERVAL_MS = 15000, MINER_DIG_DISTANCE = 45,
     CALLIN_STRIKE_COST = 220, CALLIN_STRIKE_COOLDOWN_MS = 45000,
     CALLIN_STRIKE_DELAY_MS = 3000, CALLIN_MEDIC_COST = 120,
     CALLIN_MEDIC_COOLDOWN_MS = 30000, CALLIN_HEAL = 35,
@@ -68,6 +69,9 @@ function Frontline:StartActivity()
     self.callinTarget=2
     self.orderAssignments={}
     self.miners={}
+    self.goldSites={}
+    self.minerTimer=Timer()
+    self.goldRescanTimer=Timer()
     self.researchPage=1
     self.rosterPage=1
     self.pendingStrikes={}
@@ -85,6 +89,7 @@ function Frontline:StartActivity()
     self.battleStarted=false
     self.setupStep=1
     self.outposts={}
+    self:ScanGoldSites()
     local postCount=SceneMan.SceneWidth>=15000 and 9 or (SceneMan.SceneWidth>=10000 and 5 or 3)
     local names=postCount==3 and {"WEST", "CENTER", "EAST"} or nil
     local bonuses={"Income +2/s", "Research -20%", "Call-ins -20%"}
@@ -182,6 +187,94 @@ function Frontline:StartActivity()
     self.message="Build a batch and click DEPLOY."
     self.aiTimer=Timer()
     MusicMan:PlayDynamicSong("Generic Battle Music")
+end
+
+-- Native gold-dig mode digs blindly when it cannot see ore. Scan actual
+-- terrain for deposits and only use that mode when a miner is beside one.
+function Frontline:GoldAtColumn(x)
+    local hit=Vector(0,0)
+    if SceneMan:CastMaterialRay(Vector(x,0),Vector(0,SceneMan.SceneHeight-1),rte.goldID,hit,2,false) then return hit end
+    return nil
+end
+
+function Frontline:ScanGoldSites()
+    self.goldSites={}
+    local previous
+    for x=12,SceneMan.SceneWidth-12,CONFIG.MINER_GOLD_SCAN_STEP do
+        local hit=self:GoldAtColumn(x)
+        if hit then
+            if previous and x-previous.lastX<=CONFIG.MINER_GOLD_SCAN_STEP and math.abs(hit.Y-previous.y)<80 then
+                table.insert(previous.columns,x)
+                previous.lastX=x
+            else
+                previous={columns={x},lastX=x,y=hit.Y}
+                table.insert(self.goldSites,previous)
+            end
+        end
+    end
+end
+
+function Frontline:GoldAtSite(site,nearX)
+    local best,bestDistance
+    for _,x in ipairs(site.columns) do
+        local hit=self:GoldAtColumn(x)
+        if hit then
+            local distance=math.abs(x-nearX)
+            if not bestDistance or distance<bestDistance then best,bestDistance=hit,distance end
+        end
+    end
+    return best
+end
+
+function Frontline:UpdateMiner(actor,state)
+    local previousSite=state.site
+    local target=state.site and self:GoldAtSite(state.site,actor.Pos.X) or nil
+    if not target then
+        local best,bestDistance
+        for _,site in ipairs(self.goldSites) do
+            local hit=self:GoldAtSite(site,actor.Pos.X)
+            if hit then
+                local distance=math.abs(hit.X-actor.Pos.X)+math.abs(hit.Y-actor.Pos.Y)*0.2
+                if not bestDistance or distance<bestDistance then best,bestDistance=site,distance; target=hit end
+            end
+        end
+        state.site=best
+    end
+    if not target then
+        if state.mode~="idle" then actor:ClearAIWaypoints(); actor.AIMode=Actor.AIMODE_SENTRY end
+        state.mode="idle"
+    elseif math.abs(actor.Pos.X-target.X)<=CONFIG.MINER_DIG_DISTANCE and math.abs(actor.Pos.Y-target.Y)<=120 then
+        if state.mode~="dig" then actor:ClearAIWaypoints(); actor.AIMode=Actor.AIMODE_GOLDDIG end
+        state.mode="dig"
+    elseif state.mode~="travel" or actor.AIMode~=Actor.AIMODE_GOTO or state.site~=previousSite then
+        actor:ClearAIWaypoints()
+        actor.AIMode=Actor.AIMODE_GOTO
+        actor:AddAISceneWaypoint(Vector(target.X,math.max(0,target.Y-55)))
+        state.mode="travel"
+    end
+end
+
+function Frontline:UpdateMiners()
+    if not next(self.miners) then return end
+    -- Drop exhausted sites once for all miners. Re-scan occasionally if loose
+    -- gold later settles back into the terrain.
+    for i=#self.goldSites,1,-1 do
+        local site=self.goldSites[i]
+        if not self:GoldAtSite(site,site.columns[1]) then table.remove(self.goldSites,i) end
+    end
+    if #self.goldSites==0 and self.goldRescanTimer:IsPastSimMS(CONFIG.MINER_RESCAN_INTERVAL_MS) then
+        self.goldRescanTimer:Reset()
+        self:ScanGoldSites()
+    end
+    local present={}
+    for actor in MovableMan.Actors do
+        local state=self.miners[actor.UniqueID]
+        if state then
+            present[actor.UniqueID]=true
+            if actor.Health>0 then self:UpdateMiner(actor,state) end
+        end
+    end
+    for id in pairs(self.miners) do if not present[id] then self.miners[id]=nil end end
 end
 
 -- Stationary base defenses do not consume the field army cap or receive orders.
@@ -353,8 +446,8 @@ function Frontline:Deploy(team)
             actor.Perceptiveness=math.min(1,0.5+0.05*(t.levels[10] or 0))
             actor.HFlipped=team==1
             if entry.miner then
-                self.miners[actor.UniqueID]=true
-                actor.AIMode=Actor.AIMODE_GOLDDIG
+                self.miners[actor.UniqueID]={}
+                actor.AIMode=Actor.AIMODE_SENTRY
             else self:AssignOrder(actor,team) end
             table.insert(actors,actor)
         end
@@ -369,6 +462,7 @@ function Frontline:Deploy(team)
             actor.Pos=Vector(x,self.baseGround[team]-35)
         end
         MovableMan:AddActor(actor)
+        if self.miners[actor.UniqueID] then self:UpdateMiner(actor,self.miners[actor.UniqueID]) end
     end
     t.funds=t.funds-cost
     t.stats.deployed=t.stats.deployed+count
@@ -938,6 +1032,10 @@ function Frontline:UpdateActivity()
     end
     self:UpdateOutpost(TimerMan.DeltaTimeSecs)
     self:UpdateOrders()
+    if self.minerTimer:IsPastSimMS(CONFIG.MINER_CHECK_INTERVAL_MS) then
+        self.minerTimer:Reset()
+        self:UpdateMiners()
+    end
     -- Credit carried ore when automatic gold deposit is disabled in game settings.
     for actor in MovableMan.Actors do
         if self.miners[actor.UniqueID] and actor.GoldCarried and actor.GoldCarried>0 then
