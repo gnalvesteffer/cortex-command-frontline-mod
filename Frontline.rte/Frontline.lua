@@ -1307,16 +1307,14 @@ function Frontline:DrawHUD()
     local owned=self:OutpostCount(0).."-"..self:OutpostCount(1)
     local lines={}
     local function text(y,s) lines[#lines+1]={y=y,text=s} end
-    text(26,"FRONTLINE   |   TAB: COMMAND")
-    text(38,"Funds: "..math.floor(t.funds).."  +"..income.."/s   Bounty: "..(CONFIG.BOUNTY+15*t.levels[2]))
-    text(50,"Batch: "..(count or 0).." / "..(cost or 0).." oz   Units: "..self:UnitCount(0).." vs "..self:UnitCount(1).." / "..self.settings.unitCap)
-    text(62,"Deploy: "..self:AutoReason(0).."   Auto: "..(t.auto and "ON" or "OFF").."   Posts: "..owned)
     local bonusIncome=self:PostBonusCount(0,1)*CONFIG.OUTPOST_INCOME
     local researchDiscount=self:PostBonusCount(0,2)>0 and 20 or 0
     local supportDiscount=self:PostBonusCount(0,3)>0 and 20 or 0
-    text(74,"Post bonuses: +"..bonusIncome.."/s  Research -"..researchDiscount.."%  Support -"..supportDiscount.."%")
-    text(86,"Deaths: "..self:GetTeamDeathCount(0).." / "..self:GetTeamDeathCount(1).."   Match time: "..self:MatchTimeText())
-    if not self.noticeTimer:IsPastSimMS(5000) then text(100,self.message) end
+    text(26,"FRONTLINE | TAB: COMMAND | Funds: "..math.floor(t.funds).." +"..income.."/s | Bounty: "..(CONFIG.BOUNTY+15*t.levels[2]))
+    text(38,"Batch: "..(count or 0).." / "..(cost or 0).." oz | Units: "..self:UnitCount(0).." vs "..self:UnitCount(1).." / "..self.settings.unitCap.." | Deploy: "..self:AutoReason(0).." | Auto: "..(t.auto and "ON" or "OFF"))
+    text(50,"Posts: "..owned.." | Post bonuses: +"..bonusIncome.."/s | Research -"..researchDiscount.."% | Support -"..supportDiscount.."%")
+    text(62,"Deaths: "..self:GetTeamDeathCount(0).." / "..self:GetTeamDeathCount(1).." | Match time: "..self:MatchTimeText())
+    if not self.noticeTimer:IsPastSimMS(5000) then text(76,self.message) end
     local ok,screenText=pcall(function() return FrameMan.SetScreenText end)
     if not self.screenUI and ok and screenText then
         local values={}
@@ -1325,8 +1323,8 @@ function Frontline:DrawHUD()
         self.compactScreenText=true
     else
         local function pos(x,y) return self.screenUI and Vector(x,y) or offset+Vector(x,y) end
-        self:UIDrawBoxFill(0,pos(8,22),pos(400,122),245)
-        self:UIDrawBox(0,pos(8,22),pos(400,122),120)
+        self:UIDrawBoxFill(0,pos(8,22),pos(math.min(620,FrameMan.PlayerScreenWidth-8),94),245)
+        self:UIDrawBox(0,pos(8,22),pos(math.min(620,FrameMan.PlayerScreenWidth-8),94),120)
         for _,line in ipairs(lines) do self:UIDrawText(0,pos(14,line.y),line.text,true,0) end
     end
 end

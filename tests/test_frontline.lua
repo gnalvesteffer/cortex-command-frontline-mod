@@ -61,7 +61,7 @@ print('Camera is held while panel is open and released when closed')
 local labels={}
 PrimitiveMan={DrawLinePrimitive=function() end,DrawBoxFillPrimitive=function() end,DrawBoxPrimitive=function() end,DrawTextPrimitive=function(_,_,_,s) labels[#labels+1]=s end}
 Frontline.DrawHUD(a)
-assert(#labels>=4 and labels[1]:find('FRONTLINE') and labels[2]:find('Funds:') and labels[3]:find('Batch:') and labels[4]:find('Deploy:'))
+assert(#labels>=4 and labels[1]:find('FRONTLINE') and labels[1]:find('Funds:') and labels[2]:find('Batch:') and labels[2]:find('Deploy:'))
 print('Compact HUD renders economy, batch, capacity, and deployment status')
 -- Independent per-row weapons, research prerequisites, and preset composition.
 actors={}
@@ -610,9 +610,11 @@ local compactText, compactCleared
 FrameMan.SetScreenText=function(_,value,screen,blink,duration,centered) compactText=value; assert(screen==0 and centered==false) end
 FrameMan.ClearScreenText=function() compactCleared=true end
 scoreboard.screenUI=false
+scoreboard.noticeTimer.ElapsedSimTimeMS=6000
 cameraOffset=Vector(123,456)
 Frontline.DrawHUD(scoreboard)
 assert(compactText:find('Post bonuses:',1,true) and compactText:find('Match time:',1,true))
+assert(select(2,compactText:gsub('\n',''))==3 and compactText:find(' | ',1,true))
 local before=compactText
 cameraOffset=Vector(900,20)
 Frontline.DrawHUD(scoreboard)
