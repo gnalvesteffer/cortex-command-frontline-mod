@@ -21,6 +21,7 @@ local CONFIG = {
     CALLIN_SHIELD_COST = 200, CALLIN_SHIELD_COOLDOWN_MS = 60000, CALLIN_SHIELD_DURATION_MS = 20000, CALLIN_JAM_RADIUS = 180,
     BASE_ARMOR_COST = 200, BASE_ARMOR_HEALTH = 50, BASE_ARMOR_LEVELS = 3,
     BASE_REPAIR_COST = 120, BASE_REPAIR_HEALTH = 50, BASE_TURRET_COST = 350,
+    BASE_TOWER_DISTANCE = 436, BASE_TOWER_HEIGHT = 136, BASE_TURRET_HEIGHT = 121,
     roster = {
         {name="Coalition Light", actor="Soldier Light", mod="Coalition.rte", price=75, unlock=0},
         {name="Coalition Heavy", actor="Soldier Heavy", mod="Coalition.rte", price=120, unlock=1},
@@ -170,8 +171,8 @@ function Frontline:StartActivity()
         end
         local upper=CreateTerrainObject("Tunnel A","Base.rte")
         if upper then
-            local x=team==0 and 436 or SceneMan.SceneWidth-436
-            upper.Pos=Vector(x,self.baseGround[team]-136)
+            local x=team==0 and CONFIG.BASE_TOWER_DISTANCE or SceneMan.SceneWidth-CONFIG.BASE_TOWER_DISTANCE
+            upper.Pos=Vector(x,self.baseGround[team]-CONFIG.BASE_TOWER_HEIGHT)
             upper.Team=team
             SceneMan:AddSceneObject(upper)
         end
@@ -353,7 +354,10 @@ function Frontline:BaseUpgrade(team,kind)
         local turret=CreateACrab("Gatling Turret","Coalition.rte")
         if not turret then return false,"Turret preset unavailable" end
         turret.Team=team
-        turret.Pos=Vector(team==0 and 180 or SceneMan.SceneWidth-180,self.baseGround[team]-145)
+        -- The tunnel's floor begins 24 pixels below its center; the turret
+        -- mount extends 9 pixels below its origin, so it rests on that floor.
+        local x=team==0 and CONFIG.BASE_TOWER_DISTANCE or SceneMan.SceneWidth-CONFIG.BASE_TOWER_DISTANCE
+        turret.Pos=Vector(x,self.baseGround[team]-CONFIG.BASE_TURRET_HEIGHT)
         turret.HFlipped=team==1
         turret.AIMode=Actor.AIMODE_SENTRY
         turret.PinStrength=100000
@@ -1690,7 +1694,7 @@ function Frontline:DrawPanel()
         text(15,104,"Brain health: "..math.floor(brain.Health).." / "..math.floor(brain.MaxHealth))
         text(15,120,"Armor level: "..t.baseArmor.." / "..CONFIG.BASE_ARMOR_LEVELS)
         local active=t.turret and MovableMan:IsActor(t.turret)
-        text(15,136,"Roof turret: "..(active and "ACTIVE" or "ABSENT"))
+        text(15,136,"Upper-room turret: "..(active and "ACTIVE" or "ABSENT"))
         local armorCost=CONFIG.BASE_ARMOR_COST*(t.baseArmor+1)
         button(15,160,300,"ARMOR +50 HP  "..armorCost.." oz",t.baseArmor<CONFIG.BASE_ARMOR_LEVELS and t.funds>=armorCost and "available" or "disabled",function() local ok,msg=self:BaseUpgrade(0,"armor"); if not ok then self:Notify(msg) end end)
         button(15,185,300,"REPAIR +50 HP  "..CONFIG.BASE_REPAIR_COST.." oz",brain.Health<brain.MaxHealth and t.funds>=CONFIG.BASE_REPAIR_COST and "available" or "disabled",function() local ok,msg=self:BaseUpgrade(0,"repair"); if not ok then self:Notify(msg) end end)

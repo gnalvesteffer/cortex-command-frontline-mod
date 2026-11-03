@@ -18,7 +18,7 @@ fire or a shield. A shield requires an owned post and blocks hostile strike,
 bomb and orbital call-ins for 20 seconds. Each call-in has a separate cooldown.
 
 Both manual and automatic deployment cost funds and share a cooldown. Both brains have Gatling Guns. Buy brain armor,
-repairs and a rebuildable roof turret on the Base tab. Destroy
+repairs and a rebuildable upper-room turret on the Base tab. Destroy
 the enemy brain to win. The match report tracks deployments, losses, captures,
 funds and observed health loss; health loss is not attacker-attributed.
 

@@ -283,12 +283,12 @@ local bt=base.teams[0]; bt.funds=2000
 assert(base:BaseUpgrade(0,'armor')); assert(bt.baseArmor==1 and base.brains[0].Health==150 and base.brains[0].MaxHealth==150 and bt.funds==1800)
 assert(not base:BaseUpgrade(0,'repair')); base.brains[0].Health=90
 assert(base:BaseUpgrade(0,'repair')); assert(base.brains[0].Health==140 and bt.funds==1680)
-assert(base:BaseUpgrade(0,'turret')); assert(bt.turret.name=='Gatling Turret' and bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.funds==1330)
+assert(base:BaseUpgrade(0,'turret')); assert(bt.turret.name=='Gatling Turret' and bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.turret.Pos.X==436 and bt.turret.Pos.Y==479 and not bt.turret.HFlipped and bt.funds==1330)
 assert(base:UnitCount(0)==0 and not base:BaseUpgrade(0,'turret'))
 bt.order='Advance'; base:ApplyTeamOrder(0); assert(bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.turret.waypoint==nil)
 base.settings.callins=false; local bi=base.teams[1]; bi.funds=2000
-base:UpdateAI(); assert(bi.turret and bi.turret.name=='Gatling Turret' and bi.turret.Team==1)
-print('Base armor, repair, roof turret, unit-cap exclusion and AI base purchases passed')
+base:UpdateAI(); assert(bi.turret and bi.turret.name=='Gatling Turret' and bi.turret.Team==1 and bi.turret.Pos.X==SceneMan.SceneWidth-436 and bi.turret.Pos.Y==479 and bi.turret.HFlipped)
+print('Base armor, repair, upper-room turret, unit-cap exclusion and AI base purchases passed')
 
 -- Larger maps get the right number of posts and income bonuses stack.
 actors={}; SceneMan.SceneWidth=10400
@@ -381,7 +381,7 @@ assert(tall.brains[0].Pos.Y==1070 and tall.brains[1].Pos.Y==1070)
 tall:StartBattle(); tall.matchTimer.ElapsedSimTimeMS=15001; tall.teams[0].funds=5000
 tall.teams[0].timer.ElapsedSimTimeMS=10001
 assert(tall:Deploy(0)); assert(actors[#actors].Pos.Y==1065)
-assert(tall:BaseUpgrade(0,'turret')); assert(tall.teams[0].turret.Pos.Y==955)
+assert(tall:BaseUpgrade(0,'turret')); assert(tall.teams[0].turret.Pos.Y==979)
 SceneMan.MovePointToGround=originalGround; SceneMan.SceneWidth=5200
 print('Elevated battlefield spawns bases, squads and turrets at ground-relative heights')
 
