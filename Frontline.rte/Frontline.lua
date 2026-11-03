@@ -24,9 +24,9 @@ local CONFIG = {
     BASE_REPAIR_COST = 120, BASE_REPAIR_HEALTH = 50, BASE_TURRET_COST = 350,
     BASE_TOWER_DISTANCE = 436, BASE_TOWER_HEIGHT = 136, BASE_TURRET_HEIGHT = 121,
     roster = {
-        {name="Coalition Light", actor="Soldier Light", mod="Coalition.rte", price=75, unlock=0},
+        {name="Coalition Light", actor="Soldier Light", mod="Coalition.rte", price=75, unlock=0, research=1},
         {name="Coalition Heavy", actor="Soldier Heavy", mod="Coalition.rte", price=120, unlock=1},
-        {name="Dummy", actor="Dummy", mod="Dummy.rte", price=105, unlock=2},
+        {name="Dummy", actor="Dummy", mod="Dummy.rte", price=30, unlock=1},
         {name="Browncoat Light", actor="Browncoat", mod="Browncoats.rte", price=145, unlock=3},
         {name="Gatling Drone", actor="Gatling Drone", mod="Coalition.rte", price=260, unlock=2, vehicle=true},
         {name="Miner", actor="Soldier Light", mod="Coalition.rte", price=100, unlock=0, research=11, miner=true},
@@ -44,9 +44,9 @@ local CONFIG = {
     research = {
         {name="Income +2/s", price=180, max=10, kind="income"},
         {name="Bounty +15", price=160, max=10, kind="bounty"},
-        {name="Infantry: Heavy Troop", price=200, max=1, kind="tier", tier=1},
-        {name="Faction: Dummy / Gatling", price=350, max=1, kind="tier", tier=2},
-        {name="Faction: Browncoat", price=500, max=1, kind="tier", tier=3},
+        {name="Unit: Coalition Heavy", price=200, max=1, kind="tier", tier=1},
+        {name="Unit: Dummy / Gatling Drone", price=350, max=1, kind="tier", tier=2},
+        {name="Unit: Browncoat", price=500, max=1, kind="tier", tier=3},
         {name="Equipment: SMG", price=150, max=1, kind="equipment"},
         {name="Equipment: Shotgun", price=160, max=1, kind="equipment"},
         {name="Equipment: Sniper Rifle", price=180, max=1, kind="equipment", requires=1},
@@ -73,7 +73,7 @@ end
 
 local function freshTeam()
     return {funds=CONFIG.START_FUNDS, levels={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}, tier=0,
-        counts={2,0,0,0,0}, weapons={1,1,1,1,1,1,1}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), lastDeployCooldown=CONFIG.DEPLOY_COOLDOWN_MS, deaths=0, preset="Custom",        strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), turretTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
+        counts={0,0,0,0,0,0,2}, weapons={1,1,1,1,1,1,1}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), lastDeployCooldown=CONFIG.DEPLOY_COOLDOWN_MS, deaths=0, preset="Custom",        strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), turretTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
 end
 
 function Frontline:StartActivity()
@@ -1348,17 +1348,27 @@ function Frontline:UpdateAI()
         end
     end
     
-    -- Use the same six-unit batch limit as the player, adding riflemen only
-    -- when the complete batch remains affordable with a modest reserve.
-    local cost,count=self:Batch(team)
-    while cost and count<CONFIG.MAX_BATCH and self:UnitCount(team)+count<self.settings.unitCap do
-        ai.counts[1]=(ai.counts[1] or 0)+1
-        local nextCost,nextCount=self:Batch(team)
-        if not nextCost or nextCost>ai.funds-200 then
-            ai.counts[1]=ai.counts[1]-1
-            break
+    -- Deploy as soon as affordable, even with small batches early on
+    if ai.funds>=200 then
+        local cost,count=self:Batch(team)
+        if not cost or count==0 then
+            -- If batch calculation fails, deploy single unit manually
+            if ai.tier>=1 and ai.funds>=self:DeployCost(0,"lmg") then
+                self:DeployUnit(team,"standard","lmg",false,ai.orderTarget)
+            elseif ai.funds>=self:DeployCost(0,"rifle") then
+                self:DeployUnit(team,"standard","rifle",false,ai.orderTarget)
+            end
+        else
+            while cost and count<CONFIG.MAX_BATCH and self:UnitCount(team)+count<self.settings.unitCap do
+                ai.counts[1]=(ai.counts[1] or 0)+1
+                local nextCost,nextCount=self:Batch(team)
+                if not nextCost or nextCost>ai.funds-200 then
+                    ai.counts[1]=ai.counts[1]-1
+                    break
+                end
+                cost,count=nextCost,nextCount
+            end
         end
-        cost,count=nextCost,nextCount
     end
     
     if not self.settings.callins or not self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS) then return end
