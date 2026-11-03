@@ -879,7 +879,7 @@ function Frontline:CallIn(team,kind,index)
         self:Notify((team==0 and "Your" or "Enemy").." orbital Gatling cannon targeting "..outpost.name.."! Fragmentation; friendly fire!")
     elseif kind=="bomb" then
         -- Plane flies across dropping a line of bomblets at intervals.
-        local plane = CreateMOParticle("Bomb Run Plane", "Frontline.rte")
+        local plane = CreateMOPixel("Bomb Run Plane", "Frontline.rte")
         if not plane then return false, "Bomb run aircraft unavailable" end
         plane.Team = team
         plane.TargetX = outpost.x
