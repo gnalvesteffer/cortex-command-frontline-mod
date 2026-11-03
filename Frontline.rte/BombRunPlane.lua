@@ -6,13 +6,13 @@ local BOMB_INTERVAL_MS = 400
 local MAX_BOMBS = 5
 local FLIGHT_HEIGHT = 350
 
-function BombRunPlane:Start()
+function Start(self)
     self.bombsDropped = 0
     self.flightDirection = 1
     self.startTimer = Timer()
 end
 
-function BombRunPlane:Update(dt)
+function Update(self, dt)
     if not self.TargetX then return end
     
     -- Move the plane across the target area
@@ -23,17 +23,17 @@ function BombRunPlane:Update(dt)
     local bombsDue = math.min(MAX_BOMBS, math.floor(elapsed / BOMB_INTERVAL_MS))
     
     while self.bombsDropped < bombsDue do
-        self:DropBomb()
+        DropBomb(self)
         self.bombsDropped = self.bombsDropped + 1
     end
     
     -- Remove the plane when it has flown past the target area or dropped all bombs
     if math.abs(self.Pos.X - self.TargetX) > FLIGHT_HEIGHT * 2 or self.bombsDropped >= MAX_BOMBS then
-        self:Kill()
+        self.ToDelete = true
     end
 end
 
-function BombRunPlane:DropBomb()
+function DropBomb(self)
     -- Create a small bomb (bomblet) that falls to the ground
     local bomb = CreateTDExplosive("Frontline Bomblet", "Frontline.rte")
     if not bomb then return end
