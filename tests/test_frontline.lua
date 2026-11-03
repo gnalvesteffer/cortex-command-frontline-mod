@@ -1,4 +1,4 @@
-Frontline={}; Actor={AIMODE_SENTRY=1,AIMODE_BRAINHUNT=2,AIMODE_GOTO=3,AIMODE_DELIVER=5}; Controller={CIM_AI=1}; Activity={OBSERVE=1,OVER=2,NOTEAM=-1}
+Frontline={}; Actor={AIMODE_SENTRY=1,AIMODE_BRAINHUNT=2,AIMODE_GOTO=3,AIMODE_DELIVER=5,AIMODE_RETURN=6}; Controller={CIM_AI=1,CIM_DISABLED=0}; Activity={OBSERVE=1,OVER=2,NOTEAM=-1}
 Key={TAB=1}; MouseButtons={MOUSE_LEFT=1,MOUSE_RIGHT=2}; rte={goldID=2}
 function Timer() return {ElapsedSimTimeMS=0, IsPastSimMS=function(s,n) return s.ElapsedSimTimeMS>=n end, Reset=function(s) s.ElapsedSimTimeMS=0 end} end
 function Vector(x,y) return setmetatable({X=x,Y=y},{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
@@ -9,11 +9,16 @@ function CreateACDropShip(n,m)
     nextId=nextId+1
     return {name=n,ship=true,UniqueID=nextId,MaxPassengers=4,MaxInventoryMass=800,InventorySize=0,cargo={},
         SetControllerMode=function(self,mode) self.controller=mode end,
+        SetGoldValue=function(self,value) self.goldValue=value end,
+        GetTotalValue=function(self) return self.returnValue or 0 end,
+        OpenHatch=function(self) self.hatchOpen=true end,
+        RemoveInventoryItemAtIndex=function(self,index) local item=table.remove(self.cargo,index+1); self.InventorySize=#self.cargo; return item end,
         AddInventoryItem=function(self,item) table.insert(self.cargo,item); self.InventorySize=#self.cargo end}
 end
 function CreateHDFirearm(n,m) return {name=n} end
 function CreateTDExplosive(n,m) return {name=n,GibThis=function(self) self.gibbed=true end,Activate=function(self) self.activated=true end} end
 function CreateMOSRotating(n,m) return {name=n} end
+function ToTDExplosive(item) return item end
 function CreateMOPixel(n,m) return {name=n} end
 function CreateSoundContainer() return {Play=function(self) self.playCount=(self.playCount or 0)+1 end} end
 function CreateTerrainObject(name) return {name=name} end
@@ -98,9 +103,9 @@ local c=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 actors={}; c:StartActivity(); c:StartBattle(); c.DrawHUD=function() end; c.DrawOutpost=function() end
 local ct=c.teams[0]; ct.funds=1000
 assert(not c:CallIn(0,'strike',2)); c.matchTimer.ElapsedSimTimeMS=15000
-assert(c:CallIn(0,'strike',2)); assert(ct.funds==780 and #c.pendingStrikes==1)
-assert(not c:CallIn(0,'strike',2)); c.pendingStrikes[1].timer.ElapsedSimTimeMS=3000
-c:UpdateCallIns(); assert(#c.pendingStrikes==1 and MovableMan.lastParticle.name=="Frontline Precision Projectile" and MovableMan.lastParticle.Team==0)
+assert(c:CallIn(0,'strike',2)); assert(ct.funds==780 and #c.pendingStrikes==1 and c.supportSounds.strike.playCount==1)
+assert(not c:CallIn(0,'strike',2) and c.supportSounds.strike.playCount==1); c.pendingStrikes[1].timer.ElapsedSimTimeMS=3000
+c:UpdateCallIns(); assert(#c.pendingStrikes==1 and MovableMan.lastParticle.name=="Frontline Precision Projectile" and MovableMan.lastParticle.Team==0 and c.supportSounds.precisionCannon.playCount==1)
 c.pendingStrikes[1].projectileTimer.ElapsedSimTimeMS=5000; c:UpdateCallIns(); assert(#c.pendingStrikes==0)
 local injured=CreateAHuman('Soldier Light','Coalition.rte'); injured.Team=0; injured.Pos=Vector(c.outposts[2].x,565); injured.Health=70; injured.MaxHealth=100; MovableMan:AddActor(injured)
 assert(c:CallIn(0,'medic',2)); assert(injured.Health==100 and ct.funds==660)
@@ -113,14 +118,29 @@ local objectCount=#sceneObjects
 assert(c:CallIn(0,'cover',2)); assert(#sceneObjects>objectCount and ct.funds==1860)
 assert(not c:CallIn(0,'cover',2)); assert(ct.funds==1860)
 local previous=MovableMan.particleCount
-assert(c:CallIn(0,'mines',2)); assert(MovableMan.particleCount>previous and MovableMan.lastParticle.Sharpness==0 and ct.funds==1680)
-assert(c:CallIn(0,'bomb',2)); assert(MovableMan.lastParticle.activated and ct.funds==1420)
+local markerText,previousText={},PrimitiveMan.DrawTextPrimitive
+PrimitiveMan.DrawTextPrimitive=function(_,pos,label,...) markerText[#markerText+1]=label end
+local shipCount=#actors
+assert(c:CallIn(0,'mines',2)); assert(MovableMan.particleCount==previous and #actors==shipCount and ct.funds==1680 and #c.pendingDrops==1)
+local mineDrop=c.pendingDrops[1]; assert(mineDrop.ship==nil and mineDrop.count==3 and c.supportSounds.mines.playCount==1)
+c:UpdateCallIns(); assert(table.concat(markerText):find("MINES SHIP ARRIVES IN 4s",1,true))
+mineDrop.timer.ElapsedSimTimeMS=3999; c:UpdateCallIns(); assert(MovableMan.particleCount==previous and mineDrop.ship==nil)
+mineDrop.timer.ElapsedSimTimeMS=4000; c:UpdateCallIns(); assert(MovableMan.particleCount==previous and #actors==shipCount+1 and mineDrop.arrivalTimer and mineDrop.ship.InventorySize==3 and mineDrop.ship.goldValue==0 and mineDrop.ship.controller==Controller.CIM_DISABLED and not mineDrop.ship.hatchOpen)
+mineDrop.arrivalTimer.ElapsedSimTimeMS=1999; c:UpdateCallIns(); assert(MovableMan.particleCount==previous and not mineDrop.ship.hatchOpen)
+mineDrop.arrivalTimer.ElapsedSimTimeMS=2000; c:UpdateCallIns(); assert(MovableMan.particleCount==previous+3 and MovableMan.lastParticle.Sharpness==0 and mineDrop.ship.InventorySize==0 and mineDrop.ship.hatchOpen and mineDrop.ship.controller==Controller.CIM_AI)
+previous=MovableMan.particleCount
+assert(c:CallIn(0,'bomb',2)); assert(MovableMan.particleCount==previous and ct.funds==1420 and #c.pendingDrops==1)
+local bombDrop=c.pendingDrops[1]; assert(c.supportSounds.bomb.playCount==1); markerText={}
+bombDrop.timer.ElapsedSimTimeMS=3999; c:UpdateCallIns(); assert(MovableMan.particleCount==previous and table.concat(markerText):find('BOMB SHIP ARRIVES IN 1s',1,true))
+bombDrop.timer.ElapsedSimTimeMS=4000; c:UpdateCallIns(); assert(MovableMan.particleCount==previous and bombDrop.arrivalTimer)
+bombDrop.arrivalTimer.ElapsedSimTimeMS=2000; c:UpdateCallIns(); assert(MovableMan.lastParticle.activated and bombDrop.ship.InventorySize==0 and #c.pendingDrops==0)
 -- The orbital salvo warns, fires over time, and then completes.
-assert(c:CallIn(0,'orbital',2)); assert(ct.funds==1070 and #c.pendingOrbitals==1)
+assert(c:CallIn(0,'orbital',2)); assert(ct.funds==1070 and #c.pendingOrbitals==1 and c.supportSounds.orbital.playCount==1)
 local salvo=c.pendingOrbitals[1]; previous=MovableMan.particleCount
-salvo.timer.ElapsedSimTimeMS=2999; c:UpdateCallIns(); assert(MovableMan.particleCount==previous)
+salvo.timer.ElapsedSimTimeMS=2999; markerText={}; c:UpdateCallIns(); assert(MovableMan.particleCount==previous and table.concat(markerText):find("GATLING CANNON IN 1s",1,true))
 salvo.timer.ElapsedSimTimeMS=3000; c:UpdateCallIns(); assert(MovableMan.particleCount==previous+1)
-salvo.timer.ElapsedSimTimeMS=3000+47*45; c:UpdateCallIns(); assert(#c.pendingOrbitals==0 and MovableMan.particleCount==previous+48)
+salvo.timer.ElapsedSimTimeMS=3000+4999; c:UpdateCallIns(); assert(#c.pendingOrbitals==1 and MovableMan.particleCount==previous+47)
+salvo.timer.ElapsedSimTimeMS=3000+5000; c:UpdateCallIns(); assert(#c.pendingOrbitals==0 and MovableMan.particleCount==previous+48)
 local minX,maxX=math.huge,-math.huge
 for i=#MovableMan.particles-47,#MovableMan.particles do
     local round=MovableMan.particles[i]; assert(round.name=='Frontline Orbital Round')
@@ -129,6 +149,7 @@ for i=#MovableMan.particles-47,#MovableMan.particles do
 end
 assert(maxX-minX>200 and salvo.sound.playCount==12)
 assert(not c:CallIn(0,'orbital',2))
+PrimitiveMan.DrawTextPrimitive=previousText
 print('Cover, mines, bomb and timed orbital salvo costs, effects and cooldowns passed')
 
 -- Unique outpost bonuses and forward deployment.
@@ -240,12 +261,12 @@ local incoming={team=0,index=3,timer=Timer()}; table.insert(bot.pendingOrbitals,
 ai.funds=2000; bot:UpdateAI(); assert(#bot.jamFields==1 and bot.jamFields[1].team==1 and ai.funds==1800)
 print('AI uses shared income, research, units, forward orders, medics, strikes and shields')
 -- The AI cycles through the other offensive call-ins and both fortification types.
-ai.funds=2000; bot:UpdateAI(); assert(MovableMan.lastParticle.name=='Standard Bomb' and MovableMan.lastParticle.activated and ai.funds==1740)
+ai.funds=2000; bot:UpdateAI(); assert(#bot.pendingDrops==1 and bot.pendingDrops[1].kind=='bomb' and bot.pendingDrops[1].count==1 and ai.funds==1740)
 ai.funds=2000; bot:UpdateAI(); assert(#bot.pendingOrbitals==2 and bot.pendingOrbitals[2].team==1 and ai.funds==1650)
 foe1.Pos=Vector(bot.outposts[3].x-260,565); foe2.Pos=Vector(bot.outposts[3].x-260,565)
 medic1.Health=100; medic2.Health=100; bot.pendingOrbitals={}; ai.funds=2000
 local oldObjects=#sceneObjects; bot:UpdateAI(); assert(#sceneObjects>oldObjects and ai.funds==1860)
-ai.funds=2000; bot:UpdateAI(); assert(MovableMan.lastParticle.name=='Anti Personnel Mine Active' and MovableMan.lastParticle.Sharpness==1 and ai.funds==1820)
+ai.funds=2000; bot:UpdateAI(); assert(bot.pendingDrops[#bot.pendingDrops].kind=='mines' and bot.pendingDrops[#bot.pendingDrops].team==1 and ai.funds==1820)
 print('AI can use bomb, orbital cannon, cover and mines through standard call-in rules')
 
 -- Base upgrades spend funds, affect the brain and exclude the sentry from
@@ -298,6 +319,15 @@ economy.teams[0].auto=false; economy.teams[1].auto=false
 economy.panel=false; engineFunds[0]=500; economy:UpdateActivity()
 assert(engineFunds[0]==505 and economy.teams[0].funds==505)
 print('Engine funds changes and mode income share the same balance')
+-- Returning Frontline craft cannot refund their hull or paid cargo.
+local ship=CreateACDropShip('Dropship MK1','Base.rte'); ship.Team=0; ship:SetGoldValue(0); ship.returnValue=45
+local oldClear=FrameMan.ClearScreenText; FrameMan.ClearScreenText=function() end
+economy.frontlineCraft[ship.UniqueID]=true; engineFunds[0]=550; economy.teams[0].funds=505
+economy:CraftEnteredOrbit(ship); assert(engineFunds[0]==505 and economy.teams[0].funds==505)
+engineFunds[0]=550; economy:CraftEnteredOrbit(ship); assert(engineFunds[0]==550)
+FrameMan.ClearScreenText=oldClear
+print('Returning Frontline ships cannot refund their hull or cargo')
+
 -- Miners require research, have fixed gear, and ignore team attack orders.
 Actor.AIMODE_GOLDDIG=4
 actors={}; local mines=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
@@ -475,6 +505,16 @@ local funds=counter.teams[0].funds
 assert(not counter:CallIn(0,'cover',contested) and counter.teams[0].funds==funds)
 assert(counter:CallIn(1,'cover',contested))
 print('Enemy jammer intercepts queued strikes and preserves friendly support')
+-- A jammer raised during the four-second wait cancels an incoming delivery
+-- before its ship appears and returns the purchase price.
+local activeJammer=counter.jamFields[1]; counter.jamFields={}
+counter.teams[0].funds=2000; counter.teams[0].bombTimer.ElapsedSimTimeMS=55000
+assert(counter:CallIn(0,'bomb',contested)); local pendingBomb=counter.pendingDrops[1]
+local actorsBefore=#actors; counter.jamFields={activeJammer}
+pendingBomb.timer.ElapsedSimTimeMS=4000; counter:UpdateCallIns()
+assert(#counter.pendingDrops==0 and #actors==actorsBefore and counter.teams[0].funds==2000)
+print('Jammer intercepts an incoming support dropship before arrival')
+
 
 -- An enemy jammer pauses an active barrage and fire resumes after expiry.
 actors={}; local jamBurst=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
@@ -485,9 +525,9 @@ assert(jamBurst:CallIn(0,'orbital',burstPoint))
 local burst=jamBurst.pendingOrbitals[1]; local beforeRounds=MovableMan.particleCount or 0
 burst.timer.ElapsedSimTimeMS=3000; jamBurst:UpdateCallIns(); assert(MovableMan.particleCount==beforeRounds+1)
 assert(jamBurst:CallIn(1,'shield',burstPoint))
-burst.timer.ElapsedSimTimeMS=3000+10*45; jamBurst:UpdateCallIns(); assert(MovableMan.particleCount==beforeRounds+1)
+burst.timer.ElapsedSimTimeMS=3000+1064; jamBurst:UpdateCallIns(); assert(MovableMan.particleCount==beforeRounds+1)
 jamBurst.jamFields[1].timer.ElapsedSimTimeMS=20001
-burst.timer.ElapsedSimTimeMS=3000+11*45; jamBurst:UpdateCallIns(); assert(MovableMan.particleCount==beforeRounds+2)
+burst.timer.ElapsedSimTimeMS=3000+1171; jamBurst:UpdateCallIns(); assert(MovableMan.particleCount==beforeRounds+2)
 print('Enemy jammers suppress an active orbital burst until their field expires')
 
 -- Forward batches arrive in actual craft, reserve capacity in flight, and

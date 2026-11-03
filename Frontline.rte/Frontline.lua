@@ -9,14 +9,14 @@ local CONFIG = {
     MINER_GOLD_SCAN_STEP = 24, MINER_CHECK_INTERVAL_MS = 1000, MINER_RESCAN_INTERVAL_MS = 15000, MINER_DIG_DISTANCE = 45,
     ENEMY_BASE_SUPPORT_EXCLUSION_RADIUS = 600, -- Applied equally to both teams.
     CALLIN_STRIKE_COST = 220, CALLIN_STRIKE_COOLDOWN_MS = 45000,
-    CALLIN_STRIKE_DELAY_MS = 3000, CALLIN_PRECISION_HEIGHT = 640, CALLIN_PRECISION_SPEED = 120, CALLIN_PRECISION_FLIGHT_MS = 5000, CALLIN_MEDIC_COST = 120,
+    CALLIN_STRIKE_DELAY_MS = 3000, CALLIN_PRECISION_HEIGHT = 600, CALLIN_PRECISION_SPEED = 60, CALLIN_PRECISION_FLIGHT_MS = 5000, CALLIN_MEDIC_COST = 120,
     CALLIN_MEDIC_COOLDOWN_MS = 30000, CALLIN_HEAL = 35,
     CALLIN_COVER_COST = 140, CALLIN_COVER_COOLDOWN_MS = 40000,
-    CALLIN_MINES_COST = 180, CALLIN_MINES_COOLDOWN_MS = 45000,
-    CALLIN_BOMB_COST = 260, CALLIN_BOMB_COOLDOWN_MS = 55000, CALLIN_BOMB_HEIGHT = 640, CALLIN_BOMB_SPEED = 120,
+    CALLIN_MINES_COST = 180, CALLIN_MINES_COOLDOWN_MS = 45000, CALLIN_MINES_DELAY_MS = 4000, SUPPORT_DROP_APPROACH_MS = 2000,
+    CALLIN_BOMB_COST = 260, CALLIN_BOMB_COOLDOWN_MS = 55000, CALLIN_BOMB_DELAY_MS = 4000,
     CALLIN_ORBITAL_COST = 350, CALLIN_ORBITAL_COOLDOWN_MS = 75000,
     CALLIN_ORBITAL_DELAY_MS = 3000, CALLIN_ORBITAL_SHOTS = 48, CALLIN_ORBITAL_BONUS_SHOTS = 24,
-    CALLIN_ORBITAL_SPACING_MS = 45, CALLIN_ORBITAL_RADIUS = 150,
+    CALLIN_ORBITAL_DURATION_MS = 5000, CALLIN_ORBITAL_RADIUS = 150,
     CALLIN_ORBITAL_HEIGHT = 350, CALLIN_ORBITAL_SPEED = 150, CALLIN_ORBITAL_SOUND_EVERY = 4,
     CALLIN_SHIELD_COST = 200, CALLIN_SHIELD_COOLDOWN_MS = 60000, CALLIN_SHIELD_DURATION_MS = 20000, CALLIN_JAM_RADIUS = 180,
     BASE_ARMOR_COST = 200, BASE_ARMOR_HEALTH = 50, BASE_ARMOR_LEVELS = 3,
@@ -48,7 +48,7 @@ local CONFIG = {
         {name="Equipment: Sniper Rifle", price=180, max=1, kind="equipment", requires=1},
         {name="Equipment: Missile Launcher", price=260, max=1, kind="equipment", requires=2},
         {name="Support: More cover / mines", price=250, max=1, kind="support", requires=1},
-        {name="Support: Longer orbital burst (+48 rounds)", price=350, max=1, kind="support", requires=2},
+        {name="Support: Longer orbital burst (+24 rounds)", price=350, max=1, kind="support", requires=2},
         {name="Training: Perception +5%", price=250, max=10, kind="training"},
         {name="Industry: Mining squad", price=200, max=1, kind="mining"},
         {name="Equipment: Assault Rifle", price=150, max=1, kind="equipment"},
@@ -84,6 +84,7 @@ function Frontline:StartActivity()
     self.orderAssignments={}
     self.miners={}
     self.deliveries={}
+    self.frontlineCraft={}
     self.inTransit={}
     self.goldSites={}
     self.minerTimer=Timer()
@@ -92,7 +93,15 @@ function Frontline:StartActivity()
     self.rosterPage=1
     self.pendingStrikes={}
     self.pendingOrbitals={}
+    self.pendingDrops={}
     self.jamFields={}
+    self.supportSounds={
+        strike=CreateSoundContainer("Frontline Precision Order","Frontline.rte"),
+        precisionCannon=CreateSoundContainer("Frontline Precision Cannon","Frontline.rte"),
+        bomb=CreateSoundContainer("Frontline Bomb Drop","Frontline.rte"),
+        orbital=CreateSoundContainer("Frontline Gatling Order","Frontline.rte"),
+        mines=CreateSoundContainer("Frontline Mines Order","Frontline.rte"),
+    }
     for team=0,1 do
         self.teams[team].strikeTimer.ElapsedSimTimeMS=CONFIG.CALLIN_STRIKE_COOLDOWN_MS
         self.teams[team].medicTimer.ElapsedSimTimeMS=CONFIG.CALLIN_MEDIC_COOLDOWN_MS
@@ -530,6 +539,8 @@ function Frontline:Deploy(team)
             local direction=team==0 and -1 or 1
             local x=math.max(120,math.min(SceneMan.SceneWidth-120,post.x+direction*(CONFIG.FORWARD_LANDING_OFFSET+(index-1)*CONFIG.FORWARD_SHIP_SEPARATION)))
             ship.Team=team
+            ship:SetGoldValue(0)
+            self.frontlineCraft[ship.UniqueID]=true
             ship.Pos=Vector(x,math.max(-50,post.groundY-CONFIG.FORWARD_DROP_HEIGHT))
             ship.AIMode=Actor.AIMODE_DELIVER
             ship:SetControllerMode(Controller.CIM_AI,-1)
@@ -774,6 +785,30 @@ function Frontline:UpdateTargeting()
     end
 end
 
+-- Create a fresh craft immediately before it enters the scene. Craft timers
+-- run even while an object is waiting off-map, and stale timers can scuttle it.
+function Frontline:CreateSupportShip(team,kind,count,x,startY)
+    local ship=CreateACDropShip("Dropship MK1","Base.rte")
+    if not ship then return nil end
+    local payload={}
+    for i=1,count do
+        local item=kind=="bomb" and CreateTDExplosive("Frontline Heavy Bomb","Frontline.rte") or CreateMOSRotating("Anti Personnel Mine Active","Base.rte")
+        if not item then return nil end
+        item.Team=team
+        if kind=="mines" then item.Sharpness=team end
+        table.insert(payload,item)
+    end
+    ship.Team=team
+    ship:SetGoldValue(0)
+    ship.Pos=Vector(x,startY)
+    ship.PinStrength=1000000
+    ship.CanEnterOrbit=false
+    ship.AIMode=Actor.AIMODE_SENTRY
+    ship:SetControllerMode(Controller.CIM_DISABLED,-1)
+    for _,item in ipairs(payload) do ship:AddInventoryItem(item) end
+    return ship
+end
+
 function Frontline:CallIn(team,kind,index)
     local t=self.teams[team]
     local outpost=type(index)=="table" and index or self.outposts[index]
@@ -807,50 +842,39 @@ function Frontline:CallIn(team,kind,index)
         local probe=CreateMOPixel("Frontline Orbital Round","Frontline.rte")
         if not probe then return false,"Orbital ammunition unavailable" end
         table.insert(self.pendingOrbitals,{team=team,index=type(index)=="number" and index or nil,target=outpost,timer=Timer(),shots=0,total=CONFIG.CALLIN_ORBITAL_SHOTS+(t.levels[9]>0 and CONFIG.CALLIN_ORBITAL_BONUS_SHOTS or 0),sound=CreateSoundContainer("Frontline Orbital Gatling", "Frontline.rte")})
-        self:Notify((team==0 and "Your" or "Enemy").." orbital Gatling cannon targeting "..outpost.name.."! HE shells; friendly fire!")
-    elseif kind=="cover" or kind=="mines" then
-        -- Choose spaced positions clear of all actors. Do not charge if no
-        -- placement is possible; prepare the entire delivery before placing it.
+        self:Notify((team==0 and "Your" or "Enemy").." orbital Gatling cannon targeting "..outpost.name.."! Fragmentation; friendly fire!")
+    elseif kind=="cover" then
+        -- Prepare cover in spaced positions clear of all actors.
         local prepared={}
-        local offsets={-130,-65,0,65,130}
-        for _,dx in ipairs(offsets) do
+        for _,dx in ipairs({-130,-65,0,65,130}) do
             local x=outpost.x+dx
             local occupied=false
             for actor in MovableMan.Actors do
                 if math.abs(actor.Pos.X-x)<45 then occupied=true; break end
             end
             if not occupied then
-                local object
-                if kind=="cover" then
-                    object=CreateTerrainObject(#prepared%2==0 and "Concrete Barrier" or "Metal Crate Small A FG","Base.rte")
-                else
-                    object=CreateMOSRotating("Anti Personnel Mine Active","Base.rte")
-                end
+                local object=CreateTerrainObject(#prepared%2==0 and "Concrete Barrier" or "Metal Crate Small A FG","Base.rte")
                 if not object then return false,"Delivery preset unavailable" end
                 local ground=SceneMan:MovePointToGround(Vector(x,0),0,2)
-                object.Pos=ground+Vector(0,kind=="cover" and -22 or -12)
+                object.Pos=ground+Vector(0,-22)
                 object.Team=team
-                if kind=="mines" then object.Sharpness=team; object.Vel=Vector(0,8) end
                 table.insert(prepared,object)
                 if #prepared>=(3+(t.levels[8]>0 and 2 or 0)) then break end
             end
         end
         if #prepared==0 then return false,"Area occupied; no safe delivery spots" end
-        for _,object in ipairs(prepared) do
-            if kind=="cover" then SceneMan:AddSceneObject(object) else MovableMan:AddParticle(object) end
-        end
-        self:Notify((kind=="cover" and "Cover" or "Mines").." delivered at "..outpost.name.." ("..#prepared..")")
-    elseif kind=="bomb" then
-        if self:ShieldBlocks(outpost,team) then return false,"Enemy shield blocks bomb" end
-        local bomb=CreateTDExplosive("Standard Bomb","Base.rte")
-        if not bomb then return false,"Bomb preset unavailable" end
-        local ground=SceneMan:MovePointToGround(Vector(outpost.x,0),0,4)
-        bomb.Pos=ground+Vector(0,-CONFIG.CALLIN_BOMB_HEIGHT)
-        bomb.Vel=Vector(0,CONFIG.CALLIN_BOMB_SPEED)
-        bomb.Team=team
-        bomb:Activate()
-        MovableMan:AddParticle(bomb)
-        self:Notify((team==0 and "Your" or "Enemy").." bomb dropped at "..outpost.name.."! Friendly fire!")
+        for _,object in ipairs(prepared) do SceneMan:AddSceneObject(object) end
+        self:Notify("Cover delivered at "..outpost.name.." ("..#prepared..")")
+    elseif kind=="bomb" or kind=="mines" then
+        local count=kind=="bomb" and 1 or (3+(t.levels[8]>0 and 2 or 0))
+        local startY=math.max(50,outpost.groundY-650)
+        local releaseY=math.max(startY,outpost.groundY-350)
+        local delay=kind=="bomb" and CONFIG.CALLIN_BOMB_DELAY_MS or CONFIG.CALLIN_MINES_DELAY_MS
+        -- Verify the presets before charging, then build a fresh craft at arrival.
+        if not self:CreateSupportShip(team,kind,count,outpost.x,startY) then return false,"Support delivery preset unavailable" end
+        table.insert(self.pendingDrops,{team=team,kind=kind,target=outpost,timer=Timer(),delay=delay,
+            startY=startY,releaseY=releaseY,count=count,cost=cost})
+        self:Notify((team==0 and "Your" or "Enemy").." "..kind.." dropship inbound ("..math.ceil(delay/1000).."s)! Friendly fire!")
     else
         local wounded={}
         for actor in MovableMan.Actors do
@@ -865,22 +889,106 @@ function Frontline:CallIn(team,kind,index)
     end
     t.funds=t.funds-cost
     timer:Reset()
+    local cue=self.supportSounds[kind]
+    if cue then cue:Play() end
     return true,"Call-in ordered"
+end
+
+-- Mark ordered attacks on the battlefield so the target and remaining time
+-- remain visible after the command panel closes.
+function Frontline:DrawCallInMarker(target,team,label)
+    local x,y=target.x,target.groundY
+    local color=team==0 and 120 or 13
+    PrimitiveMan:DrawLinePrimitive(Vector(x-15,y-45),Vector(x+15,y-45),color)
+    PrimitiveMan:DrawLinePrimitive(Vector(x,y-60),Vector(x,y-30),color)
+    PrimitiveMan:DrawTextPrimitive(Vector(x,y-75),label,true,1)
 end
 
 function Frontline:UpdateCallIns()
     for i=#self.jamFields,1,-1 do
         if self.jamFields[i].timer:IsPastSimMS(CONFIG.CALLIN_SHIELD_DURATION_MS) then table.remove(self.jamFields,i) end
     end
+    for i=#self.pendingDrops,1,-1 do
+        local order=self.pendingDrops[i]
+        local target,ship=order.target,order.ship
+        if not order.timer:IsPastSimMS(order.delay) then
+            local remaining=math.max(0,math.ceil((order.delay-order.timer.ElapsedSimTimeMS)/1000))
+            self:DrawCallInMarker(target,order.team,string.upper(order.kind).." SHIP ARRIVES IN "..remaining.."s")
+        elseif not order.arrivalTimer then
+            if self:ShieldBlocks(target,order.team) then
+                self.teams[order.team].funds=self.teams[order.team].funds+order.cost
+                self:Notify("Jammer intercepted "..order.kind.." drop; cost refunded")
+                table.remove(self.pendingDrops,i)
+            else
+                -- Create and add the ship after the countdown, with fresh timers.
+                ship=self:CreateSupportShip(order.team,order.kind,order.count,target.x,order.startY)
+                if not ship then
+                    self.teams[order.team].funds=self.teams[order.team].funds+order.cost
+                    self:Notify("Support dropship unavailable; cost refunded")
+                    table.remove(self.pendingDrops,i)
+                else
+                    order.ship=ship
+                    self.frontlineCraft[ship.UniqueID]=true
+                    MovableMan:AddActor(ship)
+                    order.arrivalTimer=Timer()
+                    self:Notify(string.upper(order.kind).." dropship arriving at "..target.name)
+                end
+            end
+        elseif not MovableMan:IsActor(ship) or (ship.Health and ship.Health<=0) then
+            self:Notify("Support dropship lost before delivery")
+            table.remove(self.pendingDrops,i)
+        elseif self:ShieldBlocks(target,order.team) then
+            self.teams[order.team].funds=self.teams[order.team].funds+order.cost
+            self:Notify("Jammer intercepted "..order.kind.." drop; cost refunded")
+            ship.PinStrength=0
+            ship.CanEnterOrbit=true
+            ship.AIMode=Actor.AIMODE_RETURN
+            ship:SetControllerMode(Controller.CIM_AI,-1)
+            table.remove(self.pendingDrops,i)
+        else
+            local progress=math.min(1,order.arrivalTimer.ElapsedSimTimeMS/CONFIG.SUPPORT_DROP_APPROACH_MS)
+            ship.Pos=Vector(target.x,order.startY+(order.releaseY-order.startY)*progress)
+            if not order.arrivalTimer:IsPastSimMS(CONFIG.SUPPORT_DROP_APPROACH_MS) then
+                local remaining=math.max(0,math.ceil((CONFIG.SUPPORT_DROP_APPROACH_MS-order.arrivalTimer.ElapsedSimTimeMS)/1000))
+                self:DrawCallInMarker(target,order.team,string.upper(order.kind).." DROP IN "..remaining.."s")
+            else
+                -- Opening a hatch early ejects cargo automatically, so wait
+                -- until the craft has arrived at the release point.
+                ship:OpenHatch()
+                local dropY=ship.Pos.Y+(ship.Radius or 50)+12
+                for n=1,order.count do
+                    local item=ship:RemoveInventoryItemAtIndex(0)
+                    if item then
+                        local spread=n-(order.count+1)/2
+                        item.Pos=Vector(ship.Pos.X+spread*16,dropY)
+                        item.Vel=Vector(spread*8,10)
+                        item.Team=order.team
+                        if order.kind=="bomb" then ToTDExplosive(item):Activate() end
+                        MovableMan:AddParticle(item)
+                    end
+                end
+                ship.PinStrength=0
+                ship.CanEnterOrbit=true
+                ship.AIMode=Actor.AIMODE_RETURN
+                ship:SetControllerMode(Controller.CIM_AI,-1)
+                self:Notify(string.upper(order.kind).." delivered at "..target.name.."! Friendly fire!")
+                table.remove(self.pendingDrops,i)
+            end
+        end
+    end
     for i=#self.pendingOrbitals,1,-1 do
         local salvo=self.pendingOrbitals[i]
         local post=salvo.target or self.outposts[salvo.index]
         local elapsed=salvo.timer.ElapsedSimTimeMS
         if elapsed<CONFIG.CALLIN_ORBITAL_DELAY_MS then
-            PrimitiveMan:DrawTextPrimitive(Vector(post.x,post.groundY-160),"ORBITAL GATLING CANNON INCOMING! HE / FRIENDLY FIRE!",true,1)
+            self:DrawCallInMarker(post,salvo.team,"GATLING CANNON IN "..math.max(0,math.ceil((CONFIG.CALLIN_ORBITAL_DELAY_MS-elapsed)/1000)).."s")
         else
-            PrimitiveMan:DrawTextPrimitive(Vector(post.x,post.groundY-160),"ORBITAL GATLING CANNON! HE / FRIENDLY FIRE!",true,1)
-            local due=math.min(salvo.total,1+math.floor((elapsed-CONFIG.CALLIN_ORBITAL_DELAY_MS)/CONFIG.CALLIN_ORBITAL_SPACING_MS))
+            local burstDuration=(salvo.total-1)*CONFIG.CALLIN_ORBITAL_DURATION_MS/(CONFIG.CALLIN_ORBITAL_SHOTS-1)
+            local burstLeft=math.max(0,math.ceil((burstDuration-(elapsed-CONFIG.CALLIN_ORBITAL_DELAY_MS))/1000))
+            self:DrawCallInMarker(post,salvo.team,"GATLING FIRING: "..burstLeft.."s | FRIENDLY FIRE!")
+            -- Keep the initial 48 rounds spread over five seconds. The research
+            -- upgrade adds more rounds at the same rate, extending the barrage.
+            local due=math.min(salvo.total,1+math.floor((elapsed-CONFIG.CALLIN_ORBITAL_DELAY_MS)*(CONFIG.CALLIN_ORBITAL_SHOTS-1)/CONFIG.CALLIN_ORBITAL_DURATION_MS))
             while salvo.shots<due do
                 if not self:ShieldBlocks(post,salvo.team) then
                     local round=CreateMOPixel("Frontline Orbital Round","Frontline.rte")
@@ -906,15 +1014,18 @@ function Frontline:UpdateCallIns()
         local strike=self.pendingStrikes[i]
         local post=strike.target or self.outposts[strike.index]
         if not strike.timer:IsPastSimMS(CONFIG.CALLIN_STRIKE_DELAY_MS) then
-            PrimitiveMan:DrawTextPrimitive(Vector(post.x,post.groundY-145),"ORBITAL PRECISION STRIKE INBOUND!",true,1)
+            self:DrawCallInMarker(post,strike.team,"PRECISION FIRE IN "..math.max(0,math.ceil((CONFIG.CALLIN_STRIKE_DELAY_MS-strike.timer.ElapsedSimTimeMS)/1000)).."s")
         elseif not strike.projectileTimer then
             local projectile=CreateMOPixel("Frontline Precision Projectile","Frontline.rte")
             if projectile and not self:ShieldBlocks(post,strike.team) then
                 local ground=SceneMan:MovePointToGround(Vector(post.x,0),0,4)
-                projectile.Pos=ground+Vector(0,-CONFIG.CALLIN_PRECISION_HEIGHT)
+                projectile.Pos=Vector(ground.X,math.max(0,ground.Y-CONFIG.CALLIN_PRECISION_HEIGHT))
                 projectile.Vel=Vector(0,CONFIG.CALLIN_PRECISION_SPEED)
                 projectile.Team=strike.team
                 MovableMan:AddParticle(projectile)
+                strike.projectile=projectile
+                local cannon=self.supportSounds.precisionCannon
+                if cannon then cannon:Play() end
                 strike.projectileTimer=Timer()
                 self:Notify("Orbital precision projectile descending at "..post.name)
             else
@@ -922,11 +1033,11 @@ function Frontline:UpdateCallIns()
                 self:Notify("Jammer intercepted precision strike; cost refunded")
                 table.remove(self.pendingStrikes,i)
             end
-        elseif strike.projectileTimer:IsPastSimMS(CONFIG.CALLIN_PRECISION_FLIGHT_MS) then
+        elseif strike.projectileTimer:IsPastSimMS(CONFIG.CALLIN_PRECISION_FLIGHT_MS) or not MovableMan:IsParticle(strike.projectile) then
             table.remove(self.pendingStrikes,i)
-            self:Notify("Orbital precision strike hit "..post.name)
+            self:Notify("Orbital precision strike completed at "..post.name)
         else
-            PrimitiveMan:DrawTextPrimitive(Vector(post.x,post.groundY-145),"PRECISION PROJECTILE DESCENDING!",true,1)
+            self:DrawCallInMarker(post,strike.team,"PRECISION PROJECTILE DESCENDING!")
         end
     end
 end
@@ -964,6 +1075,22 @@ end
 function Frontline:MatchTimeText()
     local seconds=self.battleStarted and math.floor(self.matchTimer.ElapsedSimTimeMS/1000) or 0
     return string.format("%d:%02d",math.floor(seconds/60),seconds%60)
+end
+
+-- The engine refunds any cargo on returning craft before this callback.
+-- Our ships cost no gold, and cargo was already paid for by Frontline.
+function Frontline:CraftEnteredOrbit(craft)
+    if not self.frontlineCraft[craft.UniqueID] then return end
+    self.frontlineCraft[craft.UniqueID]=nil
+    local team=craft.Team
+    if team~=0 and team~=1 then return end
+    local cargoRefund=craft:GetTotalValue(0,0.9,0.9)
+    if cargoRefund>0 then
+        local funds=self:GetTeamFunds(team)-cargoRefund
+        self:SetTeamFunds(funds,team)
+        self.teams[team].funds=funds
+        if team==0 then FrameMan:ClearScreenText(0) end
+    end
 end
 
 function Frontline:EndActivity()
@@ -1087,9 +1214,9 @@ function Frontline:UpdateAI()
     if not self.settings.callins or not self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS) then return end
     -- Intercept an incoming hostile warning at an owned post when affordable.
     if ai.funds>=CONFIG.CALLIN_SHIELD_COST+150 then
-        for _,pendingList in ipairs({self.pendingStrikes,self.pendingOrbitals}) do
+        for _,pendingList in ipairs({self.pendingStrikes,self.pendingOrbitals,self.pendingDrops}) do
             for _,pending in ipairs(pendingList) do
-                if pending.team~=team then
+                if pending.team~=team and not pending.projectileTimer then
                     local target=pending.target or self.outposts[pending.index]
                     for i,post in ipairs(self.outposts) do
                         if target and post.owner==team and math.abs(post.x-target.x)<=CONFIG.OUTPOST_RADIUS then
@@ -1529,7 +1656,7 @@ function Frontline:DrawPanel()
         local medicLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_MEDIC_COOLDOWN_MS)-t.medicTimer.ElapsedSimTimeMS)/1000))
         button(15,122,205,"PRECISION "..CONFIG.CALLIN_STRIKE_COST.." oz  "..(strikeLeft>0 and strikeLeft.."s" or "READY"),strikeLeft==0 and t.funds>=CONFIG.CALLIN_STRIKE_COST and "available" or "disabled",function() self:BeginTargeting("strike") end)
         button(230,122,205,"MEDICS "..CONFIG.CALLIN_MEDIC_COST.." oz  "..(medicLeft>0 and medicLeft.."s" or "READY"),medicLeft==0 and t.funds>=CONFIG.CALLIN_MEDIC_COST and "available" or "disabled",function() self:BeginTargeting("medic") end)
-        text(15,143,"Orbital Precision Strike: visible shot from high altitude; friendly fire.")
+        text(15,143,"Precision: 3s warning | Bomb / mines: 4s until dropship; friendly fire.")
         local coverLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_COVER_COOLDOWN_MS)-t.coverTimer.ElapsedSimTimeMS)/1000))
         local minesLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_MINES_COOLDOWN_MS)-t.minesTimer.ElapsedSimTimeMS)/1000))
         local bombLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_BOMB_COOLDOWN_MS)-t.bombTimer.ElapsedSimTimeMS)/1000))
@@ -1537,8 +1664,8 @@ function Frontline:DrawPanel()
         button(155,159,135,"MINES "..CONFIG.CALLIN_MINES_COST.." "..(minesLeft>0 and minesLeft.."s" or "READY"),minesLeft==0 and t.funds>=CONFIG.CALLIN_MINES_COST and "available" or "disabled",function() self:BeginTargeting("mines") end)
         button(295,159,135,"BOMB "..CONFIG.CALLIN_BOMB_COST.." "..(bombLeft>0 and bombLeft.."s" or "READY"),bombLeft==0 and t.funds>=CONFIG.CALLIN_BOMB_COST and "available" or "disabled",function() self:BeginTargeting("bomb") end)
         local orbitalLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_ORBITAL_COOLDOWN_MS)-t.orbitalTimer.ElapsedSimTimeMS)/1000))
-        button(15,181,205,"GATLING HE "..CONFIG.CALLIN_ORBITAL_COST.." "..(orbitalLeft>0 and orbitalLeft.."s" or "READY"),orbitalLeft==0 and t.funds>=CONFIG.CALLIN_ORBITAL_COST and "available" or "disabled",function() self:BeginTargeting("orbital") end)
-        text(225,185,CONFIG.CALLIN_ORBITAL_SHOTS.." HE shells; 3s warning; friendly fire",true)
+        button(15,181,205,"ORBITAL GATLING CANNON "..CONFIG.CALLIN_ORBITAL_COST.." "..(orbitalLeft>0 and orbitalLeft.."s" or "READY"),orbitalLeft==0 and t.funds>=CONFIG.CALLIN_ORBITAL_COST and "available" or "disabled",function() self:BeginTargeting("orbital") end)
+        text(225,185,CONFIG.CALLIN_ORBITAL_SHOTS.." frag rounds; 5s burst; friendly fire",true)
         local shieldLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_SHIELD_COOLDOWN_MS)-t.shieldTimer.ElapsedSimTimeMS)/1000))
         button(15,207,205,"JAMMER "..CONFIG.CALLIN_SHIELD_COST.." "..(shieldLeft>0 and shieldLeft.."s" or "READY"),shieldLeft==0 and t.funds>=CONFIG.CALLIN_SHIELD_COST and "available" or "disabled",function() self:BeginTargeting("shield") end)
         text(15,230,"Jammer: place anywhere to disrupt enemy support for 20s.")
