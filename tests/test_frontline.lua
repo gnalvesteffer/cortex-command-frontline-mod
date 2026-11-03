@@ -100,7 +100,8 @@ local ct=c.teams[0]; ct.funds=1000
 assert(not c:CallIn(0,'strike',2)); c.matchTimer.ElapsedSimTimeMS=15000
 assert(c:CallIn(0,'strike',2)); assert(ct.funds==780 and #c.pendingStrikes==1)
 assert(not c:CallIn(0,'strike',2)); c.pendingStrikes[1].timer.ElapsedSimTimeMS=3000
-c:UpdateCallIns(); assert(#c.pendingStrikes==0 and MovableMan.lastParticle.gibbed and MovableMan.lastParticle.Team==0)
+c:UpdateCallIns(); assert(#c.pendingStrikes==1 and MovableMan.lastParticle.name=="Frontline Precision Projectile" and MovableMan.lastParticle.Team==0)
+c.pendingStrikes[1].projectileTimer.ElapsedSimTimeMS=5000; c:UpdateCallIns(); assert(#c.pendingStrikes==0)
 local injured=CreateAHuman('Soldier Light','Coalition.rte'); injured.Team=0; injured.Pos=Vector(c.outposts[2].x,565); injured.Health=70; injured.MaxHealth=100; MovableMan:AddActor(injured)
 assert(c:CallIn(0,'medic',2)); assert(injured.Health==100 and ct.funds==660)
 assert(not c:CallIn(0,'medic',2)); assert(not c:CallIn(0,'medic',4))
@@ -119,14 +120,14 @@ assert(c:CallIn(0,'orbital',2)); assert(ct.funds==1070 and #c.pendingOrbitals==1
 local salvo=c.pendingOrbitals[1]; previous=MovableMan.particleCount
 salvo.timer.ElapsedSimTimeMS=2999; c:UpdateCallIns(); assert(MovableMan.particleCount==previous)
 salvo.timer.ElapsedSimTimeMS=3000; c:UpdateCallIns(); assert(MovableMan.particleCount==previous+1)
-salvo.timer.ElapsedSimTimeMS=3000+95*45; c:UpdateCallIns(); assert(#c.pendingOrbitals==0 and MovableMan.particleCount==previous+96)
+salvo.timer.ElapsedSimTimeMS=3000+47*45; c:UpdateCallIns(); assert(#c.pendingOrbitals==0 and MovableMan.particleCount==previous+48)
 local minX,maxX=math.huge,-math.huge
-for i=#MovableMan.particles-95,#MovableMan.particles do
+for i=#MovableMan.particles-47,#MovableMan.particles do
     local round=MovableMan.particles[i]; assert(round.name=='Frontline Orbital Round')
     minX=math.min(minX,round.Pos.X); maxX=math.max(maxX,round.Pos.X)
     assert(math.abs(round.Pos.X-c.outposts[2].x)<=150 and round.Team==0)
 end
-assert(maxX-minX>200 and salvo.sound.playCount==24)
+assert(maxX-minX>200 and salvo.sound.playCount==12)
 assert(not c:CallIn(0,'orbital',2))
 print('Cover, mines, bomb and timed orbital salvo costs, effects and cooldowns passed')
 
@@ -149,7 +150,7 @@ dt.timer.ElapsedSimTimeMS=10000; d.outposts[2].owner=1; assert(not d:Deploy(0))
 d.outposts[1].owner=0; dt.funds=5000; assert(d:Research(0,8)); assert(d:Research(0,9))
 assert(d:CallIn(0,'shield',1)); assert(d:ShieldBlocks(d.outposts[1],1) and not d:ShieldBlocks(d.outposts[1],0))
 assert(not d:CallIn(1,'bomb',1)); d.jamFields[1].timer.ElapsedSimTimeMS=20000; assert(not d:ShieldBlocks(d.outposts[1],1))
-assert(d:CallIn(0,'orbital',3)); assert(d.pendingOrbitals[1].total==144)
+assert(d:CallIn(0,'orbital',3)); assert(d.pendingOrbitals[1].total==72)
 -- Brain damage is tracked as health lost, including non-player causes.
 d.brains[1].Health=70; d:RecordBrainLoss(); assert(dt.stats.brainDamage==30)
 local target=CreateAHuman('Dummy','Dummy.rte'); target.Team=1; target.Pos=Vector(3000,565); MovableMan:AddActor(target)

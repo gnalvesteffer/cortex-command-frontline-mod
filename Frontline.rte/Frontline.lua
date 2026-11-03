@@ -9,13 +9,13 @@ local CONFIG = {
     MINER_GOLD_SCAN_STEP = 24, MINER_CHECK_INTERVAL_MS = 1000, MINER_RESCAN_INTERVAL_MS = 15000, MINER_DIG_DISTANCE = 45,
     ENEMY_BASE_SUPPORT_EXCLUSION_RADIUS = 600, -- Applied equally to both teams.
     CALLIN_STRIKE_COST = 220, CALLIN_STRIKE_COOLDOWN_MS = 45000,
-    CALLIN_STRIKE_DELAY_MS = 3000, CALLIN_MEDIC_COST = 120,
+    CALLIN_STRIKE_DELAY_MS = 3000, CALLIN_PRECISION_HEIGHT = 640, CALLIN_PRECISION_SPEED = 120, CALLIN_PRECISION_FLIGHT_MS = 5000, CALLIN_MEDIC_COST = 120,
     CALLIN_MEDIC_COOLDOWN_MS = 30000, CALLIN_HEAL = 35,
     CALLIN_COVER_COST = 140, CALLIN_COVER_COOLDOWN_MS = 40000,
     CALLIN_MINES_COST = 180, CALLIN_MINES_COOLDOWN_MS = 45000,
-    CALLIN_BOMB_COST = 260, CALLIN_BOMB_COOLDOWN_MS = 55000,
+    CALLIN_BOMB_COST = 260, CALLIN_BOMB_COOLDOWN_MS = 55000, CALLIN_BOMB_HEIGHT = 640, CALLIN_BOMB_SPEED = 120,
     CALLIN_ORBITAL_COST = 350, CALLIN_ORBITAL_COOLDOWN_MS = 75000,
-    CALLIN_ORBITAL_DELAY_MS = 3000, CALLIN_ORBITAL_SHOTS = 96, CALLIN_ORBITAL_BONUS_SHOTS = 48,
+    CALLIN_ORBITAL_DELAY_MS = 3000, CALLIN_ORBITAL_SHOTS = 48, CALLIN_ORBITAL_BONUS_SHOTS = 24,
     CALLIN_ORBITAL_SPACING_MS = 45, CALLIN_ORBITAL_RADIUS = 150,
     CALLIN_ORBITAL_HEIGHT = 350, CALLIN_ORBITAL_SPEED = 150, CALLIN_ORBITAL_SOUND_EVERY = 4,
     CALLIN_SHIELD_COST = 200, CALLIN_SHIELD_COOLDOWN_MS = 60000, CALLIN_SHIELD_DURATION_MS = 20000, CALLIN_JAM_RADIUS = 180,
@@ -155,6 +155,20 @@ function Frontline:StartActivity()
                 barrier.Pos=ground+Vector(0,-22)
                 barrier.Team=team
                 SceneMan:AddSceneObject(barrier)
+            end
+        end
+    end
+    -- Reinforce each vault approach with a broken, two-layer barricade. The
+    -- offset leaves a walkable route while breaking direct fire into the room.
+    for team=0,1 do
+        for _,entry in ipairs({{x=330,y=-24},{x=365,y=-42},{x=365,y=-15}}) do
+            local wall=CreateTerrainObject("Concrete Barrier","Base.rte")
+            if wall then
+                local x=team==0 and entry.x or SceneMan.SceneWidth-entry.x
+                local ground=SceneMan:MovePointToGround(Vector(x,0),0,2)
+                wall.Pos=ground+Vector(0,entry.y)
+                wall.Team=team
+                SceneMan:AddSceneObject(wall)
             end
         end
     end
@@ -548,7 +562,8 @@ function Frontline:Deploy(team)
     else
         for i,passenger in ipairs(actors) do
             local actor=passenger.actor
-            local x=(team==0 and 335 or SceneMan.SceneWidth-335)+(team==0 and 1 or -1)*((i-1)*32)
+            local slot=(t.stats.deployed+i-1)%6
+            local x=(team==0 and 200 or SceneMan.SceneWidth-200)+(team==0 and 1 or -1)*(slot*18)
             actor.Pos=Vector(x,self.baseGround[team]-35)
             if passenger.miner then
                 self.miners[actor.UniqueID]={}
@@ -797,8 +812,8 @@ function Frontline:CallIn(team,kind,index)
     if not timer:IsPastSimMS(cooldown) then return false,"Call-in cooling down" end
     if t.funds<cost then return false,"Not enough funds" end
     if kind=="strike" then
-        table.insert(self.pendingStrikes,{team=team,index=type(index)=="number" and index or nil,target=outpost,timer=Timer()})
-        self:Notify((team==0 and "Your" or "Enemy").." strike incoming at "..outpost.name.."! Friendly fire!")
+        table.insert(self.pendingStrikes,{team=team,index=type(index)=="number" and index or nil,target=outpost,timer=Timer(),projectileTimer=nil})
+        self:Notify((team==0 and "Your" or "Enemy").." precision strike inbound at "..outpost.name.."! Friendly fire!")
     elseif kind=="shield" then
         table.insert(self.jamFields,{x=outpost.x,groundY=outpost.groundY,team=team,timer=Timer()})
         self:Notify((team==0 and "Your" or "Enemy").." support jammer active for 20s")
@@ -806,7 +821,7 @@ function Frontline:CallIn(team,kind,index)
         local probe=CreateMOPixel("Frontline Orbital Round","Frontline.rte")
         if not probe then return false,"Orbital ammunition unavailable" end
         table.insert(self.pendingOrbitals,{team=team,index=type(index)=="number" and index or nil,target=outpost,timer=Timer(),shots=0,total=CONFIG.CALLIN_ORBITAL_SHOTS+(t.levels[9]>0 and CONFIG.CALLIN_ORBITAL_BONUS_SHOTS or 0),sound=CreateSoundContainer("Frontline Orbital Gatling", "Frontline.rte")})
-        self:Notify((team==0 and "Your" or "Enemy").." orbital gatling targeting "..outpost.name.."! Friendly fire!")
+        self:Notify((team==0 and "Your" or "Enemy").." orbital Gatling cannon targeting "..outpost.name.."! HE shells; friendly fire!")
     elseif kind=="cover" or kind=="mines" then
         -- Choose spaced positions clear of all actors. Do not charge if no
         -- placement is possible; prepare the entire delivery before placing it.
@@ -844,8 +859,8 @@ function Frontline:CallIn(team,kind,index)
         local bomb=CreateTDExplosive("Standard Bomb","Base.rte")
         if not bomb then return false,"Bomb preset unavailable" end
         local ground=SceneMan:MovePointToGround(Vector(outpost.x,0),0,4)
-        bomb.Pos=ground+Vector(0,-250)
-        bomb.Vel=Vector(0,25)
+        bomb.Pos=ground+Vector(0,-CONFIG.CALLIN_BOMB_HEIGHT)
+        bomb.Vel=Vector(0,CONFIG.CALLIN_BOMB_SPEED)
         bomb.Team=team
         bomb:Activate()
         MovableMan:AddParticle(bomb)
@@ -876,9 +891,9 @@ function Frontline:UpdateCallIns()
         local post=salvo.target or self.outposts[salvo.index]
         local elapsed=salvo.timer.ElapsedSimTimeMS
         if elapsed<CONFIG.CALLIN_ORBITAL_DELAY_MS then
-            PrimitiveMan:DrawTextPrimitive(Vector(post.x,post.groundY-160),"ORBITAL GATLING INCOMING! FRIENDLY FIRE!",true,1)
+            PrimitiveMan:DrawTextPrimitive(Vector(post.x,post.groundY-160),"ORBITAL GATLING CANNON INCOMING! HE / FRIENDLY FIRE!",true,1)
         else
-            PrimitiveMan:DrawTextPrimitive(Vector(post.x,post.groundY-160),"ORBITAL GATLING! FRIENDLY FIRE!",true,1)
+            PrimitiveMan:DrawTextPrimitive(Vector(post.x,post.groundY-160),"ORBITAL GATLING CANNON! HE / FRIENDLY FIRE!",true,1)
             local due=math.min(salvo.total,1+math.floor((elapsed-CONFIG.CALLIN_ORBITAL_DELAY_MS)/CONFIG.CALLIN_ORBITAL_SPACING_MS))
             while salvo.shots<due do
                 if not self:ShieldBlocks(post,salvo.team) then
@@ -904,24 +919,28 @@ function Frontline:UpdateCallIns()
     for i=#self.pendingStrikes,1,-1 do
         local strike=self.pendingStrikes[i]
         local post=strike.target or self.outposts[strike.index]
-        if strike.timer:IsPastSimMS(CONFIG.CALLIN_STRIKE_DELAY_MS) then
-            local bomb=CreateTDExplosive("Standard Bomb","Base.rte")
-            if bomb and self:ShieldBlocks(post,strike.team) then
-                self:Notify("Jammer intercepted strike at "..post.name)
-            elseif bomb then
+        if not strike.timer:IsPastSimMS(CONFIG.CALLIN_STRIKE_DELAY_MS) then
+            PrimitiveMan:DrawTextPrimitive(Vector(post.x,post.groundY-145),"ORBITAL PRECISION STRIKE INBOUND!",true,1)
+        elseif not strike.projectileTimer then
+            local projectile=CreateMOPixel("Frontline Precision Projectile","Frontline.rte")
+            if projectile and not self:ShieldBlocks(post,strike.team) then
                 local ground=SceneMan:MovePointToGround(Vector(post.x,0),0,4)
-                bomb.Pos=ground+Vector(0,-18)
-                bomb.Team=strike.team
-                bomb:GibThis()
-                MovableMan:AddParticle(bomb)
-                self:Notify("Strike hit "..post.name.." outpost")
+                projectile.Pos=ground+Vector(0,-CONFIG.CALLIN_PRECISION_HEIGHT)
+                projectile.Vel=Vector(0,CONFIG.CALLIN_PRECISION_SPEED)
+                projectile.Team=strike.team
+                MovableMan:AddParticle(projectile)
+                strike.projectileTimer=Timer()
+                self:Notify("Orbital precision projectile descending at "..post.name)
             else
                 self.teams[strike.team].funds=self.teams[strike.team].funds+CONFIG.CALLIN_STRIKE_COST
-                self:Notify("Strike unavailable; cost refunded")
+                self:Notify("Jammer intercepted precision strike; cost refunded")
+                table.remove(self.pendingStrikes,i)
             end
+        elseif strike.projectileTimer:IsPastSimMS(CONFIG.CALLIN_PRECISION_FLIGHT_MS) then
             table.remove(self.pendingStrikes,i)
+            self:Notify("Orbital precision strike hit "..post.name)
         else
-            PrimitiveMan:DrawTextPrimitive(Vector(post.x,post.groundY-145),"STRIKE INCOMING!",true,1)
+            PrimitiveMan:DrawTextPrimitive(Vector(post.x,post.groundY-145),"PRECISION PROJECTILE DESCENDING!",true,1)
         end
     end
 end
@@ -1522,9 +1541,9 @@ function Frontline:DrawPanel()
         text(15,99,"Tab cancels targeting. Place the jammer anywhere.")
         local strikeLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_STRIKE_COOLDOWN_MS)-t.strikeTimer.ElapsedSimTimeMS)/1000))
         local medicLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_MEDIC_COOLDOWN_MS)-t.medicTimer.ElapsedSimTimeMS)/1000))
-        button(15,122,205,"STRIKE "..CONFIG.CALLIN_STRIKE_COST.." oz  "..(strikeLeft>0 and strikeLeft.."s" or "READY"),strikeLeft==0 and t.funds>=CONFIG.CALLIN_STRIKE_COST and "available" or "disabled",function() self:BeginTargeting("strike") end)
+        button(15,122,205,"PRECISION "..CONFIG.CALLIN_STRIKE_COST.." oz  "..(strikeLeft>0 and strikeLeft.."s" or "READY"),strikeLeft==0 and t.funds>=CONFIG.CALLIN_STRIKE_COST and "available" or "disabled",function() self:BeginTargeting("strike") end)
         button(230,122,205,"MEDICS "..CONFIG.CALLIN_MEDIC_COST.." oz  "..(medicLeft>0 and medicLeft.."s" or "READY"),medicLeft==0 and t.funds>=CONFIG.CALLIN_MEDIC_COST and "available" or "disabled",function() self:BeginTargeting("medic") end)
-        text(15,143,"Strike: 3s warning; damages ALL troops in blast.")
+        text(15,143,"Orbital Precision Strike: visible shot from high altitude; friendly fire.")
         local coverLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_COVER_COOLDOWN_MS)-t.coverTimer.ElapsedSimTimeMS)/1000))
         local minesLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_MINES_COOLDOWN_MS)-t.minesTimer.ElapsedSimTimeMS)/1000))
         local bombLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_BOMB_COOLDOWN_MS)-t.bombTimer.ElapsedSimTimeMS)/1000))
@@ -1532,8 +1551,8 @@ function Frontline:DrawPanel()
         button(155,159,135,"MINES "..CONFIG.CALLIN_MINES_COST.." "..(minesLeft>0 and minesLeft.."s" or "READY"),minesLeft==0 and t.funds>=CONFIG.CALLIN_MINES_COST and "available" or "disabled",function() self:BeginTargeting("mines") end)
         button(295,159,135,"BOMB "..CONFIG.CALLIN_BOMB_COST.." "..(bombLeft>0 and bombLeft.."s" or "READY"),bombLeft==0 and t.funds>=CONFIG.CALLIN_BOMB_COST and "available" or "disabled",function() self:BeginTargeting("bomb") end)
         local orbitalLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_ORBITAL_COOLDOWN_MS)-t.orbitalTimer.ElapsedSimTimeMS)/1000))
-        button(15,181,205,"ORBITAL "..CONFIG.CALLIN_ORBITAL_COST.." "..(orbitalLeft>0 and orbitalLeft.."s" or "READY"),orbitalLeft==0 and t.funds>=CONFIG.CALLIN_ORBITAL_COST and "available" or "disabled",function() self:BeginTargeting("orbital") end)
-        text(225,185,CONFIG.CALLIN_ORBITAL_SHOTS.." rounds; 3s warning; friendly fire",true)
+        button(15,181,205,"GATLING HE "..CONFIG.CALLIN_ORBITAL_COST.." "..(orbitalLeft>0 and orbitalLeft.."s" or "READY"),orbitalLeft==0 and t.funds>=CONFIG.CALLIN_ORBITAL_COST and "available" or "disabled",function() self:BeginTargeting("orbital") end)
+        text(225,185,CONFIG.CALLIN_ORBITAL_SHOTS.." HE shells; 3s warning; friendly fire",true)
         local shieldLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_SHIELD_COOLDOWN_MS)-t.shieldTimer.ElapsedSimTimeMS)/1000))
         button(15,207,205,"JAMMER "..CONFIG.CALLIN_SHIELD_COST.." "..(shieldLeft>0 and shieldLeft.."s" or "READY"),shieldLeft==0 and t.funds>=CONFIG.CALLIN_SHIELD_COST and "available" or "disabled",function() self:BeginTargeting("shield") end)
         text(15,230,"Jammer: place anywhere to disrupt enemy support for 20s.")
