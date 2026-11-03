@@ -900,7 +900,7 @@ function Frontline:CallIn(team,kind,index)
             ship:AddInventoryItem(bomb)
         end
         MovableMan:AddActor(ship)
-        table.insert(self.pendingDrops, {team=team, kind="bomb", target=outpost, ship=ship, timer=Timer(), delay=0, cost=cost, bombsDropped=0, totalBombs=3, flightDistance=1200, startX=outpost.x-600})
+        table.insert(self.pendingDrops, {team=team, kind="bomb", target=outpost, ship=ship, timer=Timer(), arrivalTimer=Timer(), delay=0, cost=cost, bombsDropped=0, totalBombs=3, flightDistance=1200, startX=outpost.x-600})
         self:Notify((team==0 and "Your" or "Enemy").." bomb run inbound (3 bombs)! Friendly fire!")
     elseif kind=="turret" then
         -- Static turret dropped at target location.
@@ -950,6 +950,43 @@ function Frontline:UpdateCallIns()
     for i=#self.jamFields,1,-1 do
         if self.jamFields[i].timer:IsPastSimMS(CONFIG.CALLIN_SHIELD_DURATION_MS) then table.remove(self.jamFields,i) end
     end
+    -- Process scripted bomb runs (fly horizontally, drop bombs at intervals).
+    for i=#self.pendingDrops,1,-1 do
+        local order=self.pendingDrops[i]
+        if order.kind=="bomb" then
+            local elapsed = order.timer.ElapsedSimTimeMS
+            local flightSpeed = 120  -- pixels per second
+            local currentX = order.startX + (elapsed * flightSpeed / 1000)
+            order.ship.Pos.X = currentX
+            
+            -- Drop bombs at intervals along the flight path
+            local bombIntervalMs = 800
+            local bombsDue = math.min(order.totalBombs, math.floor(elapsed / bombIntervalMs))
+            
+            while order.bombsDropped < bombsDue do
+                local item = order.ship:RemoveInventoryItemAtIndex(0)
+                if item then
+                    item.Pos = Vector(order.ship.Pos.X, order.ship.Pos.Y + 30)
+                    item.Vel = Vector(flightSpeed * 0.5, 40)
+                    item.Team = order.team
+                    ToTDExplosive(item):Activate()
+                    MovableMan:AddParticle(item)
+                    order.bombsDropped = order.bombsDropped + 1
+                end
+            end
+            
+            -- Remove ship when it has flown past the target area or dropped all bombs
+            if currentX > order.startX + order.flightDistance or order.bombsDropped >= order.totalBombs then
+                order.ship.PinStrength = 0
+                order.ship.CanEnterOrbit = true
+                order.ship.AIMode = Actor.AIMODE_RETURN
+                order.ship:SetControllerMode(Controller.CIM_AI,-1)
+                table.remove(self.pendingDrops, i)
+            end
+        end
+    end
+    
+    -- Process regular dropship deliveries.
     for i=#self.pendingDrops,1,-1 do
         local order=self.pendingDrops[i]
         local target,ship=order.target,order.ship
@@ -996,39 +1033,7 @@ function Frontline:UpdateCallIns()
             else
                 -- Opening a hatch early ejects cargo automatically, so wait
                 -- until the craft has arrived at the release point.
-                if order.kind=="bomb" then
-                    -- Scripted bomb run: move ship horizontally and drop bombs at intervals.
-                    local elapsed = order.timer.ElapsedSimTimeMS
-                    local flightSpeed = 120  -- pixels per second
-                    local currentX = order.startX + (elapsed * flightSpeed / 1000)
-                    order.ship.Pos.X = currentX
-                    
-                    -- Drop bombs at intervals along the flight path
-                    local bombIntervalMs = 800
-                    local bombsDue = math.min(order.totalBombs, math.floor(elapsed / bombIntervalMs))
-                    
-                    while order.bombsDropped < bombsDue do
-                        local item = order.ship:RemoveInventoryItemAtIndex(0)
-                        if item then
-                            -- Drop bomb with slight forward velocity to match ship movement
-                            item.Pos = Vector(order.ship.Pos.X, order.ship.Pos.Y + 30)
-                            item.Vel = Vector(flightSpeed * 0.5, 40)
-                            item.Team = order.team
-                            ToTDExplosive(item):Activate()
-                            MovableMan:AddParticle(item)
-                            order.bombsDropped = order.bombsDropped + 1
-                        end
-                    end
-                    
-                    -- Remove ship when it has flown past the target area or dropped all bombs
-                    if currentX > order.startX + order.flightDistance or order.bombsDropped >= order.totalBombs then
-                        order.ship.PinStrength = 0
-                        order.ship.CanEnterOrbit = true
-                        order.ship.AIMode = Actor.AIMODE_RETURN
-                        order.ship:SetControllerMode(Controller.CIM_AI,-1)
-                        table.remove(self.pendingDrops, i)
-                    end
-                elseif order.kind=="turret" then
+                if order.kind=="turret" then
                     -- Place turret on ground at target location.
                     local item=ship:RemoveInventoryItemAtIndex(0)
                     if item then
