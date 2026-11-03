@@ -1209,6 +1209,21 @@ end
 function Frontline:UpdateAI()
     local team=1
     local ai=self.teams[team]
+    
+    -- Pick a personality at match start for randomized playstyle
+    if not self.aiPersonality then
+        local roll=math.random(1,4)
+        if roll==1 then self.aiPersonality="aggressive"
+        elseif roll==2 then self.aiPersonality="defensive"
+        elseif roll==3 then self.aiPersonality="economic"
+        else self.aiPersonality="balanced" end
+    end
+    
+    -- Track player behavior for adaptive strategy
+    if not self.playerBehavior then
+        self.playerBehavior={deployments=0,callinsUsed=0,researchFocus="",lastDeployTime=0}
+    end
+    
     local posts={}
     for i=1,#self.outposts do posts[i]={allies=0,enemies=0,wounded=0,threats=0} end
     local enemyVehicle=false
@@ -1230,6 +1245,26 @@ function Frontline:UpdateAI()
         end
     end
     local pressured=self:UnitCount(0)>self:UnitCount(1)+2 or self:OutpostCount(0)>self:OutpostCount(1)
+    
+    -- Adaptive research priorities based on personality and player focus
+    local priorities
+    if self.aiPersonality=="aggressive" then
+        priorities={3,4,7,8,2,6,1,10,11,16,13,14,15,9,5}
+    elseif self.aiPersonality=="defensive" then
+        priorities={1,12,3,6,2,10,16,13,14,15,8,7,9,4,5}
+    elseif self.aiPersonality=="economic" then
+        priorities={1,12,11,3,6,2,10,16,13,14,15,8,7,9,4,5}
+    else
+        priorities=pressured and {12,3,4,7,8,2,1,10,11,16,13,14,15,9,6,5} or {1,12,3,6,2,4,11,10,16,13,14,15,8,7,9,5}
+    end
+    
+    -- Counter player's research focus if detected
+    if self.playerBehavior.researchFocus=="infantry" then
+        table.insert(priorities,2); table.insert(priorities,4)
+    elseif self.playerBehavior.researchFocus=="vehicles" then
+        table.insert(priorities,3); table.insert(priorities,6)
+    end
+    
     -- Invest from the same budget and keep a reserve for troop deployments.
     local brain=self.brains[team]
     if brain.Health<brain.MaxHealth-25 and ai.funds>=CONFIG.BASE_REPAIR_COST+240 then
@@ -1239,7 +1274,7 @@ function Frontline:UpdateAI()
     elseif ai.baseArmor<CONFIG.BASE_ARMOR_LEVELS and ai.funds>=CONFIG.BASE_ARMOR_COST*(ai.baseArmor+1)+400 then
         self:BaseUpgrade(team,"armor")
     end
-    local priorities=pressured and {12,3,4,7,8,2,1,10,11,16,13,14,15,9,6,5} or {1,12,3,6,2,4,11,10,16,13,14,15,8,7,9,5}
+    
     for _,index in ipairs(priorities) do
         local r=CONFIG.research[index]
         local target=(index==1 or index==2) and (ai.funds>=3000 and 10 or 2) or (index==10 and ai.funds>=3000 and 10 or 1)
@@ -1248,7 +1283,12 @@ function Frontline:UpdateAI()
             if ok then break end
         end
     end
-    -- Build mixed batches from every unlocked faction and equipment branch.
+    
+    -- Build mixed batches with personality-based variation
+    local batchSize=3+math.random(0,1)
+    if self.aiPersonality=="aggressive" and ai.funds>5000 then batchSize=4+math.random(0,1)
+    elseif self.aiPersonality=="defensive" then batchSize=2+math.random(0,1) end
+    
     if ai.tier>=3 and ai.funds>=650 then
         ai.counts={1,0,0,1,1}
     elseif ai.tier>=2 and ai.funds>=480 then
@@ -1261,8 +1301,14 @@ function Frontline:UpdateAI()
         ai.counts={1,0,0,0,0,0,2}
     end
     if (ai.levels[11] or 0)>0 and ai.funds>=550 then ai.counts[6]=1 end
+    
     local basic=(ai.levels[12] or 0)>0 and 1 or 6
-    ai.weapons={ai.levels[6]>0 and 4 or basic,ai.levels[7]>0 and (enemyVehicle and 5 or 2) or (ai.tier>=1 and 2 or basic),ai.tier>=2 and 3 or basic,basic,basic,basic,basic}
+    -- Adaptive weapon selection based on player threats
+    local weaponChoice=basic
+    if enemyVehicle and (ai.levels[7] or 0)>0 then weaponChoice=5
+    elseif ai.tier>=1 then weaponChoice=2 end
+    
+    ai.weapons={weaponChoice,weaponChoice,ai.tier>=2 and 3 or basic,basic,basic,basic,basic}
     ai.sidearms={}; ai.medkits={}; ai.grenades={}; ai.armor={}
     if ai.funds>=1000 then
         for i,entry in ipairs(CONFIG.roster) do
@@ -1275,22 +1321,33 @@ function Frontline:UpdateAI()
         end
     end
     ai.preset="AI mixed"
+    
     -- Attack the nearest unsecured post from the AI side, then attack the base.
     local target=0
     for i=#self.outposts,1,-1 do if self.outposts[i].owner~=team then target=i; break end end
     local desired=target>0 and "Advance" or "Rush"
     if target==0 and posts[3].threats>=2 then desired="Defend"; target=3 end
+    
+    -- Adaptive strategy: if player is aggressive, switch to defense temporarily
+    if self.playerBehavior.deployments>5 and not pressured then
+        desired="Advance"
+    elseif pressured and self.aiPersonality=="defensive" then
+        desired="Defend"
+    end
+    
     if ai.order~=desired or (target>0 and ai.orderTarget~=target) then
         ai.order=desired
         if target>0 then ai.orderTarget=target end
         self:ApplyTeamOrder(team)
     end
+    
     ai.forward=0
     if ai.funds>=600 then
         for i=1,#self.outposts do
             if self.outposts[i].owner==team and posts[i].enemies==0 then ai.forward=i; break end
         end
     end
+    
     -- Use the same six-unit batch limit as the player, adding riflemen only
     -- when the complete batch remains affordable with a modest reserve.
     local cost,count=self:Batch(team)
@@ -1303,7 +1360,9 @@ function Frontline:UpdateAI()
         end
         cost,count=nextCost,nextCount
     end
+    
     if not self.settings.callins or not self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS) then return end
+    
     -- Intercept an incoming hostile warning at an owned post when affordable.
     if ai.funds>=CONFIG.CALLIN_SHIELD_COST+150 then
         for _,pendingList in ipairs({self.pendingStrikes,self.pendingOrbitals,self.pendingDrops}) do
@@ -1319,15 +1378,23 @@ function Frontline:UpdateAI()
             end
         end
     end
+    
     -- Heal wounded squads when it is worthwhile, conserving a deployment reserve.
     if ai.funds>=CONFIG.CALLIN_MEDIC_COST+240 then
         for i=1,#posts do if posts[i].wounded>=2 then local ok=self:CallIn(team,"medic",i); if ok then return end end end
     end
+    
     -- Rotate among all three offensive call-ins when enemies are concentrated
     -- and friendly troops are clear. CallIn enforces the same cooldowns and cost.
     if ai.funds>=CONFIG.CALLIN_STRIKE_COST+300 then
         local kinds={"strike","bomb","orbital"}
         local start=ai.offenseChoice or 1
+        
+        -- Adaptive: use orbital more if player has many units
+        if self.aiPersonality=="aggressive" and self:UnitCount(0)>8 then
+            kinds={"orbital","bomb","strike"}
+        end
+        
         for i=1,#posts do
             if posts[i].enemies>=2 and posts[i].allies==0 then
                 for offset=0,#kinds-1 do
@@ -1342,6 +1409,7 @@ function Frontline:UpdateAI()
             end
         end
     end
+    
     -- Outside capture zones, strike isolated concentrations without hitting allies.
     if ai.funds>=CONFIG.CALLIN_STRIKE_COST+300 then
         for _,candidate in ipairs(fieldActors) do
@@ -1360,16 +1428,33 @@ function Frontline:UpdateAI()
             end
         end
     end
+    
     -- Fortify threatened posts, alternating cover and mines.
     if ai.funds>=CONFIG.CALLIN_COVER_COST+300 then
         local kinds=ai.fortifyChoice=="mines" and {"mines","cover"} or {"cover","mines"}
-        for i=#posts,1,-1 do
-            if self.outposts[i].owner==team and posts[i].allies>0 and posts[i].threats>0 then
-                for _,kind in ipairs(kinds) do
-                    local cost=kind=="mines" and CONFIG.CALLIN_MINES_COST or CONFIG.CALLIN_COVER_COST
-                    if ai.funds>=cost+240 then
-                        local ok=self:CallIn(team,kind,i)
-                        if ok then ai.fortifyChoice=kind=="mines" and "cover" or "mines"; return end
+        
+        -- Adaptive: fortify more if player is aggressive
+        if self.playerBehavior.deployments>5 then
+            for i=#posts,1,-1 do
+                if self.outposts[i].owner==team and posts[i].allies>0 then
+                    for _,kind in ipairs(kinds) do
+                        local cost=kind=="mines" and CONFIG.CALLIN_MINES_COST or CONFIG.CALLIN_COVER_COST
+                        if ai.funds>=cost+240 then
+                            local ok=self:CallIn(team,kind,i)
+                            if ok then ai.fortifyChoice=kind=="mines" and "cover" or "mines"; return end
+                        end
+                    end
+                end
+            end
+        else
+            for i=#posts,1,-1 do
+                if self.outposts[i].owner==team and posts[i].allies>0 and posts[i].threats>0 then
+                    for _,kind in ipairs(kinds) do
+                        local cost=kind=="mines" and CONFIG.CALLIN_MINES_COST or CONFIG.CALLIN_COVER_COST
+                        if ai.funds>=cost+240 then
+                            local ok=self:CallIn(team,kind,i)
+                            if ok then ai.fortifyChoice=kind=="mines" and "cover" or "mines"; return end
+                        end
                     end
                 end
             end
@@ -1444,7 +1529,8 @@ function Frontline:UpdateActivity()
             t.deaths=deaths
         end
         if t.auto then self:Deploy(team) end
-    end
+        end
+        if team==0 then self.playerBehavior.deployments=self.playerBehavior.deployments+1 end
     if self.aiTimer:IsPastSimMS(self.aiInterval) then
         self.aiTimer:Reset()
         self:UpdateAI()
@@ -1722,7 +1808,7 @@ function Frontline:DrawPanel()
             local y=106+((i-1)%9)*23
             local price=self:ResearchCost(0,i)
             local locked=(r.kind=="tier" and r.tier>1 and t.tier<r.tier-1) or (r.requires and t.tier<r.requires)
-            local state=t.levels[i]>=r.max and "selected" or (locked and "locked" or (t.funds<price and "disabled" or "available"))
+            local state=(t.levels[i] or 0)>=r.max and "selected" or (locked and "locked" or (t.funds<price and "disabled" or "available"))
             local label=r.name.."  "..t.levels[i].."/"..r.max.."   "..price.." oz"
             button(15,y,325,label,state,function() local _,msg=self:Research(0,i); if msg~="Research complete" then self:Notify(msg) end end)
             if locked then text(350,y+3,"Prior tier") end
