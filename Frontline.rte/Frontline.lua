@@ -42,19 +42,28 @@ local CONFIG = {
         {name="Gatling Gun", preset="Gatling Gun", mod="Coalition.rte", price=120, unlock=2},
     },
     research = {
+        -- Tier 0: Basic upgrades available from start
         {name="Income +2/s", price=180, max=10, kind="income"},
         {name="Bounty +15", price=160, max=10, kind="bounty"},
-        {name="Unit: Coalition Heavy", price=200, max=1, kind="tier", tier=1},
-        {name="Unit: Dummy / Gatling Drone", price=350, max=1, kind="tier", tier=2},
-        {name="Unit: Browncoat", price=500, max=1, kind="tier", tier=3},
-        {name="Equipment: SMG", price=150, max=1, kind="equipment"},
-        {name="Equipment: Shotgun", price=160, max=1, kind="equipment"},
-        {name="Equipment: Sniper Rifle", price=180, max=1, kind="equipment", requires=1},
-        {name="Equipment: Missile Launcher", price=260, max=1, kind="equipment", requires=2},
-        {name="Support: More cover / mines", price=250, max=1, kind="support", requires=1},
-        {name="Support: Longer orbital burst (+24 rounds)", price=350, max=1, kind="support", requires=2},
         {name="Training: Perception +5%", price=250, max=10, kind="training"},
         {name="Industry: Mining squad", price=200, max=1, kind="mining"},
+        
+        -- Tier 1 unlocks (requires research)
+        {name="Unit: Coalition Heavy", price=200, max=1, kind="tier", tier=1},
+        {name="Equipment: SMG", price=150, max=1, kind="equipment"},
+        {name="Equipment: Shotgun", price=160, max=1, kind="equipment"},
+        
+        -- Tier 2 unlocks (requires tier 1)
+        {name="Unit: Dummy / Gatling Drone", price=350, max=1, kind="tier", tier=2},
+        {name="Equipment: Sniper Rifle", price=180, max=1, kind="equipment", requires=1},
+        {name="Support: More cover / mines", price=250, max=1, kind="support", requires=1},
+        
+        -- Tier 3 unlocks (requires tier 2)
+        {name="Unit: Browncoat", price=500, max=1, kind="tier", tier=3},
+        {name="Equipment: Missile Launcher", price=260, max=1, kind="equipment", requires=2},
+        {name="Support: Longer orbital burst (+24 rounds)", price=350, max=1, kind="support", requires=2},
+        
+        -- Equipment upgrades (available after basic unlocks)
         {name="Equipment: Assault Rifle", price=150, max=1, kind="equipment"},
         {name="Equipment: Medikit packs", price=200, max=1, kind="equipment"},
         {name="Equipment: Grenade packs", price=220, max=1, kind="equipment"},
