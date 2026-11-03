@@ -71,7 +71,7 @@ end
 
 local function freshTeam()
     return {funds=CONFIG.START_FUNDS, levels={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}, tier=0,
-        counts={2,0,0,0,0}, weapons={6,6,6,6,6,6,6}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), lastDeployCooldown=CONFIG.DEPLOY_COOLDOWN_MS, deaths=0, preset="Custom",        strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), turretTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
+        counts={2,0,0,0,0}, weapons={1,1,1,1,1,1,1}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), lastDeployCooldown=CONFIG.DEPLOY_COOLDOWN_MS, deaths=0, preset="Custom",        strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), turretTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
 end
 
 function Frontline:StartActivity()
