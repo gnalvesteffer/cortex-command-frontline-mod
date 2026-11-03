@@ -1,9 +1,8 @@
--- One small fan of physical fragments on the first impact, including direct hits.
-local FRAGMENT_COUNT = 9
+-- Radial explosion: fragments fly outward in all directions.
+local FRAGMENT_COUNT = 12
 local function fragment(self)
     if self.fragmented then return end
     self.fragmented = true
-    -- A small flash and a fan of shrapnel: no large bomb-sized blast.
     local flash = CreateMOSParticle("Explosion Smoke Small", "Base.rte")
     if flash then
         flash.Pos = self.Pos
@@ -14,8 +13,10 @@ local function fragment(self)
     for i = 1, FRAGMENT_COUNT do
         local shard = CreateMOPixel("Frontline Orbital Fragment", "Frontline.rte")
         if shard then
-            shard.Pos = self.Pos + Vector(0, -2)
-            shard.Vel = Vector((i - (FRAGMENT_COUNT + 1) / 2) * 9 + math.random(-5, 5), -math.random(18, 42))
+            local angle = (i - 1) * (2 * math.pi / FRAGMENT_COUNT) + math.random(-0.15, 0.15)
+            local speed = 18 + math.random(0, 24)
+            shard.Pos = self.Pos
+            shard.Vel = Vector(math.cos(angle) * speed, math.sin(angle) * speed)
             shard.Team = self.Team
             shard.IgnoresTeamHits = false
             MovableMan:AddParticle(shard)

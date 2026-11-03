@@ -825,8 +825,7 @@ function Frontline:CreateSupportShip(team,kind,count,x,startY)
     local payload={}
     for i=1,count do
         local item
-        if kind=="bomb" then item=CreateTDExplosive("Frontline Heavy Bomb","Frontline.rte")
-        elseif kind=="mines" then item=CreateMOSRotating("Anti Personnel Mine Active","Base.rte")
+        if kind=="mines" then item=CreateMOSRotating("Anti Personnel Mine Active","Base.rte")
         else item=CreateMOSRotating("Frontline Cover Pod","Frontline.rte") end
         if not item then return nil end
         item.Team=team
@@ -878,16 +877,24 @@ function Frontline:CallIn(team,kind,index)
         if not probe then return false,"Orbital ammunition unavailable" end
         table.insert(self.pendingOrbitals,{team=team,index=type(index)=="number" and index or nil,target=outpost,timer=Timer(),shots=0,total=CONFIG.CALLIN_ORBITAL_SHOTS+(t.levels[9]>0 and CONFIG.CALLIN_ORBITAL_BONUS_SHOTS or 0),sound=CreateSoundContainer("Frontline Orbital Gatling", "Frontline.rte")})
         self:Notify((team==0 and "Your" or "Enemy").." orbital Gatling cannon targeting "..outpost.name.."! Fragmentation; friendly fire!")
-    elseif kind=="bomb" or kind=="mines" or kind=="cover" then
-        local count=kind=="bomb" and 1 or (3+(t.levels[8]>0 and 2 or 0))
-        local startY=math.max(50,outpost.groundY-650)
-        local releaseY=math.max(startY,outpost.groundY-350)
-        local delay=kind=="bomb" and CONFIG.CALLIN_BOMB_DELAY_MS
-            or (kind=="mines" and CONFIG.CALLIN_MINES_DELAY_MS or CONFIG.CALLIN_COVER_DELAY_MS)
-        -- Verify the presets before charging, then build a fresh craft at arrival.
-        if not self:CreateSupportShip(team,kind,count,outpost.x,startY) then return false,"Support delivery preset unavailable" end
-        table.insert(self.pendingDrops,{team=team,kind=kind,target=outpost,timer=Timer(),delay=delay,
-            startY=startY,releaseY=releaseY,count=count,cost=cost})
+    elseif kind=="bomb" then
+        -- Plane flies across dropping a line of bomblets at intervals.
+        local plane = CreateMOParticle("Bomb Run Plane", "Frontline.rte")
+        if not plane then return false, "Bomb run aircraft unavailable" end
+        plane.Team = team
+        plane.TargetX = outpost.x
+        -- Start the plane to the left of the target and fly right
+        plane.Pos = Vector(outpost.x - 400, math.max(50, outpost.groundY - 350))
+        MovableMan:AddParticle(plane)
+        self:Notify((team==0 and "Your" or "Enemy").." bomb run inbound! Friendly fire!")
+    elseif kind=="mines" or kind=="cover" then
+        local count = 3 + (t.levels[8]>0 and 2 or 0)
+        local startY = math.max(50, outpost.groundY-650)
+        local releaseY = math.max(startY, outpost.groundY-350)
+        local delay = kind=="mines" and CONFIG.CALLIN_MINES_DELAY_MS or CONFIG.CALLIN_COVER_DELAY_MS
+        if not self:CreateSupportShip(team, kind, count, outpost.x, startY) then return false, "Support delivery preset unavailable" end
+        table.insert(self.pendingDrops, {team=team, kind=kind, target=outpost, timer=Timer(), delay=delay,
+            startY=startY, releaseY=releaseY, count=count, cost=cost})
         self:Notify((team==0 and "Your" or "Enemy").." "..kind.." dropship inbound ("..math.ceil(delay/1000).."s)!")
     else
         local wounded={}
