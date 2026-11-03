@@ -1,6 +1,6 @@
 -- Frontline balance and roster. All prices are in gold ounces.
 local CONFIG = {
-    DEPLOY_COOLDOWN_MS = 10000, -- Shared by manual and automatic deployment.
+    DEPLOY_COOLDOWN_MS = 10000, FORWARD_DEPLOY_COOLDOWN_MS = 20000, -- Shared by manual and automatic deployment.
     START_FUNDS = 450, INCOME_PER_SECOND = 5, BOUNTY = 35,
     TEAM_UNIT_CAP = 50, MAX_BATCH = 6,
     UNIT_ARMOR_COST = 60, UNIT_ARMOR_HEALTH = 50,
@@ -11,7 +11,7 @@ local CONFIG = {
     CALLIN_STRIKE_COST = 220, CALLIN_STRIKE_COOLDOWN_MS = 45000,
     CALLIN_STRIKE_DELAY_MS = 3000, CALLIN_PRECISION_HEIGHT = 600, CALLIN_PRECISION_SPEED = 60, CALLIN_PRECISION_FLIGHT_MS = 5000, CALLIN_MEDIC_COST = 120,
     CALLIN_MEDIC_COOLDOWN_MS = 30000, CALLIN_HEAL = 35,
-    CALLIN_COVER_COST = 140, CALLIN_COVER_COOLDOWN_MS = 40000,
+    CALLIN_COVER_COST = 140, CALLIN_COVER_COOLDOWN_MS = 40000, CALLIN_COVER_DELAY_MS = 4000,
     CALLIN_MINES_COST = 180, CALLIN_MINES_COOLDOWN_MS = 45000, CALLIN_MINES_DELAY_MS = 4000, SUPPORT_DROP_APPROACH_MS = 2000,
     CALLIN_BOMB_COST = 260, CALLIN_BOMB_COOLDOWN_MS = 55000, CALLIN_BOMB_DELAY_MS = 4000,
     CALLIN_ORBITAL_COST = 350, CALLIN_ORBITAL_COOLDOWN_MS = 75000,
@@ -69,7 +69,7 @@ end
 
 local function freshTeam()
     return {funds=CONFIG.START_FUNDS, levels={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}, tier=0,
-        counts={2,0,0,0,0}, weapons={6,6,6,6,6,6,6}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), deaths=0, preset="Custom", strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
+        counts={2,0,0,0,0}, weapons={6,6,6,6,6,6,6}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), lastDeployCooldown=CONFIG.DEPLOY_COOLDOWN_MS, deaths=0, preset="Custom", strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
 end
 
 function Frontline:StartActivity()
@@ -101,6 +101,7 @@ function Frontline:StartActivity()
         bomb=CreateSoundContainer("Frontline Bomb Drop","Frontline.rte"),
         orbital=CreateSoundContainer("Frontline Gatling Order","Frontline.rte"),
         mines=CreateSoundContainer("Frontline Mines Order","Frontline.rte"),
+        cover=CreateSoundContainer("Frontline Cover Order","Frontline.rte"),
     }
     for team=0,1 do
         self.teams[team].strikeTimer.ElapsedSimTimeMS=CONFIG.CALLIN_STRIKE_COOLDOWN_MS
@@ -136,7 +137,7 @@ function Frontline:StartActivity()
     self.noticeTimer=Timer()
     self.aiInterval=math.max(2000,6000-(self.Difficulty or 50)*40)
     self.tab="Setup"
-    for team=0,1 do self.teams[team].timer.ElapsedSimTimeMS=CONFIG.DEPLOY_COOLDOWN_MS end
+    for team=0,1 do self.teams[team].timer.ElapsedSimTimeMS=math.max(CONFIG.DEPLOY_COOLDOWN_MS,CONFIG.FORWARD_DEPLOY_COOLDOWN_MS) end
     -- Record the ground before placing bunker modules, which can themselves
     -- be hit by a downward terrain probe.
     self.baseGround={}
@@ -154,16 +155,33 @@ function Frontline:StartActivity()
             SceneMan:AddSceneObject(vault)
         end
     end
-    -- Attach two full bunker corridors to each vault. Their open ends keep
-    -- the route clear, and their reinforced roofs cover the approach.
+    -- Join a roofed approach directly to each vault, with a short end
+    -- segment and matching roof details. The corridor stays open to troops.
     for team=0,1 do
-        for _,distance in ipairs({365,461}) do
-            local corridor=CreateTerrainObject("Tunnel A","Base.rte")
+        local sections={{distance=340,preset="Tunnel A"},{distance=436,preset="Tunnel A"},{distance=508,preset="Tunnel B"}}
+        for _,section in ipairs(sections) do
+            local corridor=CreateTerrainObject(section.preset,"Base.rte")
             if corridor then
-                local x=team==0 and distance or SceneMan.SceneWidth-distance
-                corridor.Pos=Vector(x,self.baseGround[team]-24)
+                local x=team==0 and section.distance or SceneMan.SceneWidth-section.distance
+                corridor.Pos=Vector(x,self.baseGround[team]-40)
                 corridor.Team=team
                 SceneMan:AddSceneObject(corridor)
+            end
+        end
+        local upper=CreateTerrainObject("Tunnel A","Base.rte")
+        if upper then
+            local x=team==0 and 436 or SceneMan.SceneWidth-436
+            upper.Pos=Vector(x,self.baseGround[team]-136)
+            upper.Team=team
+            SceneMan:AddSceneObject(upper)
+        end
+        for _,detail in ipairs({{distance=340,height=100},{distance=436,height=196},{distance=508,height=100}}) do
+            local roof=CreateTerrainObject("Tut Roof Attachment","Base.rte")
+            if roof then
+                local x=team==0 and detail.distance-12 or SceneMan.SceneWidth-detail.distance-12
+                roof.Pos=Vector(x,self.baseGround[team]-detail.height)
+                roof.Team=team
+                SceneMan:AddSceneObject(roof)
             end
         end
     end
@@ -471,6 +489,14 @@ function Frontline:UpdateOrders()
     for id in pairs(self.orderAssignments) do if not alive[id] then self.orderAssignments[id]=nil end end
 end
 
+-- The last deployment and the selected destination both constrain the next
+-- batch, so switching destinations cannot shorten an active cooldown.
+function Frontline:DeployCooldown(team)
+    local t=self.teams[team]
+    local destination=t.forward>0 and CONFIG.FORWARD_DEPLOY_COOLDOWN_MS or CONFIG.DEPLOY_COOLDOWN_MS
+    return math.max(t.lastDeployCooldown or CONFIG.DEPLOY_COOLDOWN_MS,destination)
+end
+
 function Frontline:Deploy(team)
     local t=self.teams[team]
     local cost,count,err=self:Batch(team)
@@ -479,7 +505,7 @@ function Frontline:Deploy(team)
     if not self.battleStarted then return false,"Complete match setup first" end
     if t.forward>0 and self.outposts[t.forward].owner~=team then return false,"Forward outpost is not yours" end
     if not self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS) then return false,"Opening grace period" end
-    if not t.timer:IsPastSimMS(CONFIG.DEPLOY_COOLDOWN_MS) then return false,"Deployment cooling down" end
+    if not t.timer:IsPastSimMS(self:DeployCooldown(team)) then return false,"Deployment cooling down" end
     if t.funds<cost then return false,"Not enough funds" end
     if self:UnitCount(team)+count>self.settings.unitCap then return false,"Team unit cap reached" end
     -- Construct the complete batch before charging or adding anything to the world.
@@ -572,6 +598,7 @@ function Frontline:Deploy(team)
     end
     t.funds=t.funds-cost
     t.stats.deployed=t.stats.deployed+count
+    t.lastDeployCooldown=t.forward>0 and CONFIG.FORWARD_DEPLOY_COOLDOWN_MS or CONFIG.DEPLOY_COOLDOWN_MS
     t.timer:Reset()
     if team==0 then self:Notify(t.forward>0 and ("Dropship incoming: "..count.." units") or ("Squad deployed: "..count.." units")) end
     return true,"Batch deployed"
@@ -711,7 +738,8 @@ function Frontline:AutoReason(team)
     if not self.battleStarted then return "Match setup" end
     if not self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS) then return "Grace "..math.max(0,math.ceil((CONFIG.GRACE_MS-self.matchTimer.ElapsedSimTimeMS)/1000)).."s" end
     if t.forward>0 and self.outposts[t.forward].owner~=team then return "Forward post lost" end
-    if not t.timer:IsPastSimMS(CONFIG.DEPLOY_COOLDOWN_MS) then return "Cooldown "..math.max(0,math.ceil((CONFIG.DEPLOY_COOLDOWN_MS-t.timer.ElapsedSimTimeMS)/1000)).."s" end
+    local cooldown=self:DeployCooldown(team)
+    if not t.timer:IsPastSimMS(cooldown) then return "Cooldown "..math.max(0,math.ceil((cooldown-t.timer.ElapsedSimTimeMS)/1000)).."s" end
     if t.funds<cost then return "Need "..math.ceil(cost-t.funds).." oz" end
     if self:UnitCount(team)+count>self.settings.unitCap then return "Unit cap" end
     return "Ready"
@@ -792,7 +820,10 @@ function Frontline:CreateSupportShip(team,kind,count,x,startY)
     if not ship then return nil end
     local payload={}
     for i=1,count do
-        local item=kind=="bomb" and CreateTDExplosive("Frontline Heavy Bomb","Frontline.rte") or CreateMOSRotating("Anti Personnel Mine Active","Base.rte")
+        local item
+        if kind=="bomb" then item=CreateTDExplosive("Frontline Heavy Bomb","Frontline.rte")
+        elseif kind=="mines" then item=CreateMOSRotating("Anti Personnel Mine Active","Base.rte")
+        else item=CreateMOSRotating("Frontline Cover Pod","Frontline.rte") end
         if not item then return nil end
         item.Team=team
         if kind=="mines" then item.Sharpness=team end
@@ -843,38 +874,17 @@ function Frontline:CallIn(team,kind,index)
         if not probe then return false,"Orbital ammunition unavailable" end
         table.insert(self.pendingOrbitals,{team=team,index=type(index)=="number" and index or nil,target=outpost,timer=Timer(),shots=0,total=CONFIG.CALLIN_ORBITAL_SHOTS+(t.levels[9]>0 and CONFIG.CALLIN_ORBITAL_BONUS_SHOTS or 0),sound=CreateSoundContainer("Frontline Orbital Gatling", "Frontline.rte")})
         self:Notify((team==0 and "Your" or "Enemy").." orbital Gatling cannon targeting "..outpost.name.."! Fragmentation; friendly fire!")
-    elseif kind=="cover" then
-        -- Prepare cover in spaced positions clear of all actors.
-        local prepared={}
-        for _,dx in ipairs({-130,-65,0,65,130}) do
-            local x=outpost.x+dx
-            local occupied=false
-            for actor in MovableMan.Actors do
-                if math.abs(actor.Pos.X-x)<45 then occupied=true; break end
-            end
-            if not occupied then
-                local object=CreateTerrainObject(#prepared%2==0 and "Concrete Barrier" or "Metal Crate Small A FG","Base.rte")
-                if not object then return false,"Delivery preset unavailable" end
-                local ground=SceneMan:MovePointToGround(Vector(x,0),0,2)
-                object.Pos=ground+Vector(0,-22)
-                object.Team=team
-                table.insert(prepared,object)
-                if #prepared>=(3+(t.levels[8]>0 and 2 or 0)) then break end
-            end
-        end
-        if #prepared==0 then return false,"Area occupied; no safe delivery spots" end
-        for _,object in ipairs(prepared) do SceneMan:AddSceneObject(object) end
-        self:Notify("Cover delivered at "..outpost.name.." ("..#prepared..")")
-    elseif kind=="bomb" or kind=="mines" then
+    elseif kind=="bomb" or kind=="mines" or kind=="cover" then
         local count=kind=="bomb" and 1 or (3+(t.levels[8]>0 and 2 or 0))
         local startY=math.max(50,outpost.groundY-650)
         local releaseY=math.max(startY,outpost.groundY-350)
-        local delay=kind=="bomb" and CONFIG.CALLIN_BOMB_DELAY_MS or CONFIG.CALLIN_MINES_DELAY_MS
+        local delay=kind=="bomb" and CONFIG.CALLIN_BOMB_DELAY_MS
+            or (kind=="mines" and CONFIG.CALLIN_MINES_DELAY_MS or CONFIG.CALLIN_COVER_DELAY_MS)
         -- Verify the presets before charging, then build a fresh craft at arrival.
         if not self:CreateSupportShip(team,kind,count,outpost.x,startY) then return false,"Support delivery preset unavailable" end
         table.insert(self.pendingDrops,{team=team,kind=kind,target=outpost,timer=Timer(),delay=delay,
             startY=startY,releaseY=releaseY,count=count,cost=cost})
-        self:Notify((team==0 and "Your" or "Enemy").." "..kind.." dropship inbound ("..math.ceil(delay/1000).."s)! Friendly fire!")
+        self:Notify((team==0 and "Your" or "Enemy").." "..kind.." dropship inbound ("..math.ceil(delay/1000).."s)!")
     else
         local wounded={}
         for actor in MovableMan.Actors do
@@ -961,7 +971,7 @@ function Frontline:UpdateCallIns()
                     if item then
                         local spread=n-(order.count+1)/2
                         item.Pos=Vector(ship.Pos.X+spread*16,dropY)
-                        item.Vel=Vector(spread*8,10)
+                        item.Vel=Vector(spread*(order.kind=="cover" and 5 or 8),10)
                         item.Team=order.team
                         if order.kind=="bomb" then ToTDExplosive(item):Activate() end
                         MovableMan:AddParticle(item)
@@ -971,7 +981,8 @@ function Frontline:UpdateCallIns()
                 ship.CanEnterOrbit=true
                 ship.AIMode=Actor.AIMODE_RETURN
                 ship:SetControllerMode(Controller.CIM_AI,-1)
-                self:Notify(string.upper(order.kind).." delivered at "..target.name.."! Friendly fire!")
+                local warning=order.kind=="cover" and "" or "! Friendly fire!"
+                self:Notify(string.upper(order.kind).." delivered at "..target.name..warning)
                 table.remove(self.pendingDrops,i)
             end
         end
@@ -1611,7 +1622,7 @@ function Frontline:DrawPanel()
         end)
         text(310,181,"Advance: capture, then attack",true)
         text(310,193,"Defend: capture and hold",true)
-        text(310,205,"Forward spawn: +25 per unit",true)
+        text(310,205,"Forward: +25/unit, "..(CONFIG.FORWARD_DEPLOY_COOLDOWN_MS/1000).."s cooldown",true)
         text(310,217,"MED / GRN: +45 each",true)
         text(310,229,"ARM: +"..CONFIG.UNIT_ARMOR_COST.."/unit",true)
         text(15,266,"Squad presets: "..t.preset.." (changes current selection)")
@@ -1656,7 +1667,7 @@ function Frontline:DrawPanel()
         local medicLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_MEDIC_COOLDOWN_MS)-t.medicTimer.ElapsedSimTimeMS)/1000))
         button(15,122,205,"PRECISION "..CONFIG.CALLIN_STRIKE_COST.." oz  "..(strikeLeft>0 and strikeLeft.."s" or "READY"),strikeLeft==0 and t.funds>=CONFIG.CALLIN_STRIKE_COST and "available" or "disabled",function() self:BeginTargeting("strike") end)
         button(230,122,205,"MEDICS "..CONFIG.CALLIN_MEDIC_COST.." oz  "..(medicLeft>0 and medicLeft.."s" or "READY"),medicLeft==0 and t.funds>=CONFIG.CALLIN_MEDIC_COST and "available" or "disabled",function() self:BeginTargeting("medic") end)
-        text(15,143,"Precision: 3s warning | Bomb / mines: 4s until dropship; friendly fire.")
+        text(15,143,"Precision: 3s warning | Dropships: 4s until arrival.")
         local coverLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_COVER_COOLDOWN_MS)-t.coverTimer.ElapsedSimTimeMS)/1000))
         local minesLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_MINES_COOLDOWN_MS)-t.minesTimer.ElapsedSimTimeMS)/1000))
         local bombLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_BOMB_COOLDOWN_MS)-t.bombTimer.ElapsedSimTimeMS)/1000))

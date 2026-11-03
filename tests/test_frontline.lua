@@ -115,9 +115,15 @@ print('Call-in costs, cooldowns, targeting, warning delay, explosion and healing
 -- Cover and mines avoid occupied lanes and independently enforce cooldowns.
 ct.funds=2000
 local objectCount=#sceneObjects
-assert(c:CallIn(0,'cover',2)); assert(#sceneObjects>objectCount and ct.funds==1860)
+assert(c:CallIn(0,'cover',2)); assert(#sceneObjects==objectCount and ct.funds==1860 and #c.pendingDrops==1)
 assert(not c:CallIn(0,'cover',2)); assert(ct.funds==1860)
-local previous=MovableMan.particleCount
+local coverDrop=c.pendingDrops[1]; assert(coverDrop.kind=='cover' and coverDrop.count==3 and c.supportSounds.cover.playCount==1)
+local previous=MovableMan.particleCount or 0
+coverDrop.timer.ElapsedSimTimeMS=3999; c:UpdateCallIns(); assert(coverDrop.ship==nil and (MovableMan.particleCount or 0)==previous)
+coverDrop.timer.ElapsedSimTimeMS=4000; c:UpdateCallIns(); assert(coverDrop.ship and coverDrop.ship.InventorySize==3)
+coverDrop.arrivalTimer.ElapsedSimTimeMS=2000; c:UpdateCallIns()
+assert(#c.pendingDrops==0 and MovableMan.particleCount==previous+3 and MovableMan.lastParticle.name=='Frontline Cover Pod')
+previous=MovableMan.particleCount
 local markerText,previousText={},PrimitiveMan.DrawTextPrimitive
 PrimitiveMan.DrawTextPrimitive=function(_,pos,label,...) markerText[#markerText+1]=label end
 local shipCount=#actors
@@ -265,7 +271,7 @@ ai.funds=2000; bot:UpdateAI(); assert(#bot.pendingDrops==1 and bot.pendingDrops[
 ai.funds=2000; bot:UpdateAI(); assert(#bot.pendingOrbitals==2 and bot.pendingOrbitals[2].team==1 and ai.funds==1650)
 foe1.Pos=Vector(bot.outposts[3].x-260,565); foe2.Pos=Vector(bot.outposts[3].x-260,565)
 medic1.Health=100; medic2.Health=100; bot.pendingOrbitals={}; ai.funds=2000
-local oldObjects=#sceneObjects; bot:UpdateAI(); assert(#sceneObjects>oldObjects and ai.funds==1860)
+local oldDrops=#bot.pendingDrops; bot:UpdateAI(); assert(#bot.pendingDrops==oldDrops+1 and bot.pendingDrops[#bot.pendingDrops].kind=='cover' and ai.funds==1860)
 ai.funds=2000; bot:UpdateAI(); assert(bot.pendingDrops[#bot.pendingDrops].kind=='mines' and bot.pendingDrops[#bot.pendingDrops].team==1 and ai.funds==1820)
 print('AI can use bomb, orbital cannon, cover and mines through standard call-in rules')
 
@@ -507,7 +513,7 @@ assert(counter:CallIn(1,'cover',contested))
 print('Enemy jammer intercepts queued strikes and preserves friendly support')
 -- A jammer raised during the four-second wait cancels an incoming delivery
 -- before its ship appears and returns the purchase price.
-local activeJammer=counter.jamFields[1]; counter.jamFields={}
+local activeJammer=counter.jamFields[1]; counter.jamFields={}; counter.pendingDrops={}
 counter.teams[0].funds=2000; counter.teams[0].bombTimer.ElapsedSimTimeMS=55000
 assert(counter:CallIn(0,'bomb',contested)); local pendingBomb=counter.pendingDrops[1]
 local actorsBefore=#actors; counter.jamFields={activeJammer}
@@ -534,7 +540,7 @@ print('Enemy jammers suppress an active orbital burst until their field expires'
 -- receive the current order after disembarking. Destroyed craft free slots.
 actors={}; local transport=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 transport:StartActivity(); transport:StartBattle(); transport.matchTimer.ElapsedSimTimeMS=15001
-local tt=transport.teams[0]; tt.funds=5000; tt.timer.ElapsedSimTimeMS=10001; tt.levels[11]=1
+local tt=transport.teams[0]; tt.funds=5000; tt.timer.ElapsedSimTimeMS=20001; tt.levels[11]=1
 transport.outposts[2].owner=0; transport.settings.unitCap=6; tt.forward=2; tt.counts={5,0,0,0,0,1}
 local transportCost=transport:Batch(0); assert(transportCost==800)
 assert(transport:Deploy(0)); assert(tt.funds==4200 and #transport.deliveries==2 and transport:UnitCount(0)==6)
@@ -558,17 +564,17 @@ assert(#transport.deliveries==1 and transport:UnitCount(0)==4)
 -- Missing transport fails atomically, with neither cost nor cooldown consumed.
 actors={}; local missing=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 missing:StartActivity(); missing:StartBattle(); missing.matchTimer.ElapsedSimTimeMS=15001
-missing.outposts[1].owner=0; missing.teams[0].forward=1; missing.teams[0].funds=1000; missing.teams[0].timer.ElapsedSimTimeMS=10001
+missing.outposts[1].owner=0; missing.teams[0].forward=1; missing.teams[0].funds=1000; missing.teams[0].timer.ElapsedSimTimeMS=20001
 local originalFactory=CreateACDropShip; CreateACDropShip=function() return nil end
 local success,reason=missing:Deploy(0)
 CreateACDropShip=originalFactory
-assert(not success and reason:find('Dropship',1,true) and missing.teams[0].funds==1000 and missing.teams[0].timer.ElapsedSimTimeMS==10001 and #missing.deliveries==0)
+assert(not success and reason:find('Dropship',1,true) and missing.teams[0].funds==1000 and missing.teams[0].timer.ElapsedSimTimeMS==20001 and #missing.deliveries==0)
 print('Forward dropships reserve slots, deliver current orders, handle miners and release lost cargo slots')
 
 -- Craft loads respect both the native passenger and mass limits.
 actors={}; local payload=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 payload:StartActivity(); payload:StartBattle(); payload.matchTimer.ElapsedSimTimeMS=15001
-payload.outposts[2].owner=1; local pt=payload.teams[1]; pt.forward=2; pt.funds=5000; pt.timer.ElapsedSimTimeMS=10001; pt.counts={3,0,0,0,0,0}
+payload.outposts[2].owner=1; local pt=payload.teams[1]; pt.forward=2; pt.funds=5000; pt.timer.ElapsedSimTimeMS=20001; pt.counts={3,0,0,0,0,0}
 local originalHuman=CreateAHuman
 CreateAHuman=function(n,m) local unit=originalHuman(n,m); unit.Mass=500; return unit end
 assert(payload:Deploy(1)); assert(#payload.deliveries==3 and payload:UnitCount(1)==3)
@@ -577,10 +583,10 @@ for _,delivery in ipairs(payload.deliveries) do
 end
 actors={}; local overweight=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 CreateAHuman=originalHuman; overweight:StartActivity(); overweight:StartBattle(); overweight.matchTimer.ElapsedSimTimeMS=15001
-overweight.outposts[1].owner=0; local ot=overweight.teams[0]; ot.forward=1; ot.funds=1000; ot.timer.ElapsedSimTimeMS=10001; ot.counts={1,0,0,0,0,0}
+overweight.outposts[1].owner=0; local ot=overweight.teams[0]; ot.forward=1; ot.funds=1000; ot.timer.ElapsedSimTimeMS=20001; ot.counts={1,0,0,0,0,0}
 CreateAHuman=function(n,m) local unit=originalHuman(n,m); unit.Mass=900; return unit end
 local okHeavy,heavyReason=overweight:Deploy(0); CreateAHuman=originalHuman
-assert(not okHeavy and heavyReason:find('heavy',1,true) and ot.funds==1000 and ot.timer.ElapsedSimTimeMS==10001 and #overweight.deliveries==0)
+assert(not okHeavy and heavyReason:find('heavy',1,true) and ot.funds==1000 and ot.timer.ElapsedSimTimeMS==20001 and #overweight.deliveries==0)
 print('Dropship loads honor mass limits and reject overweight batches atomically')
 
 -- On taller scenes the craft starts at a consistent height above its landing zone.
@@ -588,10 +594,32 @@ local originalHighGround=SceneMan.MovePointToGround
 SceneMan.SceneWidth=15600; SceneMan.MovePointToGround=function(_,p) return Vector(p.X,1100) end
 actors={}; local highTransit=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 highTransit:StartActivity(); highTransit:StartBattle(); highTransit.matchTimer.ElapsedSimTimeMS=15001
-highTransit.outposts[1].owner=0; local ht=highTransit.teams[0]; ht.forward=1; ht.funds=1000; ht.timer.ElapsedSimTimeMS=10001; ht.counts={1,0,0,0,0,0}
+highTransit.outposts[1].owner=0; local ht=highTransit.teams[0]; ht.forward=1; ht.funds=1000; ht.timer.ElapsedSimTimeMS=20001; ht.counts={1,0,0,0,0,0}
 assert(highTransit:Deploy(0)); assert(highTransit.deliveries[1].ship.Pos.Y==450 and highTransit:UnitCount(0)==1)
 SceneMan.SceneWidth=5200; SceneMan.MovePointToGround=originalHighGround
 print('Forward dropship approach height follows tall battlefield terrain')
+
+-- Both deployment modes and sides share the effective cooldown. A new
+-- destination cannot bypass the prior deployment's longer interval.
+actors={}; local cooldowns=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+cooldowns:StartActivity(); cooldowns:StartBattle(); cooldowns.matchTimer.ElapsedSimTimeMS=15001
+cooldowns.DrawHUD=function() end; cooldowns.DrawOutpost=function() end; cooldowns.panel=false
+local side=cooldowns.teams[0]; side.funds=50000; side.counts={1,0,0,0,0,0}; side.auto=false
+cooldowns.teams[1].auto=false; cooldowns.outposts[2].owner=0
+assert(cooldowns:Deploy(0)); side.timer.ElapsedSimTimeMS=10000; side.forward=2
+assert(not cooldowns:Deploy(0) and cooldowns:AutoReason(0)=='Cooldown 10s')
+side.auto=true; cooldowns:SetTeamFunds(side.funds,0); local before=side.stats.deployed
+cooldowns:UpdateActivity(); assert(side.stats.deployed==before)
+side.auto=false; side.timer.ElapsedSimTimeMS=19999; assert(not cooldowns:Deploy(0))
+side.timer.ElapsedSimTimeMS=20000; assert(cooldowns:Deploy(0) and side.lastDeployCooldown==20000)
+side.forward=0; side.timer.ElapsedSimTimeMS=10000; assert(not cooldowns:Deploy(0))
+side.timer.ElapsedSimTimeMS=20000; assert(cooldowns:Deploy(0) and side.lastDeployCooldown==10000)
+side.timer.ElapsedSimTimeMS=10000; assert(cooldowns:Deploy(0))
+local enemy=cooldowns.teams[1]; cooldowns.outposts[3].owner=1; enemy.forward=3; enemy.funds=50000; enemy.counts={1,0,0,0,0,0}
+assert(cooldowns:Deploy(1)); enemy.forward=0; enemy.timer.ElapsedSimTimeMS=10000; assert(not cooldowns:Deploy(1))
+enemy.timer.ElapsedSimTimeMS=20000; assert(cooldowns:Deploy(1))
+print('Base and outpost cooldowns apply to manual, auto, destination changes, and both teams')
+
 
 -- Every support respects both teams' enemy-base exclusion before charging.
 actors={}; local restricted=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
@@ -664,3 +692,12 @@ assert(compactText==before)
 scoreboard:ClearCompactHUD()
 assert(compactCleared and not scoreboard.compactScreenText)
 print('Stock compact HUD uses camera-independent screen text and clears when hidden')
+
+-- A cover pod converts to a ground-aligned, destructible crate on impact.
+local podEnv=setmetatable({}, {__index=_G})
+local podScript=assert(loadfile('Frontline.rte/CoverPod.lua')); setfenv(podScript,podEnv); podScript()
+local pod={Pos=Vector(1200,560),Team=1}; local placedBefore=#sceneObjects
+podEnv.OnCollideWithTerrain(pod,1); podEnv.Update(pod)
+local crate=sceneObjects[#sceneObjects]
+assert(#sceneObjects==placedBefore+1 and crate.name=='Metal Crate Small A FG' and crate.Team==1 and crate.Pos.X==1188 and crate.Pos.Y==576 and pod.ToDelete)
+print('Cover pods become ground-aligned destructible crates')
