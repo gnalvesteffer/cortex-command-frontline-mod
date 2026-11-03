@@ -145,30 +145,16 @@ function Frontline:StartActivity()
             SceneMan:AddSceneObject(vault)
         end
     end
-    -- Low approach barricades add cover without blocking each base's exit.
+    -- Attach two full bunker corridors to each vault. Their open ends keep
+    -- the route clear, and their reinforced roofs cover the approach.
     for team=0,1 do
-        for _,distance in ipairs({590,720}) do
-            local x=team==0 and distance or SceneMan.SceneWidth-distance
-            local barrier=CreateTerrainObject("Concrete Barrier","Base.rte")
-            if barrier then
-                local ground=SceneMan:MovePointToGround(Vector(x,0),0,2)
-                barrier.Pos=ground+Vector(0,-22)
-                barrier.Team=team
-                SceneMan:AddSceneObject(barrier)
-            end
-        end
-    end
-    -- Reinforce each vault approach with a broken, two-layer barricade. The
-    -- offset leaves a walkable route while breaking direct fire into the room.
-    for team=0,1 do
-        for _,entry in ipairs({{x=330,y=-24},{x=365,y=-42},{x=365,y=-15}}) do
-            local wall=CreateTerrainObject("Concrete Barrier","Base.rte")
-            if wall then
-                local x=team==0 and entry.x or SceneMan.SceneWidth-entry.x
-                local ground=SceneMan:MovePointToGround(Vector(x,0),0,2)
-                wall.Pos=ground+Vector(0,entry.y)
-                wall.Team=team
-                SceneMan:AddSceneObject(wall)
+        for _,distance in ipairs({365,461}) do
+            local corridor=CreateTerrainObject("Tunnel A","Base.rte")
+            if corridor then
+                local x=team==0 and distance or SceneMan.SceneWidth-distance
+                corridor.Pos=Vector(x,self.baseGround[team]-24)
+                corridor.Team=team
+                SceneMan:AddSceneObject(corridor)
             end
         end
     end

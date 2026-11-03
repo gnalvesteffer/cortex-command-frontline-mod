@@ -279,7 +279,8 @@ large.teams[0].funds=1000
 local target={name='target area',x=3100,groundY=600,owner=-1}
 assert(large:CallIn(0,'strike',target)); assert(large.pendingStrikes[1].target==target)
 large.pendingStrikes[1].timer.ElapsedSimTimeMS=3000
-large:UpdateCallIns(); assert(#large.pendingStrikes==0)
+large:UpdateCallIns(); assert(#large.pendingStrikes==1 and MovableMan.lastParticle.name=="Frontline Precision Projectile")
+large.pendingStrikes[1].projectileTimer.ElapsedSimTimeMS=5000; large:UpdateCallIns(); assert(#large.pendingStrikes==0)
 -- Training upgrades improve existing and future troops for either team.
 actors={}; SceneMan.SceneWidth=5200
 local trained=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
