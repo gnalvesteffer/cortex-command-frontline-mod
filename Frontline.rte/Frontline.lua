@@ -14,6 +14,7 @@ local CONFIG = {
     CALLIN_COVER_COST = 140, CALLIN_COVER_COOLDOWN_MS = 40000, CALLIN_COVER_DELAY_MS = 4000,
     CALLIN_MINES_COST = 180, CALLIN_MINES_COOLDOWN_MS = 45000, CALLIN_MINES_DELAY_MS = 4000, SUPPORT_DROP_APPROACH_MS = 2000,
     CALLIN_BOMB_COST = 260, CALLIN_BOMB_COOLDOWN_MS = 55000, CALLIN_BOMB_DELAY_MS = 4000,
+    CALLIN_TURRET_COST = 300, CALLIN_TURRET_COOLDOWN_MS = 90000, CALLIN_TURRET_DELAY_MS = 4000,
     CALLIN_ORBITAL_COST = 175, CALLIN_ORBITAL_COOLDOWN_MS = 75000,
     CALLIN_ORBITAL_DELAY_MS = 3000, CALLIN_ORBITAL_SHOTS = 48, CALLIN_ORBITAL_BONUS_SHOTS = 24,
     CALLIN_ORBITAL_DURATION_MS = 5000, CALLIN_ORBITAL_RADIUS = 150,
@@ -33,7 +34,7 @@ local CONFIG = {
     },
     weapons = {
         {name="Pistol", preset="Pistol", mod="Base.rte", price=5, unlock=0},
-        {name="SMG", preset="SMG", mod="Base.rte", price=30, unlock=0},
+        {name="SMG", preset="SMG", mod="Base.rte", price=30, unlock=1},
         {name="Shotgun", preset="Shotgun", mod="Coalition.rte", price=25, unlock=1},
         {name="Assault Rifle", preset="Assault Rifle", mod="Coalition.rte", price=45, unlock=0, research=12},
         {name="Sniper Rifle", preset="Sniper Rifle", mod="Coalition.rte", price=70, unlock=1, research=6},
@@ -70,7 +71,7 @@ end
 
 local function freshTeam()
     return {funds=CONFIG.START_FUNDS, levels={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}, tier=0,
-        counts={2,0,0,0,0}, weapons={6,6,6,6,6,6,6}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), lastDeployCooldown=CONFIG.DEPLOY_COOLDOWN_MS, deaths=0, preset="Custom", strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
+        counts={2,0,0,0,0}, weapons={6,6,6,6,6,6,6}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), lastDeployCooldown=CONFIG.DEPLOY_COOLDOWN_MS, deaths=0, preset="Custom",        strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), turretTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
 end
 
 function Frontline:StartActivity()
@@ -110,6 +111,7 @@ function Frontline:StartActivity()
         self.teams[team].coverTimer.ElapsedSimTimeMS=CONFIG.CALLIN_COVER_COOLDOWN_MS
         self.teams[team].minesTimer.ElapsedSimTimeMS=CONFIG.CALLIN_MINES_COOLDOWN_MS
         self.teams[team].bombTimer.ElapsedSimTimeMS=CONFIG.CALLIN_BOMB_COOLDOWN_MS
+        self.teams[team].turretTimer.ElapsedSimTimeMS=CONFIG.CALLIN_TURRET_COOLDOWN_MS
         self.teams[team].orbitalTimer.ElapsedSimTimeMS=CONFIG.CALLIN_ORBITAL_COOLDOWN_MS
         self.teams[team].shieldTimer.ElapsedSimTimeMS=CONFIG.CALLIN_SHIELD_COOLDOWN_MS
     end
@@ -826,6 +828,7 @@ function Frontline:CreateSupportShip(team,kind,count,x,startY)
     for i=1,count do
         local item
         if kind=="bomb" then item=CreateTDExplosive("Frontline Heavy Bomb","Frontline.rte")
+        elseif kind=="turret" then item=CreateACrab("Gatling Turret","Coalition.rte")
         elseif kind=="mines" then item=CreateMOSRotating("Anti Personnel Mine Active","Base.rte")
         else item=CreateMOSRotating("Frontline Cover Pod","Frontline.rte") end
         if not item then return nil end
@@ -857,6 +860,7 @@ function Frontline:CallIn(team,kind,index)
         cover={timer=t.coverTimer,cooldown=CONFIG.CALLIN_COVER_COOLDOWN_MS,cost=CONFIG.CALLIN_COVER_COST},
         mines={timer=t.minesTimer,cooldown=CONFIG.CALLIN_MINES_COOLDOWN_MS,cost=CONFIG.CALLIN_MINES_COST},
         bomb={timer=t.bombTimer,cooldown=CONFIG.CALLIN_BOMB_COOLDOWN_MS,cost=CONFIG.CALLIN_BOMB_COST},
+        turret={timer=t.turretTimer,cooldown=CONFIG.CALLIN_TURRET_COOLDOWN_MS,cost=CONFIG.CALLIN_TURRET_COST},
         orbital={timer=t.orbitalTimer,cooldown=CONFIG.CALLIN_ORBITAL_COOLDOWN_MS,cost=CONFIG.CALLIN_ORBITAL_COST},
         shield={timer=t.shieldTimer,cooldown=CONFIG.CALLIN_SHIELD_COOLDOWN_MS,cost=CONFIG.CALLIN_SHIELD_COST},
     }
@@ -887,6 +891,12 @@ function Frontline:CallIn(team,kind,index)
         table.insert(self.pendingDrops, {team=team, kind="bomb", target=outpost, timer=Timer(), delay=CONFIG.CALLIN_BOMB_DELAY_MS,
             startY=startY, releaseY=releaseY, count=count, cost=cost})
         self:Notify((team==0 and "Your" or "Enemy").." bomb run inbound (3 bombs)! Friendly fire!")
+    elseif kind=="turret" then
+        -- Static turret dropped at target location.
+        if not self:CreateSupportShip(team, "turret", 1, outpost.x, math.max(50, outpost.groundY-650)) then return false, "Turret dropship unavailable" end
+        table.insert(self.pendingDrops, {team=team, kind="turret", target=outpost, timer=Timer(), delay=CONFIG.CALLIN_TURRET_DELAY_MS,
+            startY=math.max(50, outpost.groundY-650), releaseY=math.max(50, outpost.groundY-350), count=1, cost=cost})
+        self:Notify((team==0 and "Your" or "Enemy").." turret dropship inbound (4s)!")
     elseif kind=="mines" or kind=="cover" then
         local count = 3 + (t.levels[8]>0 and 2 or 0)
         local startY = math.max(50, outpost.groundY-650)
@@ -990,6 +1000,17 @@ function Frontline:UpdateCallIns()
                             ToTDExplosive(item):Activate()
                             MovableMan:AddParticle(item)
                         end
+                    end
+                elseif order.kind=="turret" then
+                    -- Place turret on ground at target location.
+                    local item=ship:RemoveInventoryItemAtIndex(0)
+                    if item then
+                        local ground=SceneMan:MovePointToGround(Vector(ship.Pos.X,0),0,4)
+                        item.Pos=Vector(ship.Pos.X,ground.Y-12)
+                        item.Team=order.team
+                        item.AIMode=Actor.AIMODE_SENTRY
+                        item.PinStrength=100000
+                        MovableMan:AddActor(item)
                     end
                 else
                     ship:OpenHatch()
@@ -1606,7 +1627,7 @@ function Frontline:DrawPanel()
             end)
             local weapon=CONFIG.weapons[t.weapons[i] or 6]
             local special=r.vehicle or r.miner
-            button(15,y+14,special and 238 or 100,(r.vehicle and "Built-in gatling" or (r.miner and "FIXED: Pistol + Light Digger (+25/unit)" or (weapon.name.." +"..weapon.price))),unlocked and "available" or "locked",function(step)
+            button(15,y+14,special and 238 or 100,(r.vehicle and "Built-in gatling" or (r.miner and "FIXED: Pistol + Light Digger (+25/unit)" or (weapon.name.." +"..weapon.price))),unlocked and weaponUnlocked(t,weapon) and "available" or "locked",function(step)
                 if unlocked and not special then
                     local nextIndex=((t.weapons[i] or 6)-1+step)%#CONFIG.weapons+1
                     while not weaponUnlocked(t,CONFIG.weapons[nextIndex]) do nextIndex=(nextIndex-1+step)%#CONFIG.weapons+1 end
@@ -1702,11 +1723,13 @@ function Frontline:DrawPanel()
         button(15,159,135,"COVER "..CONFIG.CALLIN_COVER_COST.." "..(coverLeft>0 and coverLeft.."s" or "READY"),coverLeft==0 and t.funds>=CONFIG.CALLIN_COVER_COST and "available" or "disabled",function() self:BeginTargeting("cover") end)
         button(155,159,135,"MINES "..CONFIG.CALLIN_MINES_COST.." "..(minesLeft>0 and minesLeft.."s" or "READY"),minesLeft==0 and t.funds>=CONFIG.CALLIN_MINES_COST and "available" or "disabled",function() self:BeginTargeting("mines") end)
         button(295,159,135,"BOMB "..CONFIG.CALLIN_BOMB_COST.." "..(bombLeft>0 and bombLeft.."s" or "READY"),bombLeft==0 and t.funds>=CONFIG.CALLIN_BOMB_COST and "available" or "disabled",function() self:BeginTargeting("bomb") end)
+        local turretLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_TURRET_COOLDOWN_MS)-t.turretTimer.ElapsedSimTimeMS)/1000))
+        button(15,181,205,"STATIC TURRET "..CONFIG.CALLIN_TURRET_COST.." "..(turretLeft>0 and turretLeft.."s" or "READY"),turretLeft==0 and t.funds>=CONFIG.CALLIN_TURRET_COST and "available" or "disabled",function() self:BeginTargeting("turret") end)
         local orbitalLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_ORBITAL_COOLDOWN_MS)-t.orbitalTimer.ElapsedSimTimeMS)/1000))
-        button(15,181,205,"ORBITAL GATLING CANNON "..CONFIG.CALLIN_ORBITAL_COST.." "..(orbitalLeft>0 and orbitalLeft.."s" or "READY"),orbitalLeft==0 and t.funds>=CONFIG.CALLIN_ORBITAL_COST and "available" or "disabled",function() self:BeginTargeting("orbital") end)
+        button(15,203,205,"ORBITAL GATLING CANNON "..CONFIG.CALLIN_ORBITAL_COST.." "..(orbitalLeft>0 and orbitalLeft.."s" or "READY"),orbitalLeft==0 and t.funds>=CONFIG.CALLIN_ORBITAL_COST and "available" or "disabled",function() self:BeginTargeting("orbital") end)
         text(225,185,CONFIG.CALLIN_ORBITAL_SHOTS.." frag rounds; 5s burst; friendly fire",true)
         local shieldLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_SHIELD_COOLDOWN_MS)-t.shieldTimer.ElapsedSimTimeMS)/1000))
-        button(15,207,205,"JAMMER "..CONFIG.CALLIN_SHIELD_COST.." "..(shieldLeft>0 and shieldLeft.."s" or "READY"),shieldLeft==0 and t.funds>=CONFIG.CALLIN_SHIELD_COST and "available" or "disabled",function() self:BeginTargeting("shield") end)
+        button(15,225,205,"JAMMER "..CONFIG.CALLIN_SHIELD_COST.." "..(shieldLeft>0 and shieldLeft.."s" or "READY"),shieldLeft==0 and t.funds>=CONFIG.CALLIN_SHIELD_COST and "available" or "disabled",function() self:BeginTargeting("shield") end)
         text(15,230,"Jammer: place anywhere to disrupt enemy support for 20s.")
         text(15,245,"Blocks hostile call-ins aimed inside the outlined area.")
         text(15,260,"Does not stop weapons, grenades, or bombs already falling.")
