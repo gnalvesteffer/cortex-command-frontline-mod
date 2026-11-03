@@ -14,7 +14,7 @@ local CONFIG = {
     CALLIN_COVER_COST = 140, CALLIN_COVER_COOLDOWN_MS = 40000, CALLIN_COVER_DELAY_MS = 4000,
     CALLIN_MINES_COST = 180, CALLIN_MINES_COOLDOWN_MS = 45000, CALLIN_MINES_DELAY_MS = 4000, SUPPORT_DROP_APPROACH_MS = 2000,
     CALLIN_BOMB_COST = 260, CALLIN_BOMB_COOLDOWN_MS = 55000, CALLIN_BOMB_DELAY_MS = 4000,
-    CALLIN_ORBITAL_COST = 350, CALLIN_ORBITAL_COOLDOWN_MS = 75000,
+    CALLIN_ORBITAL_COST = 175, CALLIN_ORBITAL_COOLDOWN_MS = 75000,
     CALLIN_ORBITAL_DELAY_MS = 3000, CALLIN_ORBITAL_SHOTS = 48, CALLIN_ORBITAL_BONUS_SHOTS = 24,
     CALLIN_ORBITAL_DURATION_MS = 5000, CALLIN_ORBITAL_RADIUS = 150,
     CALLIN_ORBITAL_HEIGHT = 350, CALLIN_ORBITAL_SPEED = 150, CALLIN_ORBITAL_SOUND_EVERY = 4,
@@ -32,13 +32,13 @@ local CONFIG = {
         {name="Ronin Bandit", actor="Bandit", mod="Ronin.rte", price=50, unlock=0},
     },
     weapons = {
-        {name="Assault Rifle", preset="Assault Rifle", mod="Coalition.rte", price=30, unlock=0, research=12},
-        {name="Shotgun", preset="Shotgun", mod="Coalition.rte", price=45, unlock=1},
-        {name="Gatling Gun", preset="Gatling Gun", mod="Coalition.rte", price=80, unlock=2},
-        {name="Sniper Rifle", preset="Sniper Rifle", mod="Coalition.rte", price=65, unlock=1, research=6},
+        {name="Pistol", preset="Pistol", mod="Base.rte", price=5, unlock=0},
+        {name="SMG", preset="SMG", mod="Base.rte", price=30, unlock=0},
+        {name="Shotgun", preset="Shotgun", mod="Coalition.rte", price=25, unlock=1},
+        {name="Assault Rifle", preset="Assault Rifle", mod="Coalition.rte", price=45, unlock=0, research=12},
+        {name="Sniper Rifle", preset="Sniper Rifle", mod="Coalition.rte", price=70, unlock=1, research=6},
         {name="Missile Launcher", preset="Missile Launcher", mod="Coalition.rte", price=95, unlock=2, research=7},
-        {name="SMG", preset="SMG", mod="Base.rte", price=15, unlock=0},
-        {name="Pistol", preset="Pistol", mod="Base.rte", price=10, unlock=0},
+        {name="Gatling Gun", preset="Gatling Gun", mod="Coalition.rte", price=120, unlock=2},
     },
     research = {
         {name="Income +2/s", price=180, max=10, kind="income"},
@@ -825,7 +825,8 @@ function Frontline:CreateSupportShip(team,kind,count,x,startY)
     local payload={}
     for i=1,count do
         local item
-        if kind=="mines" then item=CreateMOSRotating("Anti Personnel Mine Active","Base.rte")
+        if kind=="bomb" then item=CreateTDExplosive("Frontline Heavy Bomb","Frontline.rte")
+        elseif kind=="mines" then item=CreateMOSRotating("Anti Personnel Mine Active","Base.rte")
         else item=CreateMOSRotating("Frontline Cover Pod","Frontline.rte") end
         if not item then return nil end
         item.Team=team
@@ -878,15 +879,14 @@ function Frontline:CallIn(team,kind,index)
         table.insert(self.pendingOrbitals,{team=team,index=type(index)=="number" and index or nil,target=outpost,timer=Timer(),shots=0,total=CONFIG.CALLIN_ORBITAL_SHOTS+(t.levels[9]>0 and CONFIG.CALLIN_ORBITAL_BONUS_SHOTS or 0),sound=CreateSoundContainer("Frontline Orbital Gatling", "Frontline.rte")})
         self:Notify((team==0 and "Your" or "Enemy").." orbital Gatling cannon targeting "..outpost.name.."! Fragmentation; friendly fire!")
     elseif kind=="bomb" then
-        -- Plane flies across dropping a line of bomblets at intervals.
-        local plane = CreateMOPixel("Bomb Run Plane", "Frontline.rte")
-        if not plane then return false, "Bomb run aircraft unavailable" end
-        plane.Team = team
-        plane.TargetX = outpost.x
-        -- Start the plane to the left of the target and fly right
-        plane.Pos = Vector(outpost.x - 400, math.max(50, outpost.groundY - 350))
-        MovableMan:AddParticle(plane)
-        self:Notify((team==0 and "Your" or "Enemy").." bomb run inbound! Friendly fire!")
+        -- Dropship flies across target area dropping 3 bombs at intervals.
+        local count = 3
+        local startY = math.max(50, outpost.groundY-650)
+        local releaseY = math.max(startY, outpost.groundY-350)
+        if not self:CreateSupportShip(team, "bomb", count, outpost.x, startY) then return false, "Bomb dropship unavailable" end
+        table.insert(self.pendingDrops, {team=team, kind="bomb", target=outpost, timer=Timer(), delay=CONFIG.CALLIN_BOMB_DELAY_MS,
+            startY=startY, releaseY=releaseY, count=count, cost=cost})
+        self:Notify((team==0 and "Your" or "Enemy").." bomb run inbound (3 bombs)! Friendly fire!")
     elseif kind=="mines" or kind=="cover" then
         local count = 3 + (t.levels[8]>0 and 2 or 0)
         local startY = math.max(50, outpost.groundY-650)
