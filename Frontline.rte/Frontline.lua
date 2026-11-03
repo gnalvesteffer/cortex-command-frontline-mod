@@ -975,17 +975,34 @@ function Frontline:UpdateCallIns()
             else
                 -- Opening a hatch early ejects cargo automatically, so wait
                 -- until the craft has arrived at the release point.
-                ship:OpenHatch()
-                local dropY=ship.Pos.Y+(ship.Radius or 50)+12
-                for n=1,order.count do
-                    local item=ship:RemoveInventoryItemAtIndex(0)
-                    if item then
-                        local spread=n-(order.count+1)/2
-                        item.Pos=Vector(ship.Pos.X+spread*16,dropY)
-                        item.Vel=Vector(spread*(order.kind=="cover" and 5 or 8),10)
-                        item.Team=order.team
-                        if order.kind=="bomb" then ToTDExplosive(item):Activate() end
-                        MovableMan:AddParticle(item)
+                if order.kind=="bomb" then
+                    -- Drop bombs along flight path with horizontal spread.
+                    local dropY=ship.Pos.Y+(ship.Radius or 50)+12
+                    for n=1,order.count do
+                        local item=ship:RemoveInventoryItemAtIndex(0)
+                        if item then
+                            -- Spread bombs horizontally across the target area.
+                            local spreadX = (n-2) * 80
+                            local dropPos = Vector(ship.Pos.X + spreadX, dropY)
+                            item.Pos = dropPos
+                            item.Vel = Vector(0, 30)
+                            item.Team = order.team
+                            ToTDExplosive(item):Activate()
+                            MovableMan:AddParticle(item)
+                        end
+                    end
+                else
+                    ship:OpenHatch()
+                    local dropY=ship.Pos.Y+(ship.Radius or 50)+12
+                    for n=1,order.count do
+                        local item=ship:RemoveInventoryItemAtIndex(0)
+                        if item then
+                            local spread=n-(order.count+1)/2
+                            item.Pos=Vector(ship.Pos.X+spread*16,dropY)
+                            item.Vel=Vector(spread*(order.kind=="cover" and 5 or 8),10)
+                            item.Team=order.team
+                            MovableMan:AddParticle(item)
+                        end
                     end
                 end
                 ship.PinStrength=0
