@@ -25,52 +25,64 @@ local CONFIG = {
     BASE_TOWER_DISTANCE = 436, BASE_TOWER_HEIGHT = 136, BASE_TURRET_HEIGHT = 121,
     roster = {
         {name="Coalition Light", actor="Soldier Light", mod="Coalition.rte", price=75, unlock=0, research=1},
-        {name="Coalition Heavy", actor="Soldier Heavy", mod="Coalition.rte", price=120, unlock=1},
-        {name="Dummy", actor="Dummy", mod="Dummy.rte", price=30, unlock=1},
-        {name="Browncoat Light", actor="Browncoat", mod="Browncoats.rte", price=145, unlock=3},
-        {name="Gatling Drone", actor="Gatling Drone", mod="Coalition.rte", price=260, unlock=2, vehicle=true},
-        {name="Miner", actor="Soldier Light", mod="Coalition.rte", price=100, unlock=0, research=11, miner=true},
+        {name="Coalition Heavy", actor="Soldier Heavy", mod="Coalition.rte", price=120, unlock=1, research=4},
+        {name="Dummy", actor="Dummy", mod="Dummy.rte", price=30, unlock=2, research=5},
+        {name="Browncoat Light", actor="Browncoat", mod="Browncoats.rte", price=145, unlock=3, research=6},
+        {name="Gatling Drone", actor="Gatling Drone", mod="Coalition.rte", price=260, unlock=2, research=5, vehicle=true},
         {name="Ronin Bandit", actor="Bandit", mod="Ronin.rte", price=50, unlock=0},
     },
     weapons = {
         {name="Pistol", preset="Pistol", mod="Base.rte", price=5, unlock=0},
-        {name="SMG", preset="SMG", mod="Base.rte", price=30, unlock=0, research=6},
-        {name="Shotgun", preset="Shotgun", mod="Coalition.rte", price=25, unlock=0, research=7},
-        {name="Assault Rifle", preset="Assault Rifle", mod="Coalition.rte", price=45, unlock=0, research=14},
-        {name="Sniper Rifle", preset="Sniper Rifle", mod="Coalition.rte", price=70, unlock=0, research=8},
-        {name="Missile Launcher", preset="Missile Launcher", mod="Coalition.rte", price=95, unlock=2, research=9},
+        {name="SMG", preset="SMG", mod="Base.rte", price=30, unlock=0, research=7},
+        {name="Shotgun", preset="Shotgun", mod="Coalition.rte", price=25, unlock=0, research=8},
+        {name="Assault Rifle", preset="Assault Rifle", mod="Coalition.rte", price=45, unlock=0, research=17},
+        {name="Sniper Rifle", preset="Sniper Rifle", mod="Coalition.rte", price=70, unlock=0, research=9},
+        {name="Missile Launcher", preset="Missile Launcher", mod="Coalition.rte", price=95, unlock=2, research=10},
         {name="Gatling Gun", preset="Gatling Gun", mod="Coalition.rte", price=120, unlock=2},
     },
     research = {
-        -- Tier 0: Basic upgrades available from start
+        -- Unit unlocks
+        {name="Unit: Coalition Light", price=150, max=1, kind="unit"},
         {name="Income +2/s", price=180, max=10, kind="income"},
         {name="Bounty +15", price=160, max=10, kind="bounty"},
-        {name="Training: Perception +5%", price=250, max=10, kind="training"},
-        {name="Industry: Mining squad", price=200, max=1, kind="mining"},
+        {name="Unit: Coalition Heavy", price=250, max=1, kind="unit", requires=1},
+        {name="Unit: Dummy / Gatling Drone", price=350, max=1, kind="unit", requires=4},
+        {name="Unit: Browncoat Light", price=500, max=1, kind="unit", requires=5},
         
-        -- Tier 1 unlocks (requires research)
-        {name="Unit: Coalition Heavy", price=200, max=1, kind="tier", tier=1},
+        -- Equipment unlocks
         {name="Equipment: SMG", price=150, max=1, kind="equipment"},
         {name="Equipment: Shotgun", price=160, max=1, kind="equipment"},
+        {name="Equipment: Sniper Rifle", price=180, max=1, kind="equipment"},
+        {name="Equipment: Missile Launcher", price=260, max=1, kind="equipment"},
         
-        -- Tier 2 unlocks (requires tier 1)
-        {name="Unit: Dummy / Gatling Drone", price=350, max=1, kind="tier", tier=2},
-        {name="Equipment: Sniper Rifle", price=180, max=1, kind="equipment", requires=1},
-        {name="Support: More cover / mines", price=250, max=1, kind="support", requires=1},
+        -- Support unlocks (multi-level)
+        {name="Support: Medic Lv.1 (+50 HP heal)", price=200, max=1, kind="support"},
+        {name="Support: Medic Lv.2 (+100 HP heal)", price=350, max=1, kind="support", requires=11},
+        {name="Support: Shield Lv.1 (60s duration)", price=250, max=1, kind="support"},
+        {name="Support: Shield Lv.2 (90s duration)", price=400, max=1, kind="support", requires=13},
         
-        -- Tier 3 unlocks (requires tier 2)
-        {name="Unit: Browncoat", price=500, max=1, kind="tier", tier=3},
-        {name="Equipment: Missile Launcher", price=260, max=1, kind="equipment", requires=2},
-        {name="Support: Longer orbital burst (+24 rounds)", price=350, max=1, kind="support", requires=2},
+        -- Industry
+        {name="Industry: Mining squad call-in", price=200, max=1, kind="mining"},
         
-        -- Equipment upgrades (available after basic unlocks)
+        -- Training and additional equipment
+        {name="Training: Perception +5%", price=250, max=10, kind="training"},
         {name="Equipment: Assault Rifle", price=150, max=1, kind="equipment"},
         {name="Equipment: Medikit packs", price=200, max=1, kind="equipment"},
         {name="Equipment: Grenade packs", price=220, max=1, kind="equipment"},
         {name="Equipment: Sidearms", price=180, max=1, kind="equipment"},
         {name="Equipment: Unit armor (+50 HP)", price=260, max=1, kind="equipment"},
-    }
+
+        -- Support delivery unlocks. Advanced weapons build from a basic strike;
+        -- defensive deliveries progress from cover to mines to a turret.
+        {name="Support: Precision strike", price=180, max=1, kind="support"},
+        {name="Support: Cover delivery", price=140, max=1, kind="support"},
+        {name="Support: Minefield delivery", price=180, max=1, kind="support", requires=23},
+        {name="Support: Bomb run", price=220, max=1, kind="support", requires=22},
+        {name="Support: Static turret", price=260, max=1, kind="support", requires=24},
+        {name="Support: Orbital Gatling", price=300, max=1, kind="support", requires=25},
 }
+}
+local SUPPORT_RESEARCH={strike=22,medic=11,cover=23,mines=24,bomb=25,turret=26,orbital=27,shield=13,mining=15}
 
 -- A right click walks through the same ordered options in reverse.
 local function cycleOption(options,current,direction)
@@ -81,9 +93,37 @@ local function cycleOption(options,current,direction)
 end
 
 local function freshTeam()
-    return {funds=CONFIG.START_FUNDS, levels={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}, tier=0,
-        counts={0,0,0,0,0,0,2}, weapons={1,1,1,1,1,1,1}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), lastDeployCooldown=CONFIG.DEPLOY_COOLDOWN_MS, deaths=0, preset="Custom",        strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), turretTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
+    local levels={}
+    for i=1,#CONFIG.research do levels[i]=0 end
+    return {funds=CONFIG.START_FUNDS, levels=levels, tier=0,
+        counts={0,0,0,0,0,2}, weapons={1,1,1,1,1,1}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), lastDeployCooldown=CONFIG.DEPLOY_COOLDOWN_MS, deaths=0, preset="Custom",        strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), turretTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), baseArmor=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
 end
+local RESEARCH_PAGES={
+    {title="FOUNDATIONS",columns={
+        {title="ECONOMY",items={2,3,16}},
+        {title="INFANTRY",items={1,4,5,6}},
+    }},
+    {title="ARSENAL",columns={
+        {title="WEAPONS",items={7,8,9,10,17}},
+        {title="EQUIPMENT",items={18,19,20,21}},
+    }},
+    {title="SUPPORT NETWORK",columns={
+        {title="MEDIC / INDUSTRY",items={11,12,15}},
+        {title="DEFENSE",items={13,14,23,24,26}},
+        {title="OFFENSE",items={22,25,27}},
+    }},
+}
+local RESEARCH_LABELS={
+    [1]="Coalition Light", [2]="Income +2/s", [3]="Bounty +15",
+    [4]="Coalition Heavy", [5]="Dummy / Gatling", [6]="Browncoat Light",
+    [7]="SMG", [8]="Shotgun", [9]="Sniper Rifle", [10]="Missile Launcher",
+    [11]="MEDIC I +50", [12]="MEDIC II +100",
+    [13]="SHIELD I 60s", [14]="SHIELD II 90s",
+    [15]="Mining Call-In", [16]="Perception +5%", [17]="Assault Rifle",
+    [18]="Medikit Packs", [19]="Grenade Packs", [20]="Sidearms", [21]="Unit Armor",
+    [22]="Strike", [23]="Cover", [24]="Mines", [25]="Bombs",
+    [26]="Turret", [27]="Orbital",
+}
 
 function Frontline:StartActivity()
     self.originalHudDisabled=FrameMan:IsHudDisabled(0)
@@ -408,7 +448,7 @@ function Frontline:UpdateDeliveries()
         local passenger=self.inTransit[actor.UniqueID]
         if passenger then
             self.inTransit[actor.UniqueID]=nil
-            actor.Perceptiveness=math.min(1,0.5+0.05*(self.teams[passenger.team].levels[10] or 0))
+            actor.Perceptiveness=math.min(1,0.5+0.05*(self.teams[passenger.team].levels[16] or 0))
             if passenger.miner then
                 self.miners[actor.UniqueID]={}
                 self:UpdateMiner(actor,self.miners[actor.UniqueID])
@@ -442,14 +482,14 @@ function Frontline:Batch(team)
         if n>0 and not entry.vehicle and not entry.miner and not weaponUnlocked(t,weapon) then return nil,nil,"Weapon is locked" end
         if n>0 and (entry.unlock>t.tier or (entry.research and (t.levels[entry.research] or 0)==0)) then return nil,nil,"Unit is locked" end
         count=count+n
-        if n>0 and t.armor[i] and (t.levels[16] or 0)==0 then return nil,nil,"Unit armor is locked" end
+        if n>0 and t.armor[i] and (t.levels[21] or 0)==0 then return nil,nil,"Unit armor is locked" end
         local extra=t.armor[i] and CONFIG.UNIT_ARMOR_COST or 0
         if not entry.vehicle and not entry.miner then
             local sidearm=t.sidearms[i] or 0
-            if n>0 and sidearm>0 and (t.levels[15] or 0)==0 then return nil,nil,"Sidearms are locked" end
-            if n>0 and sidearm==2 and (t.levels[7] or 0)==0 then return nil,nil,"Rocket sidearm is locked" end
-            if n>0 and t.medkits[i] and (t.levels[13] or 0)==0 then return nil,nil,"Medikits are locked" end
-            if n>0 and t.grenades[i] and (t.levels[14] or 0)==0 then return nil,nil,"Grenades are locked" end
+            if n>0 and sidearm>0 and (t.levels[20] or 0)==0 then return nil,nil,"Sidearms are locked" end
+            if n>0 and sidearm==2 and (t.levels[10] or 0)==0 then return nil,nil,"Rocket sidearm is locked" end
+            if n>0 and t.medkits[i] and (t.levels[18] or 0)==0 then return nil,nil,"Medikits are locked" end
+            if n>0 and t.grenades[i] and (t.levels[19] or 0)==0 then return nil,nil,"Grenades are locked" end
             extra=extra+(sidearm==1 and 10 or (sidearm==2 and 95 or 0))+(t.medkits[i] and 45 or 0)+(t.grenades[i] and 45 or 0)
         end
         cost=cost+n*(entry.price+(entry.vehicle and 0 or (entry.miner and 25 or weapon.price))+extra+(t.forward>0 and 25 or 0))
@@ -553,7 +593,7 @@ function Frontline:Deploy(team)
                 actor.MaxHealth=actor.MaxHealth+CONFIG.UNIT_ARMOR_HEALTH
                 actor.Health=actor.Health+CONFIG.UNIT_ARMOR_HEALTH
             end
-            actor.Perceptiveness=math.min(1,0.5+0.05*(t.levels[10] or 0))
+            actor.Perceptiveness=math.min(1,0.5+0.05*(t.levels[16] or 0))
             actor.HFlipped=team==1
             table.insert(actors,{actor=actor,miner=entry.miner==true})
         end
@@ -638,7 +678,7 @@ function Frontline:ResearchCost(team,index)
 end
 
 function Frontline:TeamIncome(team)
-    return self.settings.income+2*self.teams[team].levels[1]+self:PostBonusCount(team,1)*CONFIG.OUTPOST_INCOME
+    return self.settings.income+2*self.teams[team].levels[2]+self:PostBonusCount(team,1)*CONFIG.OUTPOST_INCOME
 end
 
 function Frontline:CallinCooldown(team,base)
@@ -648,14 +688,16 @@ end
 function Frontline:Research(team,index)
     local t=self.teams[team]
     local r=CONFIG.research[index]
+    if not r then return false,"Unknown research" end
     if (t.levels[index] or 0)>=r.max then return false,"Already researched" end
-    if r.kind=="tier" and r.tier>1 and t.tier<r.tier-1 then return false,"Research the previous tier first" end
-    if r.requires and t.tier<r.requires then return false,"Requires earlier infantry or faction research" end
+    if r.requires and (t.levels[r.requires] or 0)==0 then return false,"Research prerequisite required" end
     local price=self:ResearchCost(team,index)
     if t.funds<price then return false,"Not enough funds" end
     t.funds=t.funds-price
     t.levels[index]=(t.levels[index] or 0)+1
-    if r.kind=="tier" then t.tier=r.tier end
+    if r.kind=="unit" and index==4 then t.tier=math.max(t.tier,1) end
+    if r.kind=="unit" and index==5 then t.tier=math.max(t.tier,2) end
+    if r.kind=="unit" and index==6 then t.tier=math.max(t.tier,3) end
     if r.kind=="training" then
         for actor in MovableMan.Actors do
             if actor.Team==team and self:IsFieldUnit(actor) then actor.Perceptiveness=math.min(1,0.5+0.05*t.levels[index]) end
@@ -773,7 +815,8 @@ end
 -- within their horizontal radius. Friendly support is unaffected.
 function Frontline:ShieldBlocks(target,attacker)
     for _,field in ipairs(self.jamFields) do
-        if math.abs(field.x-target.x)<=CONFIG.CALLIN_JAM_RADIUS and field.team~=attacker and not field.timer:IsPastSimMS(CONFIG.CALLIN_SHIELD_DURATION_MS) then return true end
+        local duration=field.duration or CONFIG.CALLIN_SHIELD_DURATION_MS
+        if math.abs(field.x-target.x)<=CONFIG.CALLIN_JAM_RADIUS and field.team~=attacker and not field.timer:IsPastSimMS(duration) then return true end
     end
     return false
 end
@@ -874,9 +917,14 @@ function Frontline:CallIn(team,kind,index)
         turret={timer=t.turretTimer,cooldown=CONFIG.CALLIN_TURRET_COOLDOWN_MS,cost=CONFIG.CALLIN_TURRET_COST},
         orbital={timer=t.orbitalTimer,cooldown=CONFIG.CALLIN_ORBITAL_COOLDOWN_MS,cost=CONFIG.CALLIN_ORBITAL_COST},
         shield={timer=t.shieldTimer,cooldown=CONFIG.CALLIN_SHIELD_COOLDOWN_MS,cost=CONFIG.CALLIN_SHIELD_COST},
+        mining={timer=t.minesTimer,cooldown=CONFIG.CALLIN_MINES_COOLDOWN_MS,cost=200},
     }
     local option=options[kind]
     if not option then return false,"Unknown call-in" end
+    local required=SUPPORT_RESEARCH[kind]
+    if required and (t.levels[required] or 0)==0 then
+        return false,"Research "..CONFIG.research[required].name.." first"
+    end
     if not self:SupportTargetAllowed(team,outpost.x) then return false,"Support restricted near enemy base" end
     if self:ShieldBlocks(outpost,team) then return false,"Enemy jammer blocks support here" end
     local timer,cooldown,cost=option.timer,self:CallinCooldown(team,option.cooldown),option.cost
@@ -885,13 +933,28 @@ function Frontline:CallIn(team,kind,index)
     if kind=="strike" then
         table.insert(self.pendingStrikes,{team=team,index=type(index)=="number" and index or nil,target=outpost,timer=Timer(),projectileTimer=nil})
         self:Notify((team==0 and "Your" or "Enemy").." precision strike inbound at "..outpost.name.."! Friendly fire!")
+    elseif kind=="mining" then
+        -- Mining squad: dropship delivers a Dummy miner unit to the target location
+        local ground=SceneMan:MovePointToGround(Vector(outpost.x,0),0,4)
+        local startY=math.max(50,ground.Y-650)
+        local miner=SceneMan:Add("Dummy",Vector(outpost.x,ground.Y+100),team)
+        if not miner then return false,"Mining unit unavailable" end
+        miner.PinStrength=1000000
+        table.insert(self.pendingDrops,{team=team,kind="mining",target=outpost,timer=Timer(),delay=CONFIG.CALLIN_MINES_DELAY_MS,cost=cost,miner=miner,count=0,startY=startY,releaseY=math.max(startY,ground.Y-350)})
+        self:Notify((team==0 and "Your" or "Enemy").." mining squad inbound ("..math.ceil(CONFIG.CALLIN_MINES_DELAY_MS/1000).."s)!")
     elseif kind=="shield" then
-        table.insert(self.jamFields,{x=outpost.x,groundY=outpost.groundY,team=team,timer=Timer()})
-        self:Notify((team==0 and "Your" or "Enemy").." support jammer active for 20s")
+        -- Shield duration scales with research level
+        local duration = CONFIG.CALLIN_SHIELD_DURATION_MS
+        if (t.levels[14] or 0) > 0 then duration = duration + 70000 -- Lv.2: 90s total
+        elseif (t.levels[13] or 0) > 0 then duration = duration + 40000 -- Lv.1: 60s total
+        end
+
+        table.insert(self.jamFields,{x=outpost.x,groundY=outpost.groundY,team=team,timer=Timer(),duration=duration})
+        self:Notify((team==0 and "Your" or "Enemy").." support jammer active for "..math.floor(duration/1000).."s")
     elseif kind=="orbital" then
         local probe=CreateMOPixel("Frontline Orbital Round","Frontline.rte")
         if not probe then return false,"Orbital ammunition unavailable" end
-        table.insert(self.pendingOrbitals,{team=team,index=type(index)=="number" and index or nil,target=outpost,timer=Timer(),shots=0,total=CONFIG.CALLIN_ORBITAL_SHOTS+(t.levels[9]>0 and CONFIG.CALLIN_ORBITAL_BONUS_SHOTS or 0),sound=CreateSoundContainer("Frontline Orbital Gatling", "Frontline.rte")})
+        table.insert(self.pendingOrbitals,{team=team,index=type(index)=="number" and index or nil,target=outpost,timer=Timer(),shots=0,total=CONFIG.CALLIN_ORBITAL_SHOTS+(t.levels[27]>0 and CONFIG.CALLIN_ORBITAL_BONUS_SHOTS or 0),sound=CreateSoundContainer("Frontline Orbital Gatling", "Frontline.rte")})
         self:Notify((team==0 and "Your" or "Enemy").." orbital Gatling cannon targeting "..outpost.name.."! Fragmentation; friendly fire!")
     elseif kind=="bomb" then
         -- Scripted bomb run: dropship flies horizontally, drops 3 bombs at intervals.
@@ -899,12 +962,14 @@ function Frontline:CallIn(team,kind,index)
         if not ship then return false, "Bomb dropship unavailable" end
         ship.Team = team
         ship:SetGoldValue(0)
-        -- Start off to the left of target at high altitude
-        ship.Pos = Vector(outpost.x - 600, math.max(50, outpost.groundY - 400))
+        -- Three timed releases sweep across the requested target.
+        local startX=outpost.x-120
+        local startY=math.max(50,outpost.groundY-400)
+        ship.Pos = Vector(startX, startY)
         ship.AIMode = Actor.AIMODE_SENTRY
         ship:SetControllerMode(Controller.CIM_DISABLED,-1)
         MovableMan:AddActor(ship)
-        table.insert(self.pendingDrops, {team=team, kind="bomb", target=outpost, ship=ship, timer=Timer(), arrivalTimer=Timer(), delay=0, cost=cost, bombsDropped=0, totalBombs=3, flightDistance=1200, startX=outpost.x-600})
+        table.insert(self.pendingDrops, {team=team, kind="bomb", target=outpost, ship=ship, timer=Timer(), delay=0, cost=cost, bombsDropped=0, totalBombs=3, flightDistance=360, startX=startX,startY=startY})
         self:Notify((team==0 and "Your" or "Enemy").." bomb run inbound (3 bombs)! Friendly fire!")
     elseif kind=="turret" then
         -- Static turret dropped at target location.
@@ -913,7 +978,7 @@ function Frontline:CallIn(team,kind,index)
         table.insert(self.pendingDrops, {team=team, kind="turret", target=outpost, ship=ship, timer=Timer(), delay=CONFIG.CALLIN_TURRET_DELAY_MS, cost=cost})
         self:Notify((team==0 and "Your" or "Enemy").." turret dropship inbound (4s)!")
     elseif kind=="mines" or kind=="cover" then
-        local count = 3 + (t.levels[8]>0 and 2 or 0)
+        local count=3
         local startY = math.max(50, outpost.groundY-650)
         local releaseY = math.max(startY, outpost.groundY-350)
         local delay = kind=="mines" and CONFIG.CALLIN_MINES_DELAY_MS or CONFIG.CALLIN_COVER_DELAY_MS
@@ -922,6 +987,12 @@ function Frontline:CallIn(team,kind,index)
             startY=startY, releaseY=releaseY, count=count, cost=cost})
         self:Notify((team==0 and "Your" or "Enemy").." "..kind.." dropship inbound ("..math.ceil(delay/1000).."s)!")
     else
+        -- Medic call-in: heal amount scales with research level
+        local healAmount = CONFIG.CALLIN_HEAL
+        if (t.levels[12] or 0) > 0 then healAmount = healAmount + 65 -- Lv.2: +100 total
+        elseif (t.levels[11] or 0) > 0 then healAmount = healAmount + 15 -- Lv.1: +50 total
+        end
+
         local wounded={}
         for actor in MovableMan.Actors do
             if actor.Team==team and self:IsFieldUnit(actor)
@@ -930,8 +1001,8 @@ function Frontline:CallIn(team,kind,index)
             end
         end
         if #wounded==0 then return false,"No wounded allies near target" end
-        for _,actor in ipairs(wounded) do actor.Health=math.min(actor.MaxHealth,actor.Health+CONFIG.CALLIN_HEAL) end
-        self:Notify((team==0 and "Your" or "Enemy").." medics treated "..#wounded.." at "..outpost.name)
+        for _,actor in ipairs(wounded) do actor.Health=math.min(actor.MaxHealth,actor.Health+healAmount) end
+        self:Notify((team==0 and "Your" or "Enemy").." medics treated "..#wounded.." at "..outpost.name.." ("..healAmount.." HP each)")
     end
     t.funds=t.funds-cost
     timer:Reset()
@@ -952,7 +1023,9 @@ end
 
 function Frontline:UpdateCallIns()
     for i=#self.jamFields,1,-1 do
-        if self.jamFields[i].timer:IsPastSimMS(CONFIG.CALLIN_SHIELD_DURATION_MS) then table.remove(self.jamFields,i) end
+        local field=self.jamFields[i]
+        local duration=field.duration or CONFIG.CALLIN_SHIELD_DURATION_MS
+        if field.timer:IsPastSimMS(duration) then table.remove(self.jamFields,i) end
     end
     -- Process scripted bomb runs (fly horizontally, drop bombs at intervals).
     for i=#self.pendingDrops,1,-1 do
@@ -966,6 +1039,7 @@ function Frontline:UpdateCallIns()
                 local flightSpeed = 120  -- pixels per second
                 local currentX = order.startX + (elapsed * flightSpeed / 1000)
                 order.ship.Pos.X = currentX
+                order.ship.Pos.Y = order.startY
                 
                 -- Drop bombs at intervals along the flight path
                 local bombIntervalMs = 800
@@ -998,6 +1072,7 @@ function Frontline:UpdateCallIns()
     -- Process regular dropship deliveries.
     for i=#self.pendingDrops,1,-1 do
         local order=self.pendingDrops[i]
+        if order.kind~="bomb" then
         local target,ship=order.target,order.ship
         if not order.timer:IsPastSimMS(order.delay) then
             local remaining=math.max(0,math.ceil((order.delay-order.timer.ElapsedSimTimeMS)/1000))
@@ -1005,6 +1080,7 @@ function Frontline:UpdateCallIns()
         elseif not order.arrivalTimer then
             if self:ShieldBlocks(target,order.team) then
                 self.teams[order.team].funds=self.teams[order.team].funds+order.cost
+                if order.miner then order.miner.ToDelete=true end
                 self:Notify("Jammer intercepted "..order.kind.." drop; cost refunded")
                 table.remove(self.pendingDrops,i)
             else
@@ -1012,10 +1088,12 @@ function Frontline:UpdateCallIns()
                 ship=self:CreateSupportShip(order.team,order.kind,order.count,target.x,order.startY)
                 if not ship then
                     self.teams[order.team].funds=self.teams[order.team].funds+order.cost
+                    if order.miner then order.miner.ToDelete=true end
                     self:Notify("Support dropship unavailable; cost refunded")
                     table.remove(self.pendingDrops,i)
                 else
                     order.ship=ship
+                    if order.miner then ship:AddInventoryItem(order.miner) end
                     self.frontlineCraft[ship.UniqueID]=true
                     MovableMan:AddActor(ship)
                     order.arrivalTimer=Timer()
@@ -1023,11 +1101,12 @@ function Frontline:UpdateCallIns()
                 end
             end
         elseif not MovableMan:IsActor(ship) or (ship.Health and ship.Health<=0) then
+            if order.miner then order.miner.ToDelete=true end
             self:Notify("Support dropship lost before delivery")
             table.remove(self.pendingDrops,i)
         elseif self:ShieldBlocks(target,order.team) then
             self.teams[order.team].funds=self.teams[order.team].funds+order.cost
-            self:Notify("Jammer intercepted "..order.kind.." drop; cost refunded")
+            if order.miner then order.miner.ToDelete=true end
             ship.PinStrength=0
             ship.CanEnterOrbit=true
             ship.AIMode=Actor.AIMODE_RETURN
@@ -1053,6 +1132,14 @@ function Frontline:UpdateCallIns()
                         item.PinStrength=100000
                         MovableMan:AddActor(item)
                     end
+                elseif order.kind=="mining" then
+                    -- Release the Dummy miner from the dropship at the target.
+                    local miner=ship:RemoveInventoryItemAtIndex(0)
+                    if miner and not miner.Dead then
+                        local ground=SceneMan:MovePointToGround(Vector(order.target.x,0),0,4)
+                        miner.Pos=Vector(order.target.x,ground.Y-8)
+                        miner.PinStrength=0
+                    end
                 else
                     ship:OpenHatch()
                     local dropY=ship.Pos.Y+(ship.Radius or 50)+12
@@ -1075,6 +1162,7 @@ function Frontline:UpdateCallIns()
                 self:Notify(string.upper(order.kind).." delivered at "..target.name..warning)
                 table.remove(self.pendingDrops,i)
             end
+        end
         end
     end
     for i=#self.pendingOrbitals,1,-1 do
@@ -1258,13 +1346,13 @@ function Frontline:UpdateAI()
     -- Adaptive research priorities based on personality and player focus
     local priorities
     if self.aiPersonality=="aggressive" then
-        priorities={3,4,7,8,2,6,1,10,11,16,13,14,15,9,5}
+        priorities={3,4,5,6,7,8,9,2,10,11,12,13,14,15,16,17,18}
     elseif self.aiPersonality=="defensive" then
-        priorities={1,12,3,6,2,10,16,13,14,15,8,7,9,4,5}
+        priorities={3,10,11,12,6,7,8,9,2,13,14,15,16,17,18,4,5}
     elseif self.aiPersonality=="economic" then
-        priorities={1,12,11,3,6,2,10,16,13,14,15,8,7,9,4,5}
+        priorities={2,1,13,3,6,7,8,9,10,11,12,14,15,16,17,18,4,5}
     else
-        priorities=pressured and {12,3,4,7,8,2,1,10,11,16,13,14,15,9,6,5} or {1,12,3,6,2,4,11,10,16,13,14,15,8,7,9,5}
+        priorities=pressured and {3,4,5,6,7,8,9,2,10,11,12,13,14,15,16,17,18} or {3,6,7,8,9,2,10,11,12,13,14,15,16,17,18,4,5}
     end
     
     -- Counter player's research focus if detected
@@ -1273,6 +1361,8 @@ function Frontline:UpdateAI()
     elseif self.playerBehavior.researchFocus=="vehicles" then
         table.insert(priorities,3); table.insert(priorities,6)
     end
+    table.insert(priorities,1,1)
+    for index=22,27 do priorities[#priorities+1]=index end
     
     -- Invest from the same budget and keep a reserve for troop deployments.
     local brain=self.brains[team]
@@ -1293,39 +1383,40 @@ function Frontline:UpdateAI()
         end
     end
     
-    -- Build mixed batches with personality-based variation
-    local batchSize=3+math.random(0,1)
-    if self.aiPersonality=="aggressive" and ai.funds>5000 then batchSize=4+math.random(0,1)
-    elseif self.aiPersonality=="defensive" then batchSize=2+math.random(0,1) end
-    
-    if ai.tier>=3 and ai.funds>=650 then
-        ai.counts={1,0,0,1,1}
-    elseif ai.tier>=2 and ai.funds>=480 then
-        ai.counts={1,1,0,0,1}
-    elseif ai.tier>=2 then
-        ai.counts={1,1,1,0,0}
-    elseif ai.tier>=1 then
-        ai.counts={1,2,0,0,0}
-    else
-        ai.counts={1,0,0,0,0,0,2}
+    -- The AI's first deployment mirrors the default two-Ronin squad.
+    local batchSize=ai.stats.deployed==0 and 2 or (3+math.random(0,1))
+    if ai.stats.deployed>0 then
+        if self.aiPersonality=="aggressive" and ai.funds>5000 then batchSize=4+math.random(0,1)
+        elseif self.aiPersonality=="defensive" then batchSize=2+math.random(0,1) end
     end
-    if (ai.levels[11] or 0)>0 and ai.funds>=550 then ai.counts[6]=1 end
-    
-    local basic=(ai.levels[12] or 0)>0 and 1 or 6
-    -- Adaptive weapon selection based on player threats
+
+    ai.counts={0,0,0,0,0,2}
+    if ai.stats.deployed>0 then
+        for i,entry in ipairs(CONFIG.roster) do
+            if i<6 and entry.unlock<=ai.tier and (not entry.research or (ai.levels[entry.research] or 0)>0) then
+                ai.counts[i]=1
+            end
+        end
+    end
+
+    -- Keep every selected weapon researched and available. Pistol is the
+    -- unconditional baseline; higher-tier equipment is selected only after
+    -- its matching research.
+    local basic=1
     local weaponChoice=basic
-    if enemyVehicle and (ai.levels[7] or 0)>0 then weaponChoice=5
-    elseif ai.tier>=1 then weaponChoice=2 end
-    
-    ai.weapons={weaponChoice,weaponChoice,ai.tier>=2 and 3 or basic,basic,basic,basic,basic}
-    ai.sidearms={}; ai.medkits={}; ai.grenades={}; ai.armor={}
+    if enemyVehicle and ai.tier>=2 and (ai.levels[10] or 0)>0 then weaponChoice=6
+    elseif (ai.levels[9] or 0)>0 then weaponChoice=5
+    elseif (ai.levels[17] or 0)>0 then weaponChoice=4
+    elseif (ai.levels[8] or 0)>0 then weaponChoice=3
+    elseif (ai.levels[7] or 0)>0 then weaponChoice=2 end
+    ai.weapons={weaponChoice,weaponChoice,weaponChoice,weaponChoice,weaponChoice,basic}
     if ai.funds>=1000 then
         for i,entry in ipairs(CONFIG.roster) do
-            if (ai.counts[i] or 0)>0 and (ai.levels[16] or 0)>0 then ai.armor[i]=true end
+            if (ai.counts[i] or 0)>0 and (ai.levels[21] or 0)>0 then ai.armor[i]=true end
             if not entry.vehicle and not entry.miner and (ai.counts[i] or 0)>0 then
-                ai.sidearms[i]=(ai.levels[15] or 0)>0 and (enemyVehicle and (ai.levels[7] or 0)>0 and 2 or 1) or 0
-                ai.medkits[i]=(ai.levels[13] or 0)>0
-                ai.grenades[i]=(ai.levels[14] or 0)>0
+                ai.sidearms[i]=(ai.levels[20] or 0)>0 and (enemyVehicle and (ai.levels[10] or 0)>0 and 2 or 1) or 0
+                ai.medkits[i]=(ai.levels[18] or 0)>0
+                ai.grenades[i]=(ai.levels[19] or 0)>0
             end
         end
     end
@@ -1357,27 +1448,28 @@ function Frontline:UpdateAI()
         end
     end
     
-    -- Deploy as soon as affordable, even with small batches early on
+    -- Deploy as soon as an affordable valid batch is available.
     if ai.funds>=200 then
         local cost,count=self:Batch(team)
         if not cost or count==0 then
-            -- If batch calculation fails, deploy single unit manually
-            if ai.tier>=1 and ai.funds>=self:DeployCost(0,"lmg") then
-                self:DeployUnit(team,"standard","lmg",false,ai.orderTarget)
-            elseif ai.funds>=self:DeployCost(0,"rifle") then
-                self:DeployUnit(team,"standard","rifle",false,ai.orderTarget)
-            end
-        else
-            while cost and count<CONFIG.MAX_BATCH and self:UnitCount(team)+count<self.settings.unitCap do
-                ai.counts[1]=(ai.counts[1] or 0)+1
-                local nextCost,nextCount=self:Batch(team)
-                if not nextCost or nextCost>ai.funds-200 then
-                    ai.counts[1]=ai.counts[1]-1
-                    break
-                end
-                cost,count=nextCost,nextCount
-            end
+            -- Research or roster changes can invalidate the mixed selection.
+            -- Fall back to the two always-available Ronin Bandits.
+            ai.counts={0,0,0,0,0,2}
+            ai.weapons={1,1,1,1,1,1}
+            ai.sidearms={}; ai.medkits={}; ai.grenades={}; ai.armor={}
+            cost,count=self:Batch(team)
         end
+        while cost and count<math.min(batchSize,CONFIG.MAX_BATCH)
+            and self:UnitCount(team)+count<self.settings.unitCap do
+            ai.counts[6]=(ai.counts[6] or 0)+1
+            local nextCost,nextCount=self:Batch(team)
+            if not nextCost or nextCost>ai.funds-200 then
+                ai.counts[6]=ai.counts[6]-1
+                break
+            end
+            cost,count=nextCost,nextCount
+        end
+        if cost and count>0 then self:Deploy(team) end
     end
     
     if not self.settings.callins or not self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS) then return end
@@ -1594,9 +1686,10 @@ function Frontline:DrawOutpost()
         PrimitiveMan:DrawBoxFillPrimitive(Vector(x-39,y-111),Vector(x-39+progress,y-108),color)
     end
     for _,field in ipairs(self.jamFields) do
-        if not field.timer:IsPastSimMS(CONFIG.CALLIN_SHIELD_DURATION_MS) then
+        local duration=field.duration or CONFIG.CALLIN_SHIELD_DURATION_MS
+        if not field.timer:IsPastSimMS(duration) then
             self:DrawShieldField(field,field.team)
-            local seconds=math.max(0,math.ceil((CONFIG.CALLIN_SHIELD_DURATION_MS-field.timer.ElapsedSimTimeMS)/1000))
+            local seconds=math.max(0,math.ceil((duration-field.timer.ElapsedSimTimeMS)/1000))
             local label=field.team==0 and "SUPPORT JAMMER " or "ENEMY SUPPORT JAMMER "
             PrimitiveMan:DrawTextPrimitive(Vector(field.x,field.groundY-165),label..seconds.."s",true,1)
         end
@@ -1639,7 +1732,7 @@ function Frontline:DrawHUD()
     local bonusIncome=self:PostBonusCount(0,1)*CONFIG.OUTPOST_INCOME
     local researchDiscount=self:PostBonusCount(0,2)>0 and 20 or 0
     local supportDiscount=self:PostBonusCount(0,3)>0 and 20 or 0
-    text(26,"FRONTLINE | TAB: COMMAND | Funds: "..math.floor(t.funds).." +"..income.."/s | Bounty: "..(CONFIG.BOUNTY+15*t.levels[2]))
+    text(26,"FRONTLINE | TAB: COMMAND | Funds: "..math.floor(t.funds).." +"..income.."/s | Bounty: "..(CONFIG.BOUNTY+15*t.levels[3]))
     text(38,"Batch: "..(count or 0).." / "..(cost or 0).." oz | Units: "..self:UnitCount(0).." vs "..self:UnitCount(1).." / "..self.settings.unitCap.." | Deploy: "..self:AutoReason(0).." | Auto: "..(t.auto and "ON" or "OFF"))
     text(50,"Posts: "..owned.." | Post bonuses: +"..bonusIncome.."/s | Research -"..researchDiscount.."% | Support -"..supportDiscount.."%")
     text(62,"Deaths: "..self:GetTeamDeathCount(0).." / "..self:GetTeamDeathCount(1).." | Match time: "..self:MatchTimeText())
@@ -1742,7 +1835,7 @@ function Frontline:DrawPanel()
     text(15,14,"FRONTLINE COMMAND  |  TAB: CLOSE",false)
     local cost,count=self:Batch(0)
     local income=self:TeamIncome(0)
-    text(15,28,"Funds "..math.floor(t.funds).." oz   +"..income.."/s   Bounty "..(CONFIG.BOUNTY+15*t.levels[2]))
+    text(15,28,"Funds "..math.floor(t.funds).." oz   +"..income.."/s   Bounty "..(CONFIG.BOUNTY+15*t.levels[3]))
     text(15,40,"Batch "..(count or 0).." / "..(cost or 0).." oz   Units "..self:UnitCount(0).."/"..self.settings.unitCap.."   "..self:AutoReason(0))
     local tabs={"Squad","Research","Battle","Support","Base","Setup"}
     for i,name in ipairs(tabs) do button(15+(i-1)*74,56,70,name,self.tab==name and "selected" or "available",function() self.tab=name end) end
@@ -1750,7 +1843,7 @@ function Frontline:DrawPanel()
         text(15,79,"Select quantity and each unit type's weapon. Max "..CONFIG.MAX_BATCH.." per batch.")
         -- Display cheaper Ronin first without changing the stable roster IDs
         -- used by saved squads and the AI.
-        for displayIndex,i in ipairs({7,1,2,3,4,5,6}) do
+        for displayIndex,i in ipairs({6,1,2,3,4,5}) do
           local r=CONFIG.roster[i]
           if math.floor((displayIndex-1)/4)+1==self.rosterPage then
             local y=96+((displayIndex-1)%4)*39
@@ -1773,18 +1866,18 @@ function Frontline:DrawPanel()
             end,true)
             if not special then
                 local side=t.sidearms[i] or 0
-                button(117,y+14,60,side==0 and "SIDE: -" or (side==1 and "Pistol +10" or "RPG +95"),unlocked and (t.levels[15] or 0)>0 and "available" or "locked",function(step)
-                    if unlocked and (t.levels[15] or 0)>0 then
+                button(117,y+14,60,side==0 and "SIDE: -" or (side==1 and "Pistol +10" or "RPG +95"),unlocked and (t.levels[20] or 0)>0 and "available" or "locked",function(step)
+                    if unlocked and (t.levels[20] or 0)>0 then
                         local nextSide=(side+step)%3
-                        if nextSide==2 and (t.levels[7] or 0)==0 then nextSide=(nextSide+step)%3 end
+                        if nextSide==2 and (t.levels[10] or 0)==0 then nextSide=(nextSide+step)%3 end
                         t.sidearms[i]=nextSide; t.preset="Custom"
                     end
                 end,true)
-                button(179,y+14,36,t.medkits[i] and "MED X" or "MED",unlocked and (t.levels[13] or 0)>0 and (t.medkits[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[13] or 0)>0 then t.medkits[i]=not t.medkits[i]; t.preset="Custom" end end,true)
-                button(217,y+14,36,t.grenades[i] and "GRN X" or "GRN",unlocked and (t.levels[14] or 0)>0 and (t.grenades[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[14] or 0)>0 then t.grenades[i]=not t.grenades[i]; t.preset="Custom" end end,true)
+                button(179,y+14,36,t.medkits[i] and "MED X" or "MED",unlocked and (t.levels[18] or 0)>0 and (t.medkits[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[18] or 0)>0 then t.medkits[i]=not t.medkits[i]; t.preset="Custom" end end,true)
+                button(217,y+14,36,t.grenades[i] and "GRN X" or "GRN",unlocked and (t.levels[19] or 0)>0 and (t.grenades[i] and "selected" or "available") or "locked",function() if unlocked and (t.levels[19] or 0)>0 then t.grenades[i]=not t.grenades[i]; t.preset="Custom" end end,true)
             end
-            button(255,y+14,40,t.armor[i] and "ARM X" or "ARM",unlocked and (t.levels[16] or 0)>0 and (t.armor[i] and "selected" or "available") or "locked",function()
-                if unlocked and (t.levels[16] or 0)>0 then t.armor[i]=not t.armor[i]; t.preset="Custom" end
+            button(255,y+14,40,t.armor[i] and "ARM X" or "ARM",unlocked and (t.levels[21] or 0)>0 and (t.armor[i] and "selected" or "available") or "locked",function()
+                if unlocked and (t.levels[21] or 0)>0 then t.armor[i]=not t.armor[i]; t.preset="Custom" end
             end,true)
           end
         end
@@ -1819,21 +1912,41 @@ function Frontline:DrawPanel()
         button(120,306,98,"LOAD CUSTOM",t.savedSquad and "available" or "disabled",function() self:LoadSquad(0) end)
         text(225,310,"Saved for this match")
     elseif self.tab=="Research" then
-        text(15,80,"ECONOMY: repeatable income and bounty upgrades")
-        text(15,94,"INFANTRY / EQUIPMENT / FACTIONS: unlock tiers in order")
-        button(350,80,100,"PAGE "..self.researchPage.." / 2","available",function() self.researchPage=self.researchPage==1 and 2 or 1 end,true)
-        for i,r in ipairs(CONFIG.research) do
-          if math.floor((i-1)/9)+1==self.researchPage then
-            local y=106+((i-1)%9)*23
-            local price=self:ResearchCost(0,i)
-            local locked=(r.kind=="tier" and r.tier>1 and t.tier<r.tier-1) or (r.requires and t.tier<r.requires)
-            local state=(t.levels[i] or 0)>=r.max and "selected" or (locked and "locked" or (t.funds<price and "disabled" or "available"))
-            local label=r.name.."  "..t.levels[i].."/"..r.max.."   "..price.." oz"
-            button(15,y,325,label,state,function() local _,msg=self:Research(0,i); if msg~="Research complete" then self:Notify(msg) end end)
-            if locked then text(350,y+3,"Prior tier") end
-          end
+        local page=RESEARCH_PAGES[self.researchPage] or RESEARCH_PAGES[1]
+        text(15,80,"TECH TREE  |  Complete earlier nodes to open connected upgrades.")
+        text(15,94,page.title.."  |  Click a node to research.")
+        button(350,80,100,"PAGE "..self.researchPage.." / "..#RESEARCH_PAGES,"available",function()
+            self.researchPage=self.researchPage%#RESEARCH_PAGES+1
+        end)
+        local columns=#page.columns
+        local nodeWidth=columns==3 and 140 or 210
+        local columnGap=columns==3 and 150 or 225
+        local nodePositions={}
+        for columnIndex,column in ipairs(page.columns) do
+            local x=15+(columnIndex-1)*columnGap
+            text(x,109,column.title,false)
+            for row,index in ipairs(column.items) do
+                local r=CONFIG.research[index]
+                local y=125+(row-1)*43
+                local price=self:ResearchCost(0,index)
+                local locked=r.requires and (t.levels[r.requires] or 0)==0
+                nodePositions[index]={x=x,y=y}
+                if r.requires then
+                    local parent=nodePositions[r.requires]
+                    if parent then
+                        PrimitiveMan:DrawLinePrimitive(pos(parent.x+nodeWidth/2,parent.y+16),pos(x+nodeWidth/2,y),locked and 94 or 120)
+                    end
+                end
+                local state=(t.levels[index] or 0)>=r.max and "selected" or (locked and "locked" or (t.funds<price and "disabled" or "available"))
+                local label=RESEARCH_LABELS[index].."  "..(t.levels[index] or 0).."/"..r.max.."  "..price.."oz"
+                button(x,y,nodeWidth,label,state,function()
+                    local _,msg=self:Research(0,index)
+                    if msg~="Research complete" then self:Notify(msg) end
+                end)
+                if locked then text(x,y+17,"Requires: "..RESEARCH_LABELS[r.requires],true) end
+            end
         end
-        text(15,335,"Research outposts reduce costs by 20%.")
+        text(15,335,"Connectors show prerequisites. Research outposts reduce costs by 20%.")
     elseif self.tab=="Battle" then
         text(15,84,"OUTPOSTS: hold for bonuses (income stacks)")
         for i,outpost in ipairs(self.outposts) do
@@ -1847,31 +1960,32 @@ function Frontline:DrawPanel()
         text(15,280,"Rush attacks the brain. Advance captures then attacks.")
         text(15,295,"Defend goes to the selected outpost and holds there.")
     elseif self.tab=="Support" then
-        text(15,84,"Choose support, then click a location on the battlefield.")
-        text(15,99,"Tab cancels targeting. Place the jammer anywhere.")
-        local strikeLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_STRIKE_COOLDOWN_MS)-t.strikeTimer.ElapsedSimTimeMS)/1000))
-        local medicLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_MEDIC_COOLDOWN_MS)-t.medicTimer.ElapsedSimTimeMS)/1000))
-        button(15,122,205,"PRECISION "..CONFIG.CALLIN_STRIKE_COST.." oz  "..(strikeLeft>0 and strikeLeft.."s" or "READY"),strikeLeft==0 and t.funds>=CONFIG.CALLIN_STRIKE_COST and "available" or "disabled",function() self:BeginTargeting("strike") end)
-        button(230,122,205,"MEDICS "..CONFIG.CALLIN_MEDIC_COST.." oz  "..(medicLeft>0 and medicLeft.."s" or "READY"),medicLeft==0 and t.funds>=CONFIG.CALLIN_MEDIC_COST and "available" or "disabled",function() self:BeginTargeting("medic") end)
-        text(15,143,"Precision: 3s warning | Dropships: 4s until arrival.")
-        local coverLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_COVER_COOLDOWN_MS)-t.coverTimer.ElapsedSimTimeMS)/1000))
-        local minesLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_MINES_COOLDOWN_MS)-t.minesTimer.ElapsedSimTimeMS)/1000))
-        local bombLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_BOMB_COOLDOWN_MS)-t.bombTimer.ElapsedSimTimeMS)/1000))
-        button(15,159,135,"COVER "..CONFIG.CALLIN_COVER_COST.." "..(coverLeft>0 and coverLeft.."s" or "READY"),coverLeft==0 and t.funds>=CONFIG.CALLIN_COVER_COST and "available" or "disabled",function() self:BeginTargeting("cover") end)
-        button(155,159,135,"MINES "..CONFIG.CALLIN_MINES_COST.." "..(minesLeft>0 and minesLeft.."s" or "READY"),minesLeft==0 and t.funds>=CONFIG.CALLIN_MINES_COST and "available" or "disabled",function() self:BeginTargeting("mines") end)
-        button(295,159,135,"BOMB "..CONFIG.CALLIN_BOMB_COST.." "..(bombLeft>0 and bombLeft.."s" or "READY"),bombLeft==0 and t.funds>=CONFIG.CALLIN_BOMB_COST and "available" or "disabled",function() self:BeginTargeting("bomb") end)
-        local turretLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_TURRET_COOLDOWN_MS)-t.turretTimer.ElapsedSimTimeMS)/1000))
-        button(15,181,205,"STATIC TURRET "..CONFIG.CALLIN_TURRET_COST.." "..(turretLeft>0 and turretLeft.."s" or "READY"),turretLeft==0 and t.funds>=CONFIG.CALLIN_TURRET_COST and "available" or "disabled",function() self:BeginTargeting("turret") end)
-        local orbitalLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_ORBITAL_COOLDOWN_MS)-t.orbitalTimer.ElapsedSimTimeMS)/1000))
-        button(15,203,205,"ORBITAL GATLING CANNON "..CONFIG.CALLIN_ORBITAL_COST.." "..(orbitalLeft>0 and orbitalLeft.."s" or "READY"),orbitalLeft==0 and t.funds>=CONFIG.CALLIN_ORBITAL_COST and "available" or "disabled",function() self:BeginTargeting("orbital") end)
-        text(225,185,CONFIG.CALLIN_ORBITAL_SHOTS.." frag rounds; 5s burst; friendly fire",true)
-        local shieldLeft=math.max(0,math.ceil((self:CallinCooldown(0,CONFIG.CALLIN_SHIELD_COOLDOWN_MS)-t.shieldTimer.ElapsedSimTimeMS)/1000))
-        button(15,225,205,"JAMMER "..CONFIG.CALLIN_SHIELD_COST.." "..(shieldLeft>0 and shieldLeft.."s" or "READY"),shieldLeft==0 and t.funds>=CONFIG.CALLIN_SHIELD_COST and "available" or "disabled",function() self:BeginTargeting("shield") end)
-        text(15,230,"Jammer: place anywhere to disrupt enemy support for 20s.")
-        text(15,245,"Blocks hostile call-ins aimed inside the outlined area.")
-        text(15,260,"Does not stop weapons, grenades, or bombs already falling.")
-        text(15,277,"Friendly support works normally. Radius: 180 pixels.")
-        text(15,293,"Support is restricted within 600px of the enemy base.")
+        text(15,84,"Choose an unlocked support, then click a target on the battlefield.")
+        text(15,99,"Research nodes unlock each call-in and show its prerequisites.")
+        text(15,116,"OFFENSE",false); text(165,116,"DEFENSE",false); text(315,116,"PERSONNEL",false)
+        local function supportOption(kind,label,cost,timer,cooldown,x,y)
+            local required=SUPPORT_RESEARCH[kind]
+            local unlocked=(t.levels[required] or 0)>0
+            local seconds=math.max(0,math.ceil((self:CallinCooldown(0,cooldown)-timer.ElapsedSimTimeMS)/1000))
+            local status=not unlocked and "LOCKED" or (seconds>0 and (seconds.."s") or "READY")
+            local state=not unlocked and "locked" or (seconds==0 and t.funds>=cost and "available" or "disabled")
+            button(x,y,140,label.." "..cost.." "..status,state,function()
+                if not unlocked then self:Notify("Research "..CONFIG.research[required].name.." first")
+                else self:BeginTargeting(kind) end
+            end)
+            if not unlocked then text(x,y+17,"Requires "..RESEARCH_LABELS[required],true) end
+        end
+        supportOption("strike","STRIKE",CONFIG.CALLIN_STRIKE_COST,t.strikeTimer,CONFIG.CALLIN_STRIKE_COOLDOWN_MS,15,128)
+        supportOption("bomb","BOMB",CONFIG.CALLIN_BOMB_COST,t.bombTimer,CONFIG.CALLIN_BOMB_COOLDOWN_MS,15,174)
+        supportOption("orbital","ORBITAL",CONFIG.CALLIN_ORBITAL_COST,t.orbitalTimer,CONFIG.CALLIN_ORBITAL_COOLDOWN_MS,15,220)
+        supportOption("cover","COVER",CONFIG.CALLIN_COVER_COST,t.coverTimer,CONFIG.CALLIN_COVER_COOLDOWN_MS,165,128)
+        supportOption("mines","MINES",CONFIG.CALLIN_MINES_COST,t.minesTimer,CONFIG.CALLIN_MINES_COOLDOWN_MS,165,174)
+        supportOption("turret","TURRET",CONFIG.CALLIN_TURRET_COST,t.turretTimer,CONFIG.CALLIN_TURRET_COOLDOWN_MS,165,220)
+        supportOption("shield","JAMMER",CONFIG.CALLIN_SHIELD_COST,t.shieldTimer,CONFIG.CALLIN_SHIELD_COOLDOWN_MS,165,266)
+        supportOption("medic","MEDIC",CONFIG.CALLIN_MEDIC_COST,t.medicTimer,CONFIG.CALLIN_MEDIC_COOLDOWN_MS,315,128)
+        supportOption("mining","MINING",200,t.minesTimer,CONFIG.CALLIN_MINES_COOLDOWN_MS,315,174)
+        text(15,315,"Jammer blocks hostile strike, bomb and orbital support.")
+        text(15,331,"Enemy-base exclusion: "..CONFIG.ENEMY_BASE_SUPPORT_EXCLUSION_RADIUS.."px.")
     elseif self.tab=="Base" then
         local brain=self.brains[0]
         text(15,84,"BASE DEFENSES")

@@ -9,9 +9,14 @@ BATTLE; the 15-second grace period then begins and settings lock.
 Tab toggles the panel. In Squad, pick troops and weapons, choose Rush, Advance
 or Defend orders and target an outpost. Orders apply to existing troops and
 new deployments. Optionally choose an owned forward outpost (+25 oz/unit).
-Research unlocks the armored drone and anti-armor missile launcher. West gives
-income, Center discounts research, East reduces support cooldowns. Support
-research improves cover and mine delivery or extends the orbital burst.
+Both teams start with two Ronin Bandits selected; the AI uses that same squad
+for its first deployment.
+Unit research follows the Coalition Light -> Coalition Heavy -> Dummy/Gatling
+Drone -> Browncoat chain. Weapon and equipment unlocks are in the Arsenal tree.
+The Research tab has three categorized pages; connector lines mark prerequisites.
+Each support call-in has a research unlock. Bombs follow precision strike and
+orbital fire follows bombs; mines follow cover and the turret follows mines.
+Medic and shield each have separate level-1 and level-2 research.
 
 Support targets outposts with strikes, medics, cover, mines, bombs, orbital
 fire or a shield. A shield requires an owned post and blocks hostile strike,

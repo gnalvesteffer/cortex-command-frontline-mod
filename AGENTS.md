@@ -4,9 +4,9 @@
 This is a Cortex Command mod called "Frontline" that adds squad-based tactical gameplay with research, call-ins, and outpost capture mechanics.
 
 ## Testing Workflow
-1. **Syntax check**: Run `ccmake --test` to validate Lua syntax across all mod files.
-2. **In-game test**: Run `ccmake --run` to launch Cortex Command with the mod loaded.
-3. **Manual verification**: Test each feature in-game (bomb call-in, turret drop, weapon unlocks, etc.).
+1. **Syntax check**: Run `for f in Frontline.rte/*.lua; do luajit -b "$f" /dev/null || exit; done`.
+2. **Regression tests**: Run `luajit tests/test_ai.lua`, `luajit tests/test_units.lua`, and `luajit tests/test_support_callins.lua`.
+3. **In-game test**: Launch `/var/home/xorberax/CortexCommand.linux/CortexCommand.AppImage` with the mod loaded, then test each feature (bomb call-in, turret drop, weapon unlocks, etc.).
 
 ## Key Files
 - `Frontline.rte/Frontline.lua` - Main mod script (~103k chars) containing all gameplay logic
