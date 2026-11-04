@@ -51,8 +51,8 @@ local function newBattle()
     actors={}
     local activity=setmetatable({deathCounts={[0]=0,[1]=0}},{__index=Frontline})
     activity:StartActivity()
-    activity.aiPersonality='balanced'
     activity:StartBattle()
+    activity.aiPersonality='balanced'
     activity.matchTimer.ElapsedSimTimeMS=15000
     activity.settings.callins=false
     return activity
@@ -470,3 +470,110 @@ end
 print('Both team controllers apply orders, handle arrivals and enforce the same purchase rules')
 
 print('AI deployment accounting, base emergency recovery, budget and cooldown passed')
+
+-- Battle start makes exactly one draw; every persona still obeys the same
+-- emergency order, funds and cooldown constraints.
+do
+    local expected={'aggressive','defensive','economic','balanced','strategic','raider','guardian','artillery','engineer','vanguard'}
+    local original=math.random
+    for index,name in ipairs(expected) do
+        actors={}
+        local a=setmetatable({deathCounts={[0]=0,[1]=0}},{__index=Frontline})
+        a:StartActivity()
+        local calls=0
+        math.random=function(lo,hi) calls=calls+1; assert(lo==1 and hi==10); return index end
+        a:StartBattle(); a:StartBattle()
+        math.random=original
+        assert(calls==1 and a.aiPersonality==name,'battle must choose exactly one of ten profiles')
+        a.matchTimer.ElapsedSimTimeMS=15000; a.settings.callins=false
+        local ai=a.teams[1]; ai.funds=0; ai.stats.deployed=3
+        for i=1,4 do
+            local enemy=CreateAHuman('attacker'); enemy.Team=0
+            enemy.Pos=Vector(a.brains[1].Pos.X-100,565); MovableMan:AddActor(enemy)
+        end
+        a:UpdateAI()
+        assert(a.aiPersonality==name and ai.order=='Defend' and ai.orderTarget==0
+            and ai.stats.deployed==3,'every profile must defend without free troops')
+        ai.funds=200; a:UpdateAI()
+        assert(ai.stats.deployed==6 and ai.funds==35,'emergency troops must be purchased normally')
+        a:UpdateAI()
+        assert(ai.stats.deployed==6 and ai.funds==35,'every profile respects cooldown')
+        a:StartActivity()
+        assert(a.aiPersonality==nil,'restarting an activity must discard its previous profile')
+        math.random=function(lo,hi) assert(lo==1 and hi==10); return index%10+1 end
+        a:StartBattle()
+        math.random=original
+        assert(a.aiPersonality==expected[index%10+1],'a new match must draw a new profile')
+    end
+end
+
+-- Identical battlefield: a raider presses the neutral post while a balanced
+-- commander assembles at its held post.
+do
+    local function goal(personality)
+        local a=newBattle(); a.aiPersonality=personality; a.teams[1].funds=0
+        a.outposts[3].owner=1
+        for i=1,3 do
+            local ally=CreateAHuman('ally'); ally.Team=1
+            ally.Pos=Vector(a.outposts[3].x,565); MovableMan:AddActor(ally)
+        end
+        a:UpdateAI()
+        return a.teams[1].goal,a.teams[1].order
+    end
+    local balanced,balancedOrder=goal('balanced')
+    local raider,raiderOrder=goal('raider')
+    assert(balanced=='regroup' and balancedOrder=='Defend' and raider=='advance' and raiderOrder=='Advance',
+        'personality must change real team-wide strategic orders')
+end
+print('Ten match personas preserve legal emergency behavior and vary strategic orders')
+
+-- Compare actual decisions across fixed battlefield, research and support
+-- situations. Every profile must produce a different observable signature.
+do
+    local names={'aggressive','defensive','economic','balanced','strategic','raider','guardian','artillery','engineer','vanguard'}
+    local function scenario(personality,which)
+        math.randomseed(100)
+        local a=newBattle(); a.aiPersonality=personality
+        local ai=a.teams[1]
+        ai.stats.deployed=3; ai.funds=which<=2 and 0 or 2000; ai.timer.ElapsedSimTimeMS=0
+        if which<=2 then
+            a.outposts[3].owner=1
+            for i=1,which+1 do
+                local ally=CreateAHuman('ally'); ally.Team=1; ally.Pos=Vector(a.outposts[3].x,565); MovableMan:AddActor(ally)
+            end
+        else
+            ai.baseArmor=3; ai.turret={Health=100}; ai.turretLevel=2
+            for i=1,29 do ai.levels[i]=1 end
+            if which==3 then
+                ai.levels[29]=0
+                for i=21,26 do ai.levels[i]=0 end
+            else
+                a.settings.callins=true; ai.levels[29]=6; a.outposts[3].owner=1
+                for i=1,3 do
+                    local ally=CreateAHuman('ally'); ally.Team=1; ally.Pos=Vector(a.outposts[3].x,565)
+                    ally.Health=40; MovableMan:AddActor(ally)
+                end
+                if which==4 then
+                    for i=1,3 do
+                        local enemy=CreateAHuman('enemy'); enemy.Team=0; enemy.Pos=Vector(a.outposts[2].x,565)
+                        MovableMan:AddActor(enemy)
+                    end
+                else a.playerBehavior.deployments=6 end
+            end
+        end
+        a:UpdateAI()
+        if which<=2 then return ai.goal end
+        local action=ai.lastAIAction
+        assert(action and ai.funds<2000,'candidate decisions must execute and pay their real price')
+        return action.kind..':'..tostring(action.target)
+    end
+    local seen={}
+    for _,name in ipairs(names) do
+        local parts={}
+        for which=1,5 do parts[which]=scenario(name,which) end
+        local signature=table.concat(parts,'|')
+        assert(not seen[signature],name..' duplicates '..tostring(seen[signature])..': '..signature)
+        seen[signature]=name
+        print('Persona decisions '..name..': '..signature)
+    end
+end

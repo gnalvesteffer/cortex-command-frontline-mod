@@ -78,6 +78,10 @@ score bias, not a replacement for tactical context. Successful player
 deployments, research and call-ins are tracked for adaptation. A base threat
 strength of 4 within 800 pixels interrupts the current goal for home defense;
 the goal clears below strength 2.
+Each battle randomly chooses one of ten personalities: aggressive, defensive,
+economic, balanced, strategic, raider, guardian, artillery, engineer or
+vanguard. Their goal, support, investment and research preferences differ;
+urgent base threats override those preferences.
 The AI fills squads with unlocked units, compares safe forward sites against
 the base when a preferred landing is unaffordable, and can spend its deployment
 reserve during an urgent defense. It promotes research responses to the

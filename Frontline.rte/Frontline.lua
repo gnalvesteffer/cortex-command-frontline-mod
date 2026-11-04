@@ -107,6 +107,19 @@ CONFIG.matchSetup={
     },
 }
 CONFIG.ai={
+    personaOrder={"aggressive","defensive","economic","balanced","strategic","raider","guardian","artillery","engineer","vanguard"},
+    personas={
+        aggressive={archetype="aggressive",bias={advance=5,rush=8}},
+        defensive={archetype="defensive",bias={defend=5,fortify=38}},
+        economic={archetype="economic",bias={mine=8,research=4}},
+        balanced={archetype="balanced",bias={deployment=3,advance=2}},
+        strategic={archetype="balanced",bias={regroup=25,research=12},research={29,15}},
+        raider={archetype="aggressive",bias={rush=22,advance=12,offense=5}},
+        guardian={archetype="defensive",bias={defend=18,baseUpgrade=20,heal=8}},
+        artillery={archetype="balanced",bias={offense=32,intercept=10},research={21,24,25}},
+        engineer={archetype="economic",bias={fortify=30,mine=12},research={22,23,26}},
+        vanguard={archetype="aggressive",bias={deployment=24,advance=8},batch=4,research={29,4}},
+    },
     utility={
         defend={base=35,threat=14,ally=-5,defensive=12,pressured=12},
         advance={base=42,neutral=12,enemies=-7,aggressive=10,economicNeutral=8},
@@ -181,7 +194,7 @@ CONFIG.ai={
         brainHealthMargin=25,
         singleLevelResearchTarget=1,
         researchRankPenalty=0.6,
-        personalityCount=4,
+        -- Persona count is derived from personaOrder.
         baseRushVerticalRadius=300,
         goalSwitchMargin=12,
         postThreatUrgency=80,
@@ -256,44 +269,46 @@ local function copyArray(source)
 end
 
 local function scoreAIAction(action, personality, pressured)
-    local score=action.utility or 0
+    local profile=CONFIG.ai.personas[personality] or CONFIG.ai.personas.balanced
+    local archetype=profile.archetype
+    local score=(action.utility or 0)+(profile.bias[action.kind] or 0)
     local weights=CONFIG.ai.utility[action.kind]
     if not weights then return score end
     score=score+weights.base
     if action.kind=="defend" then
         score=score+action.threats*weights.threat+action.allies*weights.ally
-        if personality=="defensive" then score=score+weights.defensive end
+        if archetype=="defensive" then score=score+weights.defensive end
         if pressured then score=score+weights.pressured end
     elseif action.kind=="advance" then
         score=score+(action.neutral and weights.neutral or 0)+action.enemies*weights.enemies
-        if personality=="aggressive" then score=score+weights.aggressive end
-        if personality=="economic" and action.neutral then score=score+weights.economicNeutral end
+        if archetype=="aggressive" then score=score+weights.aggressive end
+        if archetype=="economic" and action.neutral then score=score+weights.economicNeutral end
     elseif action.kind=="rush" then
         if action.allPostsHeld then score=score+weights.allPostsHeld end
-        if personality=="aggressive" then score=score+weights.aggressive end
+        if archetype=="aggressive" then score=score+weights.aggressive end
     elseif action.kind=="intercept" then
         score=score+action.threats*weights.threat
     elseif action.kind=="heal" then
         score=score+action.wounded*weights.wounded
     elseif action.kind=="offense" then
         score=score+action.enemies*weights.enemies
-        if personality=="aggressive" then score=score+weights.aggressive end
+        if archetype=="aggressive" then score=score+weights.aggressive end
     elseif action.kind=="mine" then
         if action.incomePost then score=score+weights.incomePost end
-        if personality=="economic" then score=score+weights.economic end
+        if archetype=="economic" then score=score+weights.economic end
         if pressured then score=score+weights.pressured end
     elseif action.kind=="supply" then
         score=score+action.allies*weights.ally
     elseif action.kind=="fortify" then
         score=score+action.threats*weights.threat+action.allies*weights.ally
-        if personality=="defensive" then score=score+weights.defensive end
+        if archetype=="defensive" then score=score+weights.defensive end
         if pressured then score=score+weights.pressured end
     elseif action.kind=="regroup" then
         score=score+action.allies*weights.strength
-        if personality=="defensive" then score=score+weights.defensive end
-        if personality=="aggressive" then score=score+weights.aggressive end
+        if archetype=="defensive" then score=score+weights.defensive end
+        if archetype=="aggressive" then score=score+weights.aggressive end
     elseif action.kind=="deployment" or action.kind=="research" or action.kind=="baseUpgrade" then
-        if weights[personality] then score=score+weights[personality] end
+        if weights[archetype] then score=score+weights[archetype] end
         if action.rank then score=score-math.max(0,action.rank-1)*CONFIG.ai.tuning.researchRankPenalty end
         if weights.costBurden and action.cost and action.availableFunds and action.availableFunds>0 then
             score=score-(action.cost/action.availableFunds)*weights.costBurden
@@ -370,6 +385,7 @@ function Frontline:StartActivity()
     local ok,method=pcall(function() return PrimitiveMan.DrawScreenBoxFillPrimitive end)
     self.screenUI=ok and method~=nil
     self.teams = {[0]=freshTeam(), [1]=freshTeam()}
+    self.aiPersonality=nil
     self.commanders={}
     for team=0,1 do
         self.commanders[team]=setmetatable({activity=self,team=team},TeamCommander)
@@ -1850,6 +1866,7 @@ end
 
 function Frontline:StartBattle()
     if self.battleStarted then return end
+    self.aiPersonality=CONFIG.ai.personaOrder[math.random(1,#CONFIG.ai.personaOrder)]
     self.battleStarted=true
     self.matchTimer:Reset()
     self.aiTimer:Reset()
@@ -2035,14 +2052,6 @@ function Frontline:UpdateAI()
     local aiTuning=CONFIG.ai.tuning
     local ai=self.teams[team]
     
-    -- Pick a personality at match start for randomized playstyle
-    if not self.aiPersonality then
-        local roll=math.random(1,CONFIG.ai.tuning.personalityCount)
-        if roll==1 then self.aiPersonality="aggressive"
-        elseif roll==2 then self.aiPersonality="defensive"
-        elseif roll==3 then self.aiPersonality="economic"
-        else self.aiPersonality="balanced" end
-    end
     
     if not self.playerBehavior then
         self.playerBehavior={deployments=0,researchPurchases=0,callinsUsed=0,lastDeployTime=0,
@@ -2058,11 +2067,16 @@ function Frontline:UpdateAI()
     local pressured=snapshot.pressured
     -- Each decision gets a private priority list before adapting to player research.
     local configured=CONFIG.ai.researchPriorities
+    local profile=CONFIG.ai.personas[self.aiPersonality] or CONFIG.ai.personas.balanced
+    local archetype=profile.archetype
     local priorities
-    if self.aiPersonality=="aggressive" then priorities=copyArray(configured.aggressive)
-    elseif self.aiPersonality=="defensive" then priorities=copyArray(configured.defensive)
-    elseif self.aiPersonality=="economic" then priorities=copyArray(configured.economic)
+    if archetype=="aggressive" then priorities=copyArray(configured.aggressive)
+    elseif archetype=="defensive" then priorities=copyArray(configured.defensive)
+    elseif archetype=="economic" then priorities=copyArray(configured.economic)
     else priorities=copyArray(pressured and configured.balancedPressured or configured.balancedNeutral) end
+    if profile.research then
+        for i=#profile.research,1,-1 do table.insert(priorities,1,profile.research[i]) end
+    end
     
     -- Promote responses before deduplication, rather than appending duplicates.
     local responses=CONFIG.ai.researchResponses[snapshot.playerResearchFocus]
@@ -2132,6 +2146,7 @@ function Frontline:UpdateAI()
             batchSize=aiTuning.defensiveBatchMin+math.random(0,aiTuning.defensiveBatchRandom)
         end
     end
+    if ai.stats.deployed>0 and profile.batch then batchSize=profile.batch end
     if urgentBaseDefense and ai.stats.deployed>0 then batchSize=aiTuning.baseDefenseBatchSize end
 
     ai.counts={}
