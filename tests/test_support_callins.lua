@@ -45,7 +45,25 @@ UInputMan.GetMouseMovement=function() return Vector(0,0) end
 UInputMan.MouseButtonPressed=function() return false end
 activity.tab='Support'; activity:DrawPanel()
 local supportLabels=table.concat(panelText,' ')
-assert(supportLabels:find('STRIKE',1,true) and supportLabels:find('LOCKED',1,true), 'unresearched support options must display locked states: '..supportLabels)
+local barrage=supportLabels:find('ORBITAL GATLING BARRAGE',1,true)
+local strategicChoices={
+    {kind='advance',neutral=true,enemies=0,target=1},
+    {kind='defend',threats=1,allies=1,target=2},
+}
+activity.aiPersonality='aggressive'
+assert(activity:ChooseAIAction(strategicChoices,true).kind=='advance', 'aggressive AI should take a neutral post while pressure is manageable')
+activity.aiPersonality='defensive'
+assert(activity:ChooseAIAction(strategicChoices,true).kind=='defend', 'defensive AI should protect a threatened owned post under pressure')
+activity.aiPersonality='economic'
+local economyChoices={
+    {kind='advance',neutral=true,enemies=0,target=1},
+    {kind='mine',incomePost=true,target=2},
+}
+assert(activity:ChooseAIAction(economyChoices,false).kind=='mine', 'economic AI should prefer mining when its income utility exceeds a neutral advance')
+local precision=supportLabels:find('ORBITAL PRECISION STRIKE',1,true)
+local heavyBomb=supportLabels:find('500KG BOMB',1,true)
+assert(barrage and precision and heavyBomb and barrage<precision and precision<heavyBomb, 'offensive supports must use the requested names and order')
+assert(supportLabels:find('LOCKED',1,true), 'unresearched support options must display locked states')
 local team=activity.teams[0]; team.funds=10000
 local target=activity.outposts[2]
 for _,kind in ipairs({'strike','medic','cover','mines','bomb','turret','orbital','shield','mining'}) do
@@ -61,13 +79,14 @@ assert(activity:Research(0,6) and team.tier==3)
 assert(not activity:Research(0,12), 'medic level 2 must require level 1')
 assert(not activity:Research(0,14), 'shield level 2 must require level 1')
 assert(activity:Research(0,11)); assert(activity:Research(0,13)); assert(activity:Research(0,15))
-assert(not activity:Research(0,25), 'bomb research must require precision-strike research')
-assert(not activity:Research(0,27), 'orbital research must require bomb-run research')
-assert(activity:Research(0,22)); assert(activity:Research(0,25))
-assert(activity:Research(0,27))
+assert(not activity:Research(0,25), 'precision strike must require orbital barrage research')
+assert(not activity:Research(0,26), '500kg bomb must require precision-strike research')
+assert(activity:Research(0,22))
+assert(activity:Research(0,25))
+assert(activity:Research(0,26))
 assert(activity:Research(0,23))
-assert(not activity:Research(0,26), 'turret research must require minefield research')
-assert(activity:Research(0,24)); assert(activity:Research(0,26))
+assert(not activity:Research(0,27), 'turret must require minefield research')
+assert(activity:Research(0,24)); assert(activity:Research(0,27))
 local injured=CreateAHuman('Soldier Light','Coalition.rte'); injured.Team=0; injured.Pos=Vector(target.x,565); injured.Health=50; injured.MaxHealth=100; table.insert(actors,injured)
 assert(activity:CallIn(0,'medic',2)); assert(injured.Health==100)
 local shieldOK,shieldMessage=activity:CallIn(0,'shield',2); assert(shieldOK,shieldMessage); assert(activity.jamFields[#activity.jamFields].duration==60000)
@@ -90,12 +109,18 @@ assert(dropped.Team==0 and bomb.bombsDropped==1)
 print('Support research gates, medic/shield upgrades, mining dispatch, and bomb targeting passed')
 activity.UIDrawBoxFill=function() end
 activity.UIDrawBox=function() end
-activity.UIDrawText=function() end
+local treeText={}
+activity.UIDrawText=function(_,_,_,label) treeText[#treeText+1]=label end
 CameraMan={GetOffset=function() return Vector(0,0) end}
 UInputMan.GetMouseMovement=function() return Vector(0,0) end
 UInputMan.MouseButtonPressed=function() return false end
 activity.tab='Squad'; activity:DrawPanel()
 for page=1,3 do activity.researchPage=page; activity.tab='Research'; activity:DrawPanel() end
+local treeLabels=table.concat(treeText,' ')
+local treeBarrage=treeLabels:find('Orbital Gatling Barrage',1,true)
+local treePrecision=treeLabels:find('Orbital Precision Strike',1,true)
+local treeBomb=treeLabels:find('500kg Bomb',1,true)
+assert(treeBarrage and treePrecision and treeBomb and treeBarrage<treePrecision and treePrecision<treeBomb, 'tech tree must display the requested offensive progression')
 activity.tab='Support'; activity:DrawPanel()
 activity.tab='Squad'; activity:DrawPanel()
-print('All research tree pages, the support unlock panel, and squad roster render without Lua errors')
+print('All research tree pages, support UI ordering, and squad roster render without Lua errors')

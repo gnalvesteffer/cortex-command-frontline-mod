@@ -14,13 +14,15 @@ for its first deployment.
 Unit research follows the Coalition Light -> Coalition Heavy -> Dummy/Gatling
 Drone -> Browncoat chain. Weapon and equipment unlocks are in the Arsenal tree.
 The Research tab has three categorized pages; connector lines mark prerequisites.
-Each support call-in has a research unlock. Bombs follow precision strike and
-orbital fire follows bombs; mines follow cover and the turret follows mines.
-Medic and shield each have separate level-1 and level-2 research.
+Each support call-in has a research unlock. Orbital Gatling Barrage unlocks
+Orbital Precision Strike, which unlocks the 500kg Bomb. Mines follow cover and
+the turret follows mines. Medic and shield each have separate level-1 and
+level-2 research.
 
-Support targets outposts with strikes, medics, cover, mines, bombs, orbital
-fire or a shield. A shield requires an owned post and blocks hostile strike,
-bomb and orbital call-ins for 20 seconds. Each call-in has a separate cooldown.
+The Support tab orders offensive call-ins as Orbital Gatling Barrage, Orbital
+Precision Strike, then 500kg Bomb. A shield requires an owned post and blocks
+hostile precision strikes, bombs and orbital barrages for 20 seconds. Each
+call-in has a separate cooldown.
 
 Both manual and automatic deployment cost funds and share a cooldown. Both brains have Gatling Guns. Buy brain armor,
 repairs and a rebuildable upper-room turret on the Base tab. Destroy
@@ -32,4 +34,6 @@ in-game testing, especially vehicle navigation, forward spawn, shields and the
 match report. Research and settings reset each match.
 
 The AI uses the same units, research, base upgrades, orders, forward spawns and call-ins,
-including their normal prices, cooldowns, capacity limits and prerequisites.
+including their normal prices, cooldowns, capacity limits and prerequisites. It
+scores objectives and available tactical supports against pressure, captured
+posts, enemy concentrations, wounded allies, income needs and its playstyle.

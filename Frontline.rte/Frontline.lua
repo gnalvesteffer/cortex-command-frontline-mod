@@ -72,17 +72,17 @@ local CONFIG = {
         {name="Equipment: Sidearms", price=180, max=1, kind="equipment"},
         {name="Equipment: Unit armor (+50 HP)", price=260, max=1, kind="equipment"},
 
-        -- Support delivery unlocks. Advanced weapons build from a basic strike;
-        -- defensive deliveries progress from cover to mines to a turret.
-        {name="Support: Precision strike", price=180, max=1, kind="support"},
+        -- Offense escalates from orbital barrage to precision strike to bomb;
+        -- defense progresses from cover through mines to a turret.
+        {name="Support: Orbital Gatling Barrage", price=300, max=1, kind="support"},
         {name="Support: Cover delivery", price=140, max=1, kind="support"},
         {name="Support: Minefield delivery", price=180, max=1, kind="support", requires=23},
-        {name="Support: Bomb run", price=220, max=1, kind="support", requires=22},
+        {name="Support: Orbital Precision Strike", price=180, max=1, kind="support", requires=22},
+        {name="Support: 500kg Bomb", price=220, max=1, kind="support", requires=25},
         {name="Support: Static turret", price=260, max=1, kind="support", requires=24},
-        {name="Support: Orbital Gatling", price=300, max=1, kind="support", requires=25},
 }
 }
-local SUPPORT_RESEARCH={strike=22,medic=11,cover=23,mines=24,bomb=25,turret=26,orbital=27,shield=13,mining=15}
+local SUPPORT_RESEARCH={strike=25,medic=11,cover=23,mines=24,bomb=26,turret=27,orbital=22,shield=13,mining=15}
 
 -- A right click walks through the same ordered options in reverse.
 local function cycleOption(options,current,direction)
@@ -90,6 +90,51 @@ local function cycleOption(options,current,direction)
         if value==current then return options[(i-1+direction)%#options+1] end
     end
     return options[1]
+end
+
+local function scoreAIAction(action, personality, pressured)
+    local score=action.utility or 0
+    if action.kind=="defend" then
+        score=score+35+action.threats*14-action.allies*5
+        if personality=="defensive" then score=score+12 end
+        if pressured then score=score+12 end
+    elseif action.kind=="advance" then
+        score=score+42+(action.neutral and 12 or 0)-action.enemies*7
+        if personality=="aggressive" then score=score+10 end
+        if personality=="economic" and action.neutral then score=score+8 end
+    elseif action.kind=="rush" then
+        score=score+30+(action.allPostsHeld and 25 or 0)
+        if personality=="aggressive" then score=score+10 end
+    elseif action.kind=="intercept" then
+        score=score+100+action.threats*8
+    elseif action.kind=="heal" then
+        score=score+38+action.wounded*8
+    elseif action.kind=="offense" then
+        score=score+25+action.enemies*12
+        if personality=="aggressive" then score=score+12 end
+    elseif action.kind=="mine" then
+        score=score+40+(action.incomePost and 8 or 0)
+        if personality=="economic" then score=score+25 end
+        if pressured then score=score-10 end
+    elseif action.kind=="fortify" then
+        score=score+22+action.threats*10-action.allies*2
+        if personality=="defensive" then score=score+12 end
+        if pressured then score=score+8 end
+    end
+    return score
+end
+
+local function chooseAIAction(actions, personality, pressured)
+    local best
+    for _,action in ipairs(actions) do
+        action.score=scoreAIAction(action,personality,pressured)
+        if not best or action.score>best.score then best=action end
+    end
+    return best
+end
+
+function Frontline:ChooseAIAction(actions, pressured)
+    return chooseAIAction(actions,self.aiPersonality,pressured)
 end
 
 local function freshTeam()
@@ -109,8 +154,8 @@ local RESEARCH_PAGES={
     }},
     {title="SUPPORT NETWORK",columns={
         {title="MEDIC / INDUSTRY",items={11,12,15}},
-        {title="DEFENSE",items={13,14,23,24,26}},
-        {title="OFFENSE",items={22,25,27}},
+        {title="DEFENSE",items={13,14,23,24,27}},
+        {title="OFFENSE",items={22,25,26}},
     }},
 }
 local RESEARCH_LABELS={
@@ -121,8 +166,8 @@ local RESEARCH_LABELS={
     [13]="SHIELD I 60s", [14]="SHIELD II 90s",
     [15]="Mining Call-In", [16]="Perception +5%", [17]="Assault Rifle",
     [18]="Medikit Packs", [19]="Grenade Packs", [20]="Sidearms", [21]="Unit Armor",
-    [22]="Strike", [23]="Cover", [24]="Mines", [25]="Bombs",
-    [26]="Turret", [27]="Orbital",
+    [22]="Orbital Gatling Barrage", [23]="Cover", [24]="Mines",
+    [25]="Orbital Precision Strike", [26]="500kg Bomb", [27]="Turret",
 }
 
 function Frontline:StartActivity()
@@ -1422,18 +1467,21 @@ function Frontline:UpdateAI()
     end
     ai.preset="AI mixed"
     
-    -- Attack the nearest unsecured post from the AI side, then attack the base.
-    local target=0
-    for i=#self.outposts,1,-1 do if self.outposts[i].owner~=team then target=i; break end end
-    local desired=target>0 and "Advance" or "Rush"
-    if target==0 and posts[3].threats>=2 then desired="Defend"; target=3 end
-    
-    -- Adaptive strategy: if player is aggressive, switch to defense temporarily
-    if self.playerBehavior.deployments>5 and not pressured then
-        desired="Advance"
-    elseif pressured and self.aiPersonality=="defensive" then
-        desired="Defend"
+    -- Score strategic objectives instead of letting a fixed branch dominate.
+    local actions={}
+    local allPostsHeld=true
+    for i,post in ipairs(self.outposts) do
+        if post.owner~=team then
+            allPostsHeld=false
+            actions[#actions+1]={kind="advance",target=i,neutral=post.owner==-1,enemies=posts[i].enemies,utility=i*0.01}
+        elseif posts[i].threats>0 then
+            actions[#actions+1]={kind="defend",target=i,threats=posts[i].threats,allies=posts[i].allies}
+        end
     end
+    actions[#actions+1]={kind="rush",allPostsHeld=allPostsHeld,utility=self.playerBehavior.deployments>5 and 4 or 0}
+    local decision=self:ChooseAIAction(actions,pressured)
+    local target=decision.target or 0
+    local desired=decision.kind=="defend" and "Defend" or (decision.kind=="advance" and "Advance" or "Rush")
     
     if ai.order~=desired or (target>0 and ai.orderTarget~=target) then
         ai.order=desired
@@ -1474,101 +1522,110 @@ function Frontline:UpdateAI()
     
     if not self.settings.callins or not self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS) then return end
     
-    -- Intercept an incoming hostile warning at an owned post when affordable.
-    if ai.funds>=CONFIG.CALLIN_SHIELD_COST+150 then
-        for _,pendingList in ipairs({self.pendingStrikes,self.pendingOrbitals,self.pendingDrops}) do
-            for _,pending in ipairs(pendingList) do
-                if pending.team~=team and not pending.projectileTimer then
-                    local target=pending.target or self.outposts[pending.index]
-                    for i,post in ipairs(self.outposts) do
-                        if target and post.owner==team and math.abs(post.x-target.x)<=CONFIG.OUTPOST_RADIUS then
-                            local ok=self:CallIn(team,"shield",target); if ok then return end
-                        end
+    -- Build viable tactical actions, score them against the current situation,
+    -- then try them from highest utility downward.
+    local actions={}
+    local calls={
+        strike={cost=CONFIG.CALLIN_STRIKE_COST,cooldown=CONFIG.CALLIN_STRIKE_COOLDOWN_MS,timer=ai.strikeTimer},
+        medic={cost=CONFIG.CALLIN_MEDIC_COST,cooldown=CONFIG.CALLIN_MEDIC_COOLDOWN_MS,timer=ai.medicTimer},
+        cover={cost=CONFIG.CALLIN_COVER_COST,cooldown=CONFIG.CALLIN_COVER_COOLDOWN_MS,timer=ai.coverTimer},
+        mines={cost=CONFIG.CALLIN_MINES_COST,cooldown=CONFIG.CALLIN_MINES_COOLDOWN_MS,timer=ai.minesTimer},
+        bomb={cost=CONFIG.CALLIN_BOMB_COST,cooldown=CONFIG.CALLIN_BOMB_COOLDOWN_MS,timer=ai.bombTimer},
+        orbital={cost=CONFIG.CALLIN_ORBITAL_COST,cooldown=CONFIG.CALLIN_ORBITAL_COOLDOWN_MS,timer=ai.orbitalTimer},
+        shield={cost=CONFIG.CALLIN_SHIELD_COST,cooldown=CONFIG.CALLIN_SHIELD_COOLDOWN_MS,timer=ai.shieldTimer},
+        turret={cost=CONFIG.CALLIN_TURRET_COST,cooldown=CONFIG.CALLIN_TURRET_COOLDOWN_MS,timer=ai.turretTimer},
+        mining={cost=200,cooldown=CONFIG.CALLIN_MINES_COOLDOWN_MS,timer=ai.minesTimer},
+    }
+    local function addAction(kind,callin,target,context,reserve)
+        local option=calls[callin]
+        local required=SUPPORT_RESEARCH[callin]
+        if option and (ai.levels[required] or 0)>0
+            and ai.funds>=option.cost+(reserve or 240)
+            and option.timer:IsPastSimMS(self:CallinCooldown(team,option.cooldown)) then
+            context.kind=kind
+            context.callin=callin
+            context.target=target
+            actions[#actions+1]=context
+        end
+    end
+
+    -- Defensive interception protects owned posts before pending hostile fire lands.
+    for _,pendingList in ipairs({self.pendingStrikes,self.pendingOrbitals,self.pendingDrops}) do
+        for _,pending in ipairs(pendingList) do
+            if pending.team~=team and not pending.projectileTimer then
+                local target=pending.target or self.outposts[pending.index]
+                for _,post in ipairs(self.outposts) do
+                    if target and post.owner==team and math.abs(post.x-target.x)<=CONFIG.OUTPOST_RADIUS then
+                        addAction("intercept","shield",target,{threats=1},150)
                     end
                 end
             end
         end
     end
-    
-    -- Heal wounded squads when it is worthwhile, conserving a deployment reserve.
-    if ai.funds>=CONFIG.CALLIN_MEDIC_COST+240 then
-        for i=1,#posts do if posts[i].wounded>=2 then local ok=self:CallIn(team,"medic",i); if ok then return end end end
-    end
-    
-    -- Rotate among all three offensive call-ins when enemies are concentrated
-    -- and friendly troops are clear. CallIn enforces the same cooldowns and cost.
-    if ai.funds>=CONFIG.CALLIN_STRIKE_COST+300 then
-        local kinds={"strike","bomb","orbital"}
-        local start=ai.offenseChoice or 1
-        
-        -- Adaptive: use orbital more if player has many units
-        if self.aiPersonality=="aggressive" and self:UnitCount(0)>8 then
-            kinds={"orbital","bomb","strike"}
+    for i,post in ipairs(self.outposts) do
+        if posts[i].wounded>=2 then
+            addAction("heal","medic",i,{wounded=posts[i].wounded})
         end
-        
-        for i=1,#posts do
-            if posts[i].enemies>=2 and posts[i].allies==0 then
-                for offset=0,#kinds-1 do
-                    local choice=(start+offset-1)%#kinds+1
-                    local kind=kinds[choice]
-                    local prices={strike=CONFIG.CALLIN_STRIKE_COST,bomb=CONFIG.CALLIN_BOMB_COST,orbital=CONFIG.CALLIN_ORBITAL_COST}
-                    if ai.funds>=prices[kind]+240 then
-                        local ok=self:CallIn(team,kind,i)
-                        if ok then ai.offenseChoice=choice%#kinds+1; return end
-                    end
-                end
+        if post.owner==team and posts[i].allies>0
+            and (posts[i].threats>0 or self.playerBehavior.deployments>5) then
+            local kinds={"cover","mines","turret"}
+            for _,kind in ipairs(kinds) do
+                addAction("fortify",kind,i,{
+                    threats=posts[i].threats,
+                    allies=posts[i].allies,
+                    utility=(kind==ai.fortifyChoice and 2 or (kind=="turret" and 4 or 0)),
+                })
+            end
+        end
+        if post.owner==team and posts[i].allies>0 then
+            addAction("mine","mining",i,{incomePost=post.kind==1})
+        end
+        if posts[i].enemies>=2 and posts[i].allies==0 then
+            for choice,kind in ipairs({"strike","bomb","orbital"}) do
+                local preference=choice==(ai.offenseChoice or 1) and 2 or 0
+                if kind=="orbital" and self.aiPersonality=="aggressive" and self:UnitCount(0)>8 then preference=preference+8 end
+                addAction("offense",kind,i,{
+                    enemies=posts[i].enemies,
+                    utility=preference,
+                })
             end
         end
     end
-    
-    -- Outside capture zones, strike isolated concentrations without hitting allies.
-    if ai.funds>=CONFIG.CALLIN_STRIKE_COST+300 then
-        for _,candidate in ipairs(fieldActors) do
-            if candidate.Team==0 then
-                local enemies,allies=0,0
-                for _,actor in ipairs(fieldActors) do
-                    if math.abs(actor.Pos.X-candidate.Pos.X)<120 then
-                        if actor.Team==0 then enemies=enemies+1 else allies=allies+1 end
-                    end
+
+    -- Area strikes may also target dense enemy groups outside capture zones.
+    local seenClusters={}
+    for _,candidate in ipairs(fieldActors) do
+        if candidate.Team==0 then
+            local enemies,allies=0,0
+            for _,actor in ipairs(fieldActors) do
+                if math.abs(actor.Pos.X-candidate.Pos.X)<120 then
+                    if actor.Team==0 then enemies=enemies+1 else allies=allies+1 end
                 end
-                if enemies>=2 and allies==0 then
-                    local ground=SceneMan:MovePointToGround(Vector(candidate.Pos.X,0),0,4)
-                    local target={name="enemy concentration",x=candidate.Pos.X,groundY=ground.Y,owner=-1}
-                    local ok=self:CallIn(team,"strike",target); if ok then return end
-                end
+            end
+            local cluster=math.floor(candidate.Pos.X/120)
+            if enemies>=2 and allies==0 and not seenClusters[cluster] then
+                seenClusters[cluster]=true
+                local ground=SceneMan:MovePointToGround(Vector(candidate.Pos.X,0),0,4)
+                local target={name="enemy concentration",x=candidate.Pos.X,groundY=ground.Y,owner=-1}
+                addAction("offense","strike",target,{enemies=enemies})
             end
         end
     end
-    
-    -- Fortify threatened posts, alternating cover and mines.
-    if ai.funds>=CONFIG.CALLIN_COVER_COST+300 then
-        local kinds=ai.fortifyChoice=="mines" and {"mines","cover"} or {"cover","mines"}
-        
-        -- Adaptive: fortify more if player is aggressive
-        if self.playerBehavior.deployments>5 then
-            for i=#posts,1,-1 do
-                if self.outposts[i].owner==team and posts[i].allies>0 then
-                    for _,kind in ipairs(kinds) do
-                        local cost=kind=="mines" and CONFIG.CALLIN_MINES_COST or CONFIG.CALLIN_COVER_COST
-                        if ai.funds>=cost+240 then
-                            local ok=self:CallIn(team,kind,i)
-                            if ok then ai.fortifyChoice=kind=="mines" and "cover" or "mines"; return end
-                        end
-                    end
-                end
+
+    while #actions>0 do
+        local action=self:ChooseAIAction(actions,pressured)
+        for i,candidate in ipairs(actions) do
+            if candidate==action then table.remove(actions,i); break end
+        end
+        local ok=self:CallIn(team,action.callin,action.target)
+        if ok then
+            if action.kind=="offense" then
+                local sequence={strike=1,bomb=2,orbital=3}
+                ai.offenseChoice=(sequence[action.callin]%3)+1
+            elseif action.kind=="fortify" then
+                ai.fortifyChoice=action.callin=="mines" and "cover" or "mines"
             end
-        else
-            for i=#posts,1,-1 do
-                if self.outposts[i].owner==team and posts[i].allies>0 and posts[i].threats>0 then
-                    for _,kind in ipairs(kinds) do
-                        local cost=kind=="mines" and CONFIG.CALLIN_MINES_COST or CONFIG.CALLIN_COVER_COST
-                        if ai.funds>=cost+240 then
-                            local ok=self:CallIn(team,kind,i)
-                            if ok then ai.fortifyChoice=kind=="mines" and "cover" or "mines"; return end
-                        end
-                    end
-                end
-            end
+            return
         end
     end
 end
@@ -1969,22 +2026,23 @@ function Frontline:DrawPanel()
             local seconds=math.max(0,math.ceil((self:CallinCooldown(0,cooldown)-timer.ElapsedSimTimeMS)/1000))
             local status=not unlocked and "LOCKED" or (seconds>0 and (seconds.."s") or "READY")
             local state=not unlocked and "locked" or (seconds==0 and t.funds>=cost and "available" or "disabled")
-            button(x,y,140,label.." "..cost.." "..status,state,function()
+            button(x,y,140,label,state,function()
                 if not unlocked then self:Notify("Research "..CONFIG.research[required].name.." first")
                 else self:BeginTargeting(kind) end
             end)
-            if not unlocked then text(x,y+17,"Requires "..RESEARCH_LABELS[required],true) end
+            text(x,y+17,cost.." oz | "..status,true)
+            if not unlocked then text(x,y+28,"Requires "..RESEARCH_LABELS[required],true) end
         end
-        supportOption("strike","STRIKE",CONFIG.CALLIN_STRIKE_COST,t.strikeTimer,CONFIG.CALLIN_STRIKE_COOLDOWN_MS,15,128)
-        supportOption("bomb","BOMB",CONFIG.CALLIN_BOMB_COST,t.bombTimer,CONFIG.CALLIN_BOMB_COOLDOWN_MS,15,174)
-        supportOption("orbital","ORBITAL",CONFIG.CALLIN_ORBITAL_COST,t.orbitalTimer,CONFIG.CALLIN_ORBITAL_COOLDOWN_MS,15,220)
+        supportOption("orbital","ORBITAL GATLING BARRAGE",CONFIG.CALLIN_ORBITAL_COST,t.orbitalTimer,CONFIG.CALLIN_ORBITAL_COOLDOWN_MS,15,128)
+        supportOption("strike","ORBITAL PRECISION STRIKE",CONFIG.CALLIN_STRIKE_COST,t.strikeTimer,CONFIG.CALLIN_STRIKE_COOLDOWN_MS,15,174)
+        supportOption("bomb","500KG BOMB",CONFIG.CALLIN_BOMB_COST,t.bombTimer,CONFIG.CALLIN_BOMB_COOLDOWN_MS,15,220)
         supportOption("cover","COVER",CONFIG.CALLIN_COVER_COST,t.coverTimer,CONFIG.CALLIN_COVER_COOLDOWN_MS,165,128)
         supportOption("mines","MINES",CONFIG.CALLIN_MINES_COST,t.minesTimer,CONFIG.CALLIN_MINES_COOLDOWN_MS,165,174)
         supportOption("turret","TURRET",CONFIG.CALLIN_TURRET_COST,t.turretTimer,CONFIG.CALLIN_TURRET_COOLDOWN_MS,165,220)
         supportOption("shield","JAMMER",CONFIG.CALLIN_SHIELD_COST,t.shieldTimer,CONFIG.CALLIN_SHIELD_COOLDOWN_MS,165,266)
         supportOption("medic","MEDIC",CONFIG.CALLIN_MEDIC_COST,t.medicTimer,CONFIG.CALLIN_MEDIC_COOLDOWN_MS,315,128)
         supportOption("mining","MINING",200,t.minesTimer,CONFIG.CALLIN_MINES_COOLDOWN_MS,315,174)
-        text(15,315,"Jammer blocks hostile strike, bomb and orbital support.")
+        text(15,315,"Jammer blocks hostile precision strikes, bombs and orbital barrages.")
         text(15,331,"Enemy-base exclusion: "..CONFIG.ENEMY_BASE_SUPPORT_EXCLUSION_RADIUS.."px.")
     elseif self.tab=="Base" then
         local brain=self.brains[0]
