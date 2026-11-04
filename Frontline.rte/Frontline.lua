@@ -33,7 +33,7 @@ local CONFIG = {
     BASE_ARMOR_COST = 200, BASE_ARMOR_HEALTH = 50, BASE_ARMOR_LEVELS = 3,
     BASE_REPAIR_COST = 120, BASE_REPAIR_HEALTH = 50, BASE_TURRET_COST = 350, BASE_TURRET_UPGRADE_COST=650,
     BASE_TURRET_RANGE_MULTIPLIER=1.5, BASE_TURRET_AIM_DISTANCE=30,
-    BASE_TOWER_DISTANCE=484, BASE_TOWER_HEIGHT=102, BASE_TURRET_PIN_STRENGTH=100000,
+    BASE_TOWER_DISTANCE=484, BASE_TOWER_HEIGHT=102, BASE_TURRET_ROOM_OFFSET_Y=15, BASE_TURRET_PIN_STRENGTH=100000,
     -- Unit and equipment catalogs
     roster = {
         {name="Coalition Light", actor="Soldier Light", mod="Coalition.rte", price=75, unlock=0, research=1},
@@ -685,7 +685,7 @@ function TeamCommander:BaseUpgrade(kind)
         if not turret then return false,"Turret preset unavailable" end
         turret.Team=team
         local x=team==0 and CONFIG.BASE_TOWER_DISTANCE or SceneMan.SceneWidth-CONFIG.BASE_TOWER_DISTANCE
-        turret.Pos=Vector(x,self.baseGround[team]-CONFIG.BASE_TOWER_HEIGHT)
+        turret.Pos=Vector(x,self.baseGround[team]-CONFIG.BASE_TOWER_HEIGHT+CONFIG.BASE_TURRET_ROOM_OFFSET_Y)
         turret.HFlipped=team==1
         turret.AIMode=Actor.AIMODE_SENTRY
         turret.AimDistance=CONFIG.BASE_TURRET_AIM_DISTANCE*(upgraded and CONFIG.BASE_TURRET_RANGE_MULTIPLIER or 1)

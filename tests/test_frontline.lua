@@ -4,8 +4,12 @@ function Timer() return {ElapsedSimTimeMS=0, IsPastSimMS=function(s,n) return s.
 function Vector(x,y) return setmetatable({X=x,Y=y},{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
 local nextId=0
 function CreateAHuman(n,m) nextId=nextId+1; return {Team=0,UniqueID=nextId,name=n,Health=100,MaxHealth=100,Height=70,AddInventoryItem=function(self,item) self.inventory=item end,ClearAIWaypoints=function(self) self.waypoint=nil end,AddAISceneWaypoint=function(self,v) self.waypoint=v end} end
-local turretMuzzles={["Gatling Turret"]={x=11,y=-8},["Frontline HE Turret"]={x=49,y=-1}}
-function CreateACrab(n,m) local a=CreateAHuman(n,m); a.vehicle=true; a.MuzzleOffset=turretMuzzles[n]; return a end
+local turretMuzzles={["Gatling Turret"]={x=11,y=-8},["Frontline HE Turret"]={x=49,y=-6}}
+function CreateACrab(n,m)
+    local a=CreateAHuman(n,m); a.vehicle=true; a.MuzzleOffset=turretMuzzles[n]
+    a.SpriteOffset=Vector(-13,-7); a.SpriteHeight=16
+    return a
+end
 -- Rows/offsets are measured from Base.rte's material bitmaps and bunker INI.
 local bunkerGeometry={
     ["Tunnel A"]={width=96,height=96,bitmapOffsetY=-48,roofPixelY=0,walkablePixelY=72,openingTop=24,openingBottom=71},
@@ -125,8 +129,11 @@ end
 for _,turret in ipairs({{object=CreateACrab("Gatling Turret"),team=0},{object=CreateACrab("Gatling Turret"),team=1},
     {object=CreateACrab("Frontline HE Turret"),team=0},{object=CreateACrab("Frontline HE Turret"),team=1}}) do
     local object=turret.object
-    object.Pos=turret.team==0 and upperLeft.Pos or upperRight.Pos
+    local room=turret.team==0 and upperLeft or upperRight
+    object.Pos=Vector(room.Pos.X,room.Pos.Y+15)
     object.HFlipped=turret.team==1
+    assert(object.Pos.Y+object.SpriteOffset.Y+object.SpriteHeight==materialFloorY(room),
+        'Gatling and copied HE turret sprite bottom must meet the upper Tunnel A floor')
     local muzzleX,muzzleY=worldMuzzle(object)
     assert(muzzleY>=upperOpeningTop and muzzleY<=upperOpeningBottom and muzzleY<hallwayRoof,
         'stock Gatling/HE preset muzzle must lie in the upper Tunnel A bore above the lower corridor roof')
@@ -523,16 +530,18 @@ assert(base.commanders[0]:BaseUpgrade('repair')); assert(base.brains[0].Health==
 assert(base.commanders[0]:BaseUpgrade('turret'))
 local playerMuzzleX,playerMuzzleY=worldMuzzle(bt.turret)
 assert(bt.turret.name=='Gatling Turret' and bt.turret.AIMode==Actor.AIMODE_SENTRY
-    and bt.turret.AimDistance==30 and bt.turret.Pos.X==484 and bt.turret.Pos.Y==498
+    and bt.turret.AimDistance==30 and bt.turret.Pos.X==484 and bt.turret.Pos.Y==513
     and not bt.turret.HFlipped and playerMuzzleX<playerExit
-    and playerMuzzleY>=upperOpeningTop and playerMuzzleY<=upperOpeningBottom and bt.funds==1330)
+    and playerMuzzleY>=upperOpeningTop and playerMuzzleY<=upperOpeningBottom and bt.funds==1330
+    and bt.turret.Pos.Y+bt.turret.SpriteOffset.Y+bt.turret.SpriteHeight==materialFloorY(upperLeft))
 local gatling=bt.turret
 assert(base.commanders[0]:BaseUpgrade('turretUpgrade'))
 local upgradedPlayerMuzzleX,upgradedPlayerMuzzleY=worldMuzzle(bt.turret)
 assert(gatling.ToDelete and bt.turret.name=='Frontline HE Turret' and bt.turret.AimDistance==45
     and upgradedPlayerMuzzleX==playerExit+1 and upgradedPlayerMuzzleY>=upperOpeningTop
-    and upgradedPlayerMuzzleY<=upperOpeningBottom and bt.funds==680,
-    'custom HE turret must replace the Gatling and emerge through the outer exit at 1.5x baseline range')
+    and upgradedPlayerMuzzleY<=upperOpeningBottom and bt.funds==680
+    and bt.turret.Pos.Y+bt.turret.SpriteOffset.Y+bt.turret.SpriteHeight==materialFloorY(upperLeft),
+    'custom HE turret must replace Gatling, sit on the outer room floor and retain 1.5x range')
 assert(base:UnitCount(0)==0 and not base.commanders[0]:BaseUpgrade('turret'))
 base.commanders[0]:SetOrder('Advance',2); assert(bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.turret.waypoint==nil)
 base.settings.callins=false
@@ -541,16 +550,16 @@ for index=1,29 do bi.levels[index]=10 end
 bi.baseArmor=3; bi.auto=false; bi.funds=3000; bi.timer.ElapsedSimTimeMS=0
 base:UpdateAI()
 assert(bi.turret and bi.turret.name=='Gatling Turret' and bi.turret.AimDistance==30
-    and bi.turret.Team==1 and bi.turret.Pos.X==4716 and bi.turret.Pos.Y==498 and bi.turret.HFlipped)
-local enemyMuzzleX,enemyMuzzleY=worldMuzzle(bi.turret)
-assert(enemyMuzzleX>enemyExit and enemyMuzzleY>=upperOpeningTop and enemyMuzzleY<=upperOpeningBottom)
+    and bi.turret.Team==1 and bi.turret.Pos.X==4716 and bi.turret.Pos.Y==513 and bi.turret.HFlipped
+    and bi.turret.Pos.Y+bi.turret.SpriteOffset.Y+bi.turret.SpriteHeight==materialFloorY(upperRight))
 bi.funds=2000
 base:UpdateAI()
 local upgradedEnemyMuzzleX,upgradedEnemyMuzzleY=worldMuzzle(bi.turret)
 assert(bi.turret.name=='Frontline HE Turret' and bi.turret.AimDistance==45
     and upgradedEnemyMuzzleX==enemyExit-1 and upgradedEnemyMuzzleY>=upperOpeningTop
-    and upgradedEnemyMuzzleY<=upperOpeningBottom,
-    'AI must upgrade the mirrored base turret onto the outward firing lane')
+    and upgradedEnemyMuzzleY<=upperOpeningBottom
+    and bi.turret.Pos.Y+bi.turret.SpriteOffset.Y+bi.turret.SpriteHeight==materialFloorY(upperRight),
+    'AI HE turret must replace Gatling, sit on mirrored outer room floor and retain clear lane')
 print('Base armor, repair, symmetric turret geometry, HE range, unit-cap exclusion and AI upgrades passed')
 
 -- Larger maps get the right number of posts and income bonuses stack.
@@ -634,7 +643,7 @@ assert(tall.brains[0].Pos.Y==1070 and tall.brains[1].Pos.Y==1070)
 tall:StartBattle(); tall.matchTimer.ElapsedSimTimeMS=15001; tall.teams[0].funds=5000
 tall.teams[0].timer.ElapsedSimTimeMS=10001
 assert(tall.commanders[0]:Deploy()); assert(actors[#actors].Pos.Y==1065)
-assert(tall.commanders[0]:BaseUpgrade('turret')); assert(tall.teams[0].turret.Pos.Y==998)
+assert(tall.commanders[0]:BaseUpgrade('turret')); assert(tall.teams[0].turret.Pos.Y==1013)
 SceneMan.MovePointToGround=originalGround; SceneMan.SceneWidth=5200
 print('Elevated battlefield spawns bases, squads and turrets at ground-relative heights')
 
