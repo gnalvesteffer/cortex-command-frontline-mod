@@ -29,10 +29,13 @@ local function entity(name)
     return item
 end
 local firearmCreates={}
-function CreateHDFirearm(n,m)
-    table.insert(firearmCreates,{name=n,module=m})
-    if n=="Broken Firearm" then return nil end
-    return {name=n,module=m}
+function CreateHDFirearm(presetOrQualifiedName,module)
+    local presetName,moduleName=presetOrQualifiedName,module
+    local qualified=module==nil
+    if qualified then moduleName,presetName=presetOrQualifiedName:match("^([^/]+)/(.+)$") end
+    table.insert(firearmCreates,{name=presetName,module=moduleName,qualified=qualified})
+    if presetName=="Broken Firearm" then return nil end
+    return {name=presetName,module=moduleName,qualified=qualified}
 end
 function CreateTDExplosive(n,m) return {name=n,GibThis=function(self) self.gibbed=true end,Activate=function(self) self.activated=true end} end
 function CreateMOSRotating(n,m) local item=entity(n); function item:GibThis() self.gibbed=true; self.ToDelete=true end; return item end
@@ -50,12 +53,12 @@ local function iterator(items)
     return function() index=index+1; return items[index] end
 end
 local presets={
-    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Rifle A","Mod A.rte" end},
-    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Pistol","Base.rte" end},
-    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Broken Firearm","Mod B.rte" end},
-    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Shotgun","Coalition.rte" end},
-    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Rifle B","Mod C.rte" end},
-    {ClassName="MOSRotating",GetModuleAndPresetName=function() return "Not a firearm","Base.rte" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod A.rte/Rifle A" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Base.rte/Pistol" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod B.rte/Broken Firearm" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Coalition.rte/Shotgun" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod C.rte/Rifle B" end},
+    {ClassName="MOSRotating",GetModuleAndPresetName=function() return "Base.rte/Not a firearm" end},
 }
 PresetMan={Modules=iterator({{Presets=iterator(presets)}})}
 local actors={}
@@ -172,7 +175,8 @@ assert(podDelivery.kind=='weaponPod' and #podDelivery.weapons==3)
 local selectedPresets={}
 for _,weapon in ipairs(podDelivery.weapons) do
     local key=weapon.module..'/'..weapon.name
-    assert(weapon.name~='Broken Firearm' and weapon.module and not selectedPresets[key])
+    assert(weapon.qualified and weapon.name~='Broken Firearm' and weapon.module and not selectedPresets[key],
+        'pod firearm must be created using the engine-qualified module/preset name')
     selectedPresets[key]=true
 end
 podDelivery.timer.ElapsedSimTimeMS=3000; activity:UpdateCallIns()
@@ -195,7 +199,8 @@ activity:UpdateCallIns()
 assert(pod.gibbed and #(MovableMan.items or {})-itemsBefore==3,'opened pod must release exactly three firearms through MovableMan:AddItem')
 for index=itemsBefore+1,#MovableMan.items do
     local weapon=MovableMan.items[index]
-    assert(weapon.Team==0 and weapon.ToSettle and weapon.Pos.Y==588 and weapon.module and weapon.name~='Broken Firearm')
+    assert(weapon.Team==0 and weapon.ToSettle and weapon.Pos.Y==588 and weapon.module
+        and weapon.qualified and weapon.name~='Broken Firearm')
 end
 local ai=activity.teams[1]
 local oldFunds,oldAuto,oldTurretLevel,oldBaseArmor,oldTurret=ai.funds,ai.auto,ai.turretLevel,ai.baseArmor,ai.turret

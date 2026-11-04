@@ -381,7 +381,8 @@ CONFIG.researchLabels={
 CONFIG.researchPageOptions={1,2,3}
 
 function Frontline:StartActivity()
-    self.originalHudDisabled=FrameMan:IsHudDisabled(0)
+    self.originalHudDisabled=FrameMan:IsHudDisabled(0)==true
+    self.weaponPodPresets=nil
     local ok,method=pcall(function() return PrimitiveMan.DrawScreenBoxFillPrimitive end)
     self.screenUI=ok and method~=nil
     self.teams = {[0]=freshTeam(), [1]=freshTeam()}
@@ -1313,22 +1314,19 @@ function Frontline:CreateSupportShip(team,kind,count,x,startY)
     return ship
 end
 
--- Cache every loaded firearm preset; rare mod weapons are valid pod results too.
+-- Cache qualified names from every loaded firearm preset, including exotic mod weapons.
 function Frontline:CreateWeaponPodPayload()
-    if not self.weaponPodPresets then
+    if not self.weaponPodPresets or #self.weaponPodPresets==0 then
         local presets,seen={},{}
         if PresetMan and PresetMan.Modules then
             for module in PresetMan.Modules do
                 if module.Presets then
                     for preset in module.Presets do
                         if preset.ClassName=="HDFirearm" then
-                            local presetName,moduleName=preset:GetModuleAndPresetName()
-                            if presetName and moduleName then
-                                local key=moduleName.."/"..presetName
-                                if not seen[key] then
-                                    seen[key]=true
-                                    table.insert(presets,{presetName=presetName,moduleName=moduleName})
-                                end
+                            local name=preset:GetModuleAndPresetName()
+                            if name and name~="" and not seen[name] then
+                                seen[name]=true
+                                table.insert(presets,name)
                             end
                         end
                     end
@@ -1338,13 +1336,13 @@ function Frontline:CreateWeaponPodPayload()
         self.weaponPodPresets=presets
     end
     local available={}
-    for i,entry in ipairs(self.weaponPodPresets) do available[i]=entry end
+    for i,name in ipairs(self.weaponPodPresets) do available[i]=name end
     local weapons={}
     for _=1,CONFIG.supportEffects.weaponPod.count do
         local weapon
         while #available>0 and not weapon do
-            local entry=table.remove(available,math.random(#available))
-            weapon=CreateHDFirearm(entry.presetName,entry.moduleName)
+            local name=table.remove(available,math.random(#available))
+            weapon=CreateHDFirearm(name)
         end
         if not weapon then return nil,"No loaded firearm presets are available" end
         table.insert(weapons,weapon)
@@ -1854,7 +1852,15 @@ function Frontline:CraftEnteredOrbit(craft)
     end
 end
 
+function Frontline:EnsureHUDState()
+    if type(self.originalHudDisabled)~="boolean" then
+        self.originalHudDisabled=FrameMan:IsHudDisabled(0)==true
+    end
+    if type(self.panel)~="boolean" then self.panel=not self.battleStarted end
+end
+
 function Frontline:EndActivity()
+    self:EnsureHUDState()
     self:ClearCompactHUD()
     FrameMan:SetHudDisabled(self.originalHudDisabled,0)
     if not self.resultReady then return end
@@ -2472,6 +2478,7 @@ end
 
 function Frontline:UpdateActivity()
     if self.ActivityState==Activity.OVER then return end
+    self:EnsureHUDState()
     -- Read engine deposits, including any gold returned by miners, before spending.
     if self.GetTeamFunds then for team=0,1 do self.teams[team].funds=self:GetTeamFunds(team) end end
     if self.battleStarted then

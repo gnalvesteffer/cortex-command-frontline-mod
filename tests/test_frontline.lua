@@ -365,9 +365,25 @@ w.outposts[2].owner=0; w:UpdateOrders(); assert(own.AIMode==Actor.AIMODE_BRAINHU
 w.commanders[0]:SetOrder('Rush',2); assert(own.AIMode==Actor.AIMODE_BRAINHUNT and own.waypoint==nil)
 print('Orders apply to existing units, defend holds, advance resumes, and brains stay in place')
 -- The stock game HUD is hidden only while Frontline's panel is visible.
-local hudDisabled
-FrameMan.SetHudDisabled=function(_,value) hudDisabled=value end
+local hudDisabled,externalHudState=false,false
+FrameMan.IsHudDisabled=function(_,screen) assert(screen==0); return externalHudState end
+FrameMan.SetHudDisabled=function(_,value,screen)
+    assert(type(value)=="boolean" and screen==0,"HUD setter requires a boolean state for the player screen")
+    hudDisabled=value
+end
 w.DrawPanel=function() end; w.DrawHUD=function() end; w.panel=true; w:UpdateActivity(); assert(hudDisabled==true)
+w.panel=false; w:UpdateActivity(); assert(hudDisabled==false)
+-- A resumed activity can lose its Lua fields while the HUD is in either state.
+w.originalHudDisabled=nil; w.panel=nil; externalHudState=true; w:UpdateActivity()
+assert(w.originalHudDisabled==true and w.panel==false and hudDisabled==true)
+w.panel=true; w:UpdateActivity(); assert(hudDisabled==true)
+w.panel=false; w:UpdateActivity(); assert(hudDisabled==true)
+w.originalHudDisabled=nil; externalHudState=false; w:EndActivity()
+assert(hudDisabled==false,"EndActivity must restore a real boolean HUD state")
+-- Reusing an activity object for a fresh match must recapture the engine's new HUD baseline.
+w.originalHudDisabled=true; externalHudState=false; w:StartActivity()
+assert(w.originalHudDisabled==false and w.panel==true)
+w.DrawWizard=function() end; w:UpdateActivity(); assert(hudDisabled==true)
 w.panel=false; w:UpdateActivity(); assert(hudDisabled==false)
 -- New engines use screen coordinates, with the camera offset excluded.
 local drawn

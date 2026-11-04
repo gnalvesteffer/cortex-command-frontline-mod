@@ -11,9 +11,10 @@ or call-in post multiplies the remaining price or cooldown by 0.8. Two such
 discount posts reduce the original value by 36%; rounding up happens once.
 
 Tab toggles the panel. The tabs are Squad, Research, Support, Base, Battle and
-Setup, in that order. Squad selection is manual and has no presets. The default
-selection is 3 units. Six Squad Size upgrades increase the maximum by one each,
-up to 9 units.
+Setup, in that order. The panel hides and restores only player 0's HUD, preserving
+its previous state when closed or when the activity ends. Squad selection is
+manual and has no presets. The default selection is 3 units. Six Squad Size
+upgrades increase the maximum by one each, up to 9 units.
 
 Unit research follows the Coalition Light -> Coalition Heavy -> Dummy/Gatling
 Drone -> Browncoat chain. Weapon and equipment unlocks are in the Arsenal tree.
@@ -33,7 +34,7 @@ Light Digger; it seeks deposits and digs. The Support Jammer's two levels
 increase its duration.
 
 Weapon Cache Pod is delivered by a landing pod that opens and dispenses three
-random firearms from loaded-game HDFirearm presets, including exotic weapons.
+random firearms using qualified names from all loaded HDFirearm presets, including exotic mods.
 The upgradeable base turret progresses from a Gatling Turret at level 1 to the
 custom Frontline HE Turret at level 2; its upgrade has 1.5x base range.
 
