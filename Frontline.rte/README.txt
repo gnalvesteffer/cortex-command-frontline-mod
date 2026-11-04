@@ -32,9 +32,9 @@ random firearms from loaded-game HDFirearm presets, including exotic weapons.
 The upgradeable base turret progresses from a Gatling Turret at level 1 to the
 custom Frontline HE Turret at level 2; its upgrade has 1.5x base range.
 
-The approach hallway floor meets the main vault floor. The mirrored upper
-turret room aligns with the vault exit, leaving a clear firing lane toward the
-battlefield.
+The approach hallway floor meets the main vault floor. Mirrored upper turret
+rooms align with the outermost hallway exits at the battlefield-facing base
+edges, with Gatling and HE muzzles clear of the corridor roof and facing outward.
 
 
 The Support tab orders the offense as Orbital Gatling Barrage, Orbital Precision
@@ -66,6 +66,14 @@ score bias, not a replacement for tactical context. Successful player
 deployments, research and call-ins are tracked for adaptation. A base threat
 strength of 4 within 800 pixels interrupts the current goal for home defense;
 the goal clears below strength 2.
+
+Both sides issue orders and purchases through the same team commander. Rush,
+Advance and Defend apply to the whole team, not separate squads; miners keep
+their mining behavior. Defend can target the base or an outpost, selected with
+PREV/NEXT on the Squad tab. Advance targets an outpost, holds it until captured,
+then attacks the enemy brain. New troops follow the current order when they
+deploy or disembark. Forward deployment and all purchases use the same
+ownership, cost and cooldown rules for both teams.
 
 Urgent base or owned-post threats are checked every 250 ms and interrupt the
 normal decision cadence without running the full AI every frame. Deployment

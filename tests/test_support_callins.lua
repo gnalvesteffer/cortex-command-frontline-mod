@@ -76,7 +76,7 @@ assert(activity:MaxSquadSize(1)==3)
 aiTeam.counts={0,0,0,0,0,4}
 local _,_,aiSizeError=activity:Batch(1)
 assert(aiSizeError=='Squad size limit')
-local aiDeployed,aiDeployError=activity:Deploy(1)
+local aiDeployed,aiDeployError=activity.commanders[1]:Deploy()
 assert(not aiDeployed and aiDeployError=='Squad size limit','AI deployments must obey the unresearched three-unit cap')
 aiTeam.counts={0,0,0,0,0,3}
 local panelText,panelEntries,tabOrder,supportDescriptionLines={},{},{},{}
@@ -140,19 +140,19 @@ for index,price in pairs(expectedCosts) do
     assert(activity:ResearchCost(0,index)==price, 'research index '..index..' should cost '..price..' oz before outpost discount')
 end
 for _,kind in ipairs({'strike','medic','cover','mines','bomb','turret','orbital','shield','bubble','mining','weaponPod'}) do
-    local ok,message=activity:CallIn(0,kind,2)
+    local ok,message=activity.commanders[0]:CallIn(kind, 2)
     assert(not ok and message:find('Research',1,true), kind..' must be gated by its research node')
 end
-assert(not activity:Research(0,4), 'Coalition Heavy must require Coalition Light research')
-assert(activity:Research(0,1)); assert(not activity:Research(0,5))
-assert(activity:Research(0,4) and team.tier==1)
-assert(not activity:Research(0,6), 'Browncoat must require Dummy / Gatling research')
-assert(activity:Research(0,5) and team.tier==2)
-assert(activity:Research(0,6) and team.tier==3)
-assert(not activity:Research(0,12), 'medic level 2 must require level 1')
-assert(activity:Research(0,11)); assert(not activity:Research(0,13), 'Support Jammer must require Cover'); assert(activity:Research(0,14))
-assert(activity:Research(0,28) and team.levels[28]==1)
-assert(activity:CallIn(0,'weaponPod',2))
+assert(not activity.commanders[0]:Research(4), 'Coalition Heavy must require Coalition Light research')
+assert(activity.commanders[0]:Research(1)); assert(not activity.commanders[0]:Research(5))
+assert(activity.commanders[0]:Research(4) and team.tier==1)
+assert(not activity.commanders[0]:Research(6), 'Browncoat must require Dummy / Gatling research')
+assert(activity.commanders[0]:Research(5) and team.tier==2)
+assert(activity.commanders[0]:Research(6) and team.tier==3)
+assert(not activity.commanders[0]:Research(12), 'medic level 2 must require level 1')
+assert(activity.commanders[0]:Research(11)); assert(not activity.commanders[0]:Research(13), 'Support Jammer must require Cover'); assert(activity.commanders[0]:Research(14))
+assert(activity.commanders[0]:Research(28) and team.levels[28]==1)
+assert(activity.commanders[0]:CallIn('weaponPod', 2))
 local podDelivery=activity.pendingDrops[#activity.pendingDrops]
 assert(podDelivery.kind=='weaponPod' and #podDelivery.weapons==3)
 local selectedPresets={}
@@ -234,10 +234,10 @@ for index=#activity.pendingDrops,1,-1 do
     if activity.pendingDrops[index]==aiPod then table.remove(activity.pendingDrops,index) end
 end
 print('AI weapon cache pod uses the researched, affordable, off-cooldown call-in at an occupied friendly post')
-assert(not activity:Research(0,24), 'precision strike must require orbital barrage research')
-assert(not activity:Research(0,25), 'Carpet Bomb must require precision-strike research')
-assert(activity:Research(0,21))
-assert(activity:CallIn(0,'orbital',2))
+assert(not activity.commanders[0]:Research(24), 'precision strike must require orbital barrage research')
+assert(not activity.commanders[0]:Research(25), 'Carpet Bomb must require precision-strike research')
+assert(activity.commanders[0]:Research(21))
+assert(activity.commanders[0]:CallIn('orbital', 2))
 local barrage=activity.pendingOrbitals[#activity.pendingOrbitals]
 barrage.timer.ElapsedSimTimeMS=3000; activity:UpdateCallIns()
 assert(barrage.shots==1)
@@ -276,16 +276,16 @@ end
 assertFragmentFallback(nil,false)
 assertFragmentFallback(0,true)
 assertFragmentFallback('invalid',true)
-assert(activity:Research(0,24))
-assert(activity:Research(0,25))
-assert(activity:Research(0,22)); assert(activity:Research(0,13))
+assert(activity.commanders[0]:Research(24))
+assert(activity.commanders[0]:Research(25))
+assert(activity.commanders[0]:Research(22)); assert(activity.commanders[0]:Research(13))
 assert(team.levels[13]==1 and activity:ResearchCost(0,13)==800, 'the second Support Jammer upgrade must retain its 800 oz price')
-assert(not activity:Research(0,27), 'Energy Shield must require Support Jammer Lv.2')
-assert(not activity:CallIn(0,'bubble',2), 'Energy Shield must stay unavailable after only one Jammer upgrade')
-assert(not activity:Research(0,26), 'turret must require minefield research')
-assert(activity:Research(0,23)); assert(activity:Research(0,26))
+assert(not activity.commanders[0]:Research(27), 'Energy Shield must require Support Jammer Lv.2')
+assert(not activity.commanders[0]:CallIn('bubble', 2), 'Energy Shield must stay unavailable after only one Jammer upgrade')
+assert(not activity.commanders[0]:Research(26), 'turret must require minefield research')
+assert(activity.commanders[0]:Research(23)); assert(activity.commanders[0]:Research(26))
 local actorsBeforeTurret=#actors
-assert(activity:CallIn(0,'turret',2))
+assert(activity.commanders[0]:CallIn('turret', 2))
 local turret=activity.pendingDrops[#activity.pendingDrops]
 assert(turret.count==1, 'turret drops must provide an explicit single-item cargo count')
 turret.timer.ElapsedSimTimeMS=4000; activity:UpdateCallIns()
@@ -295,7 +295,7 @@ assert(#actors==actorsBeforeTurret+2 and actors[#actors].name=='Gatling Turret' 
     'turret dropship must deliver its turret without a nil loop limit')
 local injured=CreateAHuman('Soldier Light','Coalition.rte'); injured.Team=0; injured.Pos=Vector(target.x,565); injured.Health=50; injured.MaxHealth=100; table.insert(actors,injured)
 local actorsBeforeMedic=#actors
-assert(activity:CallIn(0,'medic',2)); assert(injured.Health==50, 'medic support must deploy a robot, not heal instantly')
+assert(activity.commanders[0]:CallIn('medic', 2)); assert(injured.Health==50, 'medic support must deploy a robot, not heal instantly')
 local medic=activity.pendingDrops[#activity.pendingDrops]
 assert(medic.kind=='medic' and medic.count==1)
 medic.timer.ElapsedSimTimeMS=4000; activity:UpdateCallIns()
@@ -304,18 +304,18 @@ medic.arrivalTimer.ElapsedSimTimeMS=2000; activity:UpdateCallIns()
 assert(#actors==actorsBeforeMedic+2 and actors[#actors].name=='Medic Drone' and actors[#actors].Team==0,
     'medic delivery must add the support ship and actor; before='..actorsBeforeMedic..' after='..#actors..' last='..tostring(actors[#actors].name))
 assert(medic.ship.openedWithCargo==0, 'medic cargo must be removed before opening the hatch auto-ejects it')
-local shieldOK,shieldMessage=activity:CallIn(0,'shield',2); assert(shieldOK,shieldMessage); assert(activity.jamFields[#activity.jamFields].duration==60000)
-assert(activity:CallIn(0,'mining',2)); local mining=activity.pendingDrops[#activity.pendingDrops]; assert(mining.kind=='mining' and mining.miner)
-local medicUpgrade,medicUpgradeError=activity:Research(0,12); assert(medicUpgrade,medicUpgradeError)
-assert(not activity:Research(0,27), 'Energy Shield must require Support Jammer Lv.2')
-local shieldUpgrade,shieldUpgradeError=activity:Research(0,13); assert(shieldUpgrade,shieldUpgradeError)
+local shieldOK,shieldMessage=activity.commanders[0]:CallIn('shield', 2); assert(shieldOK,shieldMessage); assert(activity.jamFields[#activity.jamFields].duration==60000)
+assert(activity.commanders[0]:CallIn('mining', 2)); local mining=activity.pendingDrops[#activity.pendingDrops]; assert(mining.kind=='mining' and mining.miner)
+local medicUpgrade,medicUpgradeError=activity.commanders[0]:Research(12); assert(medicUpgrade,medicUpgradeError)
+assert(not activity.commanders[0]:Research(27), 'Energy Shield must require Support Jammer Lv.2')
+local shieldUpgrade,shieldUpgradeError=activity.commanders[0]:Research(13); assert(shieldUpgrade,shieldUpgradeError)
 assert(team.levels[13]==2)
 local savedTurretResearch=team.levels[26]
 team.levels[26]=0
-assert(not activity:Research(0,27),'Energy Shield must still require Turret after Jammer Lv.2 is complete')
+assert(not activity.commanders[0]:Research(27),'Energy Shield must still require Turret after Jammer Lv.2 is complete')
 team.levels[26]=savedTurretResearch
-local bubbleUnlock,bubbleUnlockError=activity:Research(0,27); assert(bubbleUnlock,bubbleUnlockError)
-assert(activity:CallIn(0,'bubble',2))
+local bubbleUnlock,bubbleUnlockError=activity.commanders[0]:Research(27); assert(bubbleUnlock,bubbleUnlockError)
+assert(activity.commanders[0]:CallIn('bubble', 2))
 local bubble=activity.energyShields[#activity.energyShields]
 local hostile={Team=1,HitsMOs=true,Pos=Vector(bubble.x,bubble.centerY)}
 local friendly={Team=0,HitsMOs=true,Pos=Vector(bubble.x,bubble.centerY)}
@@ -326,18 +326,18 @@ assert(hostile.ToDelete and not friendly.ToDelete and not outside.ToDelete,
     'energy shield must remove hostile projectiles in range but preserve friendly and outside projectiles')
 injured.Health=50; team.medicTimer.ElapsedSimTimeMS=30000
 local actorsBeforeUpgrade=#actors
-assert(activity:CallIn(0,'medic',2)); local upgradedMedic=activity.pendingDrops[#activity.pendingDrops]
+assert(activity.commanders[0]:CallIn('medic', 2)); local upgradedMedic=activity.pendingDrops[#activity.pendingDrops]
 assert(upgradedMedic.count==2, 'Medic Drone Lv.2 must deliver two robots')
 upgradedMedic.timer.ElapsedSimTimeMS=4000; activity:UpdateCallIns()
 assert(upgradedMedic.ship.InventorySize==2)
 upgradedMedic.arrivalTimer.ElapsedSimTimeMS=2000; activity:UpdateCallIns()
 assert(#actors==actorsBeforeUpgrade+3 and actors[#actors].name=='Medic Drone' and actors[#actors-1].name=='Medic Drone')
-team.shieldTimer.ElapsedSimTimeMS=60000; assert(activity:CallIn(0,'shield',2)); assert(activity.jamFields[#activity.jamFields].duration==90000)
+team.shieldTimer.ElapsedSimTimeMS=60000; assert(activity.commanders[0]:CallIn('shield', 2)); assert(activity.jamFields[#activity.jamFields].duration==90000)
 mining.timer.ElapsedSimTimeMS=4000; activity:UpdateCallIns(); assert(mining.arrivalTimer and mining.ship)
 assert(mining.ship.cargo[1]==mining.miner, 'dropship inventory must carry the researched Dummy miner')
 mining.arrivalTimer.ElapsedSimTimeMS=2000; activity:UpdateCallIns()
 assert(mining.miner.Pos.X==target.x and mining.miner.Pos.Y==592 and mining.miner.PinStrength==0)
-assert(activity:CallIn(0,'bomb',2)); local bomb=activity.pendingDrops[#activity.pendingDrops]
+assert(activity.commanders[0]:CallIn('bomb', 2)); local bomb=activity.pendingDrops[#activity.pendingDrops]
 assert(bomb.startX==target.x-192 and bomb.flightDistance==360)
 bomb.timer.ElapsedSimTimeMS=800; activity:UpdateCallIns()
 local dropped=MovableMan.lastParticle
@@ -351,7 +351,7 @@ assert(MovableMan.lastParticle.Pos.X==target.x+96 and bomb.bombsDropped==3,'thir
 for _,field in ipairs(activity.jamFields) do field.timer.ElapsedSimTimeMS=field.duration end
 activity:UpdateCallIns()
 local enemyTeam=activity.teams[1]; enemyTeam.levels[25]=1; enemyTeam.funds=5000; enemyTeam.bombTimer.ElapsedSimTimeMS=55000
-assert(activity:CallIn(1,'bomb',2)); local enemyBomb=activity.pendingDrops[#activity.pendingDrops]
+assert(activity.commanders[1]:CallIn('bomb', 2)); local enemyBomb=activity.pendingDrops[#activity.pendingDrops]
 assert(enemyBomb.startX==target.x+192 and enemyBomb.direction==-1)
 enemyBomb.timer.ElapsedSimTimeMS=800; activity:UpdateCallIns()
 assert(MovableMan.lastParticle.Pos.X==target.x+96 and MovableMan.lastParticle.Team==1,
@@ -563,14 +563,14 @@ assert(activity.playerBehavior.deployments==savedBehaviorDeployments,
 player.forward=0
 player.counts={0,0,0,0,0,0}
 player.timer.ElapsedSimTimeMS=activity:DeployCooldown(0)
-local failedDeploy=activity:Deploy(0)
+local failedDeploy=activity.commanders[0]:Deploy()
 assert(not failedDeploy and activity.playerBehavior.deployments==savedBehaviorDeployments,
     'a rejected player deployment must not count as an adaptive event')
 for index=1,6 do
     player.counts={0,0,0,0,0,1}
     player.funds=10000
     player.timer.ElapsedSimTimeMS=activity:DeployCooldown(0)
-    local deployed,deployError=activity:Deploy(0)
+    local deployed,deployError=activity.commanders[0]:Deploy()
     assert(deployed, 'real player deployment '..index..' must succeed: '..tostring(deployError))
     if index==1 then
         assert(activity.playerBehavior.deployments==savedBehaviorDeployments+1,

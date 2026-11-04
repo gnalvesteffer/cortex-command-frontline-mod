@@ -33,7 +33,7 @@ local CONFIG = {
     BASE_ARMOR_COST = 200, BASE_ARMOR_HEALTH = 50, BASE_ARMOR_LEVELS = 3,
     BASE_REPAIR_COST = 120, BASE_REPAIR_HEALTH = 50, BASE_TURRET_COST = 350, BASE_TURRET_UPGRADE_COST=650,
     BASE_TURRET_RANGE_MULTIPLIER=1.5, BASE_TURRET_AIM_DISTANCE=30,
-    BASE_TOWER_DISTANCE=318, BASE_TOWER_HEIGHT=112, BASE_TURRET_PIN_STRENGTH=100000,
+    BASE_TOWER_DISTANCE=484, BASE_TOWER_HEIGHT=112, BASE_TURRET_PIN_STRENGTH=100000,
     -- Unit and equipment catalogs
     roster = {
         {name="Coalition Light", actor="Soldier Light", mod="Coalition.rte", price=75, unlock=0, research=1},
@@ -321,6 +321,10 @@ function Frontline:ChooseAIAction(actions, pressured)
     return chooseAIAction(actions,self.aiPersonality,pressured)
 end
 
+-- Each side makes decisions through the same team-bound commander.
+local TeamCommander={}
+TeamCommander.__index=TeamCommander
+
 local function freshTeam()
     local levels={}
     for i=1,#CONFIG.research do levels[i]=0 end
@@ -364,6 +368,10 @@ function Frontline:StartActivity()
     local ok,method=pcall(function() return PrimitiveMan.DrawScreenBoxFillPrimitive end)
     self.screenUI=ok and method~=nil
     self.teams = {[0]=freshTeam(), [1]=freshTeam()}
+    self.commanders={}
+    for team=0,1 do
+        self.commanders[team]=setmetatable({activity=self,team=team},TeamCommander)
+    end
     for team=0,1 do self.teams[team].bubbleTimer=Timer() end
     self.playerBehavior={deployments=0,researchPurchases=0,callinsUsed=0,lastDeployTime=0,
         lastDeploymentCount=0,lastResearchIndex=nil,lastCallin=nil,lastCallinTime=nil,researchFocus="",
@@ -455,8 +463,8 @@ function Frontline:StartActivity()
             SceneMan:AddSceneObject(vault)
         end
     end
-    -- Mirror corridor modules to match each bunker vault, while leaving the
-    -- stock Tunnel A roof intact instead of stacking floating roof attachments.
+    -- Mirror corridor modules along the base approach. The upper Tunnel A
+    -- room's outward edge meets the Tunnel B exit; its turret faces the field.
     for team=0,1 do
         local sections=CONFIG.map.baseApproach.sections
         for _,section in ipairs(sections) do
@@ -618,7 +626,9 @@ function Frontline:IsFieldUnit(actor)
         and actor.UniqueID~=self.teams[team].turretID and (IsAHuman(actor) or IsACrab(actor))
 end
 
-function Frontline:BaseUpgrade(team,kind)
+function TeamCommander:BaseUpgrade(kind)
+    local team=self.team
+    local self=self.activity
     local t=self.teams[team]
     local brain=self.brains[team]
     if not self.battleStarted then return false,"Complete match setup first" end
@@ -775,13 +785,36 @@ function Frontline:AssignOrder(actor,team)
     end
 end
 
-function Frontline:ApplyTeamOrder(team)
+function TeamCommander:SetOrder(order,target)
+    local team=self.team
+    local self=self.activity
+    if order~="Rush" and order~="Advance" and order~="Defend" then return false,"Unknown order" end
+    if type(target)~="number" or target%1~=0 or
+        (target==0 and order=="Advance") or (target~=0 and not self.outposts[target]) then
+        return false,"Choose a valid order target"
+    end
+    local t=self.teams[team]
+    t.order=order
+    t.orderTarget=target
     for actor in MovableMan.Actors do
-        if actor.Team==team and self:IsFieldUnit(actor) then
+        if actor.Team==team and not self.inTransit[actor.UniqueID] and self:IsFieldUnit(actor) then
             self:AssignOrder(actor,team)
         end
     end
-    if team==0 then self:Notify("Order: "..self.teams[team].order.." "..self.outposts[self.teams[team].orderTarget].name) end
+    if team==0 then
+        local destination=target==0 and "BASE" or self.outposts[target].name
+        self:Notify("Order: "..order.." "..destination)
+    end
+    return true,"Order set"
+end
+
+function TeamCommander:SetForward(index)
+    local activity=self.activity
+    if type(index)~="number" or index%1~=0 or (index~=0 and not activity.outposts[index]) then
+        return false,"Choose a valid deployment destination"
+    end
+    activity.teams[self.team].forward=index
+    return true,"Deployment destination set"
 end
 
 function Frontline:UpdateOrders()
@@ -802,7 +835,10 @@ function Frontline:UpdateOrders()
                 if math.abs(actor.Pos.X-target.x)<CONFIG.orders.arrivalRadiusX and math.abs(actor.Pos.Y-target.groundY)<CONFIG.orders.arrivalRadiusY then
                     if assignment.order=="Advance" and target.owner~=actor.Team then
                         -- Stay in the capture zone until it is secured.
-                        actor.AIMode=Actor.AIMODE_SENTRY
+                        if actor.AIMode~=Actor.AIMODE_SENTRY then
+                            actor:ClearAIWaypoints()
+                            actor.AIMode=Actor.AIMODE_SENTRY
+                        end
                     else
                         actor:ClearAIWaypoints()
                         actor.AIMode=assignment.order=="Defend" and Actor.AIMODE_SENTRY or Actor.AIMODE_BRAINHUNT
@@ -860,7 +896,9 @@ function Frontline:RecordPlayerAction(team,kind,detail)
     end
 end
 
-function Frontline:Deploy(team)
+function TeamCommander:Deploy()
+    local team=self.team
+    local self=self.activity
     local t=self.teams[team]
     local cost,count,err=self:Batch(team)
     if not cost then return false,err end
@@ -1010,7 +1048,9 @@ local function researchRequirementText(index,level)
     return level>1 and (label.." Lv."..level) or label
 end
 
-function Frontline:Research(team,index)
+function TeamCommander:Research(index)
+    local team=self.team
+    local self=self.activity
     local t=self.teams[team]
     local r=CONFIG.research[index]
     if not r then return false,"Unknown research" end
@@ -1193,7 +1233,7 @@ function Frontline:UpdateTargeting()
     if UInputMan:KeyPressed(Key.TAB) then self.targeting=nil; self.panel=true; return end
     if UInputMan:MouseButtonPressed(MouseButtons.MOUSE_LEFT) then
         local target={name="target area",x=x,groundY=ground.Y,owner=-1}
-        local ok,msg=self:CallIn(0,self.targeting,target)
+        local ok,msg=self.commanders[0]:CallIn(self.targeting,target)
         -- Leave the battlefield visible after confirming, including when the
         -- order fails; the compact HUD shows the result and Tab reopens us.
         self.targeting=nil; self.panel=false
@@ -1298,7 +1338,9 @@ function Frontline:ReleaseWeaponPod(order)
 end
 
 
-function Frontline:CallIn(team,kind,index)
+function TeamCommander:CallIn(kind,index)
+    local team=self.team
+    local self=self.activity
     local t=self.teams[team]
     local outpost=type(index)=="table" and index or self.outposts[index]
     if not outpost then return false,"Choose a valid target" end
@@ -1596,7 +1638,7 @@ function Frontline:UpdateCallIns()
                         drone.Pos=Vector(target.x+spread*delivery.medicSpread,ground.Y-delivery.medicVerticalOffset)
                         drone.Team=order.team
                         drone.HFlipped=order.team==1
-                        drone.AIMode=Actor.AIMODE_SENTRY
+                        self:AssignOrder(drone,order.team)
                         MovableMan:AddActor(drone)
                     end
                 elseif order.kind=="mining" then
@@ -2129,27 +2171,25 @@ function Frontline:UpdateAI()
         ai.attackTarget=nil
         ai.rallyTarget=nil
     end
-    if ai.order~=desired or ai.orderTarget~=target then
-        ai.order=desired
-        ai.orderTarget=target
-        self:ApplyTeamOrder(team)
-    end
-    ai.forward=0
+    local commander=self.commanders[team]
+    if ai.order~=desired or ai.orderTarget~=target then commander:SetOrder(desired,target) end
+    local forward=0
     if not urgentBaseDefense then
         local preferred=ai.orderPhase=="assembling" and ai.rallyTarget or nil
         if preferred and self.outposts[preferred].owner==team and posts[preferred].enemies==0 then
-            ai.forward=preferred
+            forward=preferred
         else
             local bestScore=-math.huge
             for i,post in ipairs(self.outposts) do
                 if post.owner==team and posts[i].enemies==0 then
                     local score=posts[i].allies
                     if ai.attackTarget then score=score-math.abs(post.x-self.outposts[ai.attackTarget].x)/CONFIG.OUTPOST_RADIUS end
-                    if score>bestScore then bestScore=score; ai.forward=i end
+                    if score>bestScore then bestScore=score; forward=i end
                 end
             end
         end
     end
+    commander:SetForward(forward)
     ai.autoDeploy=false
     if self.battleStarted and self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS)
         and ai.timer:IsPastSimMS(self:DeployCooldown(team)) then
@@ -2294,13 +2334,13 @@ function Frontline:UpdateAI()
         end
         local ok,reason
         if action.kind=="deployment" then
-            ok,reason=self:Deploy(team)
+            ok,reason=commander:Deploy()
         elseif action.kind=="research" then
-            ok,reason=self:Research(team,action.purchase)
+            ok,reason=commander:Research(action.purchase)
         elseif action.kind=="baseUpgrade" then
-            ok,reason=self:BaseUpgrade(team,action.purchase)
+            ok,reason=commander:BaseUpgrade(action.purchase)
         else
-            ok,reason=self:CallIn(team,action.callin,action.target)
+            ok,reason=commander:CallIn(action.callin,action.target)
         end
         if ok then
             ai.lastAIAction={kind=action.kind,target=action.target or action.purchase,
@@ -2382,7 +2422,7 @@ function Frontline:UpdateActivity()
             t.stats.earned=t.stats.earned+bounty
             t.deaths=deaths
         end
-        if team==0 and t.auto then self:Deploy(team) end
+        if team==0 and t.auto then self.commanders[team]:Deploy() end
         end
     local aiUpdated=false
     if self.aiEmergencyTimer:IsPastSimMS(CONFIG.ai.tuning.emergencyCheckInterval) then
@@ -2668,21 +2708,27 @@ function Frontline:DrawPanel()
         text(310,80,"ORDERS: all troops")
         for i,order in ipairs({"Rush","Advance","Defend"}) do
             button(310+(i-1)*47,96,45,order,t.order==order and "selected" or "available",function()
-                t.order=order; self:ApplyTeamOrder(0)
+                local target=t.orderTarget
+                if target==0 and order=="Advance" then target=1 end
+                self.commanders[0]:SetOrder(order,target)
             end)
         end
         local deployment=t.forward==0 and "BASE" or self.outposts[t.forward].name
         button(310,119,140,"SPAWN: "..deployment..(t.forward>0 and " (+25/unit)" or ""),"available",function(step)
-            t.forward=(t.forward+step)%(#self.outposts+1)
+            self.commanders[0]:SetForward((t.forward+step)%(#self.outposts+1))
         end,true)
-        text(310,143,t.order=="Rush" and "RUSH: enemy brain" or ("TARGET: "..self.outposts[t.orderTarget].name))
+        text(310,143,t.order=="Rush" and "RUSH: enemy brain" or ("TARGET: "..(t.orderTarget==0 and "BASE" or self.outposts[t.orderTarget].name)))
         button(310,158,64,"< PREV","available",function()
-            t.orderTarget=((t.orderTarget-2)%#self.outposts)+1
-            if t.order~="Rush" then self:ApplyTeamOrder(0) end
+            local target
+            if t.order=="Advance" then target=((t.orderTarget-2)%#self.outposts)+1
+            else target=(t.orderTarget-1)%(#self.outposts+1) end
+            self.commanders[0]:SetOrder(t.order,target)
         end)
         button(381,158,69,"NEXT >","available",function()
-            t.orderTarget=(t.orderTarget%#self.outposts)+1
-            if t.order~="Rush" then self:ApplyTeamOrder(0) end
+            local target
+            if t.order=="Advance" then target=(t.orderTarget%#self.outposts)+1
+            else target=(t.orderTarget+1)%(#self.outposts+1) end
+            self.commanders[0]:SetOrder(t.order,target)
         end)
         text(310,181,"Advance: capture, then attack",true)
         text(310,193,"Defend: capture and hold",true)
@@ -2722,7 +2768,7 @@ function Frontline:DrawPanel()
                 local state=(t.levels[index] or 0)>=r.max and "selected" or (locked and "locked" or (t.funds<price and "disabled" or "available"))
                 local label=CONFIG.researchLabels[index].."  "..(t.levels[index] or 0).."/"..r.max.."  "..price.."oz"
                 button(x,y,nodeWidth,label,state,function()
-                    local _,msg=self:Research(0,index)
+                    local _,msg=self.commanders[0]:Research(index)
                     if msg~="Research complete" then self:Notify(msg) end
                 end)
                 if locked then
@@ -2796,17 +2842,17 @@ function Frontline:DrawPanel()
         local turretName=not active and "ABSENT" or (t.turretLevel>=2 and "ACTIVE (HE)" or "ACTIVE (GATLING)")
         text(15,136,"Upper-room turret: "..turretName)
         local armorCost=CONFIG.BASE_ARMOR_COST*(t.baseArmor+1)
-        button(15,160,300,"ARMOR +50 HP  "..armorCost.." oz",t.baseArmor<CONFIG.BASE_ARMOR_LEVELS and t.funds>=armorCost and "available" or "disabled",function() local ok,msg=self:BaseUpgrade(0,"armor"); if not ok then self:Notify(msg) end end)
-        button(15,185,300,"REPAIR +50 HP  "..CONFIG.BASE_REPAIR_COST.." oz",brain.Health<brain.MaxHealth and t.funds>=CONFIG.BASE_REPAIR_COST and "available" or "disabled",function() local ok,msg=self:BaseUpgrade(0,"repair"); if not ok then self:Notify(msg) end end)
+        button(15,160,300,"ARMOR +50 HP  "..armorCost.." oz",t.baseArmor<CONFIG.BASE_ARMOR_LEVELS and t.funds>=armorCost and "available" or "disabled",function() local ok,msg=self.commanders[0]:BaseUpgrade("armor"); if not ok then self:Notify(msg) end end)
+        button(15,185,300,"REPAIR +50 HP  "..CONFIG.BASE_REPAIR_COST.." oz",brain.Health<brain.MaxHealth and t.funds>=CONFIG.BASE_REPAIR_COST and "available" or "disabled",function() local ok,msg=self.commanders[0]:BaseUpgrade("repair"); if not ok then self:Notify(msg) end end)
         if active and t.turretLevel<2 then
             button(15,210,300,"UPGRADE TO HE TURRET  "..CONFIG.BASE_TURRET_UPGRADE_COST.." oz",t.funds>=CONFIG.BASE_TURRET_UPGRADE_COST and "available" or "disabled",function()
-                local ok,msg=self:BaseUpgrade(0,"turretUpgrade"); if not ok then self:Notify(msg) end
+                local ok,msg=self.commanders[0]:BaseUpgrade("turretUpgrade"); if not ok then self:Notify(msg) end
             end)
         elseif active then
             button(15,210,300,"HE TURRET  |  RANGE "..math.floor(t.turret.AimDistance),"selected",function() end)
         else
             button(15,210,300,"GATLING TURRET  "..CONFIG.BASE_TURRET_COST.." oz",t.funds>=CONFIG.BASE_TURRET_COST and "available" or "disabled",function()
-                local ok,msg=self:BaseUpgrade(0,"turret"); if not ok then self:Notify(msg) end
+                local ok,msg=self.commanders[0]:BaseUpgrade("turret"); if not ok then self:Notify(msg) end
             end)
         end
         text(15,239,"Upgraded range: "..(CONFIG.BASE_TURRET_AIM_DISTANCE*CONFIG.BASE_TURRET_RANGE_MULTIPLIER).." (base "..CONFIG.BASE_TURRET_AIM_DISTANCE..").")
@@ -2833,7 +2879,7 @@ function Frontline:DrawPanel()
         text(15,250,"Click a setting to cycle it. Changes affect both teams.")
         text(15,266,"Difficulty is chosen in the game setup screen.")
     end
-    button(15,348,125,"DEPLOY ("..(cost or 0).." oz)",self:AutoReason(0)=="Ready" and "available" or "disabled",function() local _,msg=self:Deploy(0); if msg~="Batch deployed" then self:Notify(msg) end end)
+    button(15,348,125,"DEPLOY ("..(cost or 0).." oz)",self:AutoReason(0)=="Ready" and "available" or "disabled",function() local _,msg=self.commanders[0]:Deploy(); if msg~="Batch deployed" then self:Notify(msg) end end)
     button(150,348,100,"AUTO: "..(t.auto and "ON" or "OFF"),t.auto and "selected" or "available",function() t.auto=not t.auto end,true)
     text(260,352,self:AutoReason(0))
     text(15,375,self.message)
