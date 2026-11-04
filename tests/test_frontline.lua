@@ -49,6 +49,7 @@ local actors={}
 MovableMan={
     Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(),
     AddActor=function(s,a) table.insert(actors,a) end,
+    AddMO=function(s,a) table.insert(actors,a) end,
     AddParticle=function(s,p) s.lastParticle=p; s.particleCount=(s.particleCount or 0)+1; s.particles=s.particles or {}; table.insert(s.particles,p) end,
     AddItem=function(s,item) s.items=s.items or {}; table.insert(s.items,item) end,
     IsActor=function(s,a) return a~=nil and not a.deleted end,
@@ -303,13 +304,13 @@ assert(not c.commanders[0]:CallIn('orbital', 2))
 PrimitiveMan.DrawTextPrimitive=previousText
 print('Cover, mines, bomb and timed orbital salvo costs, effects and cooldowns passed')
 
--- Unique outpost bonuses and forward deployment.
+-- Outpost bonuses and forward deployment.
 local d=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 actors={}; d:StartActivity(); d:StartBattle(); local dt=d.teams[0]
 dt.funds=5000; d.matchTimer.ElapsedSimTimeMS=15000
 assert(d:TeamIncome(0)==5 and d:ResearchCost(0,3)==320 and d:CallinCooldown(0,45000)==45000)
 d.outposts[1].owner=0; d.outposts[2].owner=0; d.outposts[3].owner=0
-assert(d:TeamIncome(0)==7 and d:ResearchCost(0,3)==256 and d:CallinCooldown(0,45000)==36000)
+assert(d:TeamIncome(0)==10 and d:ResearchCost(0,3)==256 and d:CallinCooldown(0,45000)==36000)
 d.settings.outpostBonuses=false; assert(d:TeamIncome(0)==5 and d:ResearchCost(0,3)==320); d.settings.outpostBonuses=true
 dt.tier=2; dt.levels[5]=1; dt.counts={0,0,0,0,1}; dt.weapons={1,1,1,1,1}; d.commanders[0]:SetForward(2); d.commanders[0]:SetOrder('Advance',2)
 assert(d:Batch(0)==310); assert(d.commanders[0]:Deploy()); local ship=actors[#actors]
@@ -541,7 +542,7 @@ actors={}; SceneMan.SceneWidth=10400
 local medium=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 medium:StartActivity(); assert(#medium.outposts==5)
 medium.outposts[1].owner=0; medium.outposts[4].owner=0
-assert(medium:TeamIncome(0)==9)
+assert(medium:TeamIncome(0)==15)
 SceneMan.SceneWidth=15600
 local large=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 large:StartActivity(); assert(#large.outposts==9)
@@ -649,8 +650,8 @@ seeker.matchTimer.ElapsedSimTimeMS=15001; seeker.teams[0].funds=5000
 assert(seeker.commanders[0]:Research(14)); assert(seeker.commanders[0]:CallIn('mining', 1))
 local miningDrop=seeker.pendingDrops[1]
 miningDrop.timer.ElapsedSimTimeMS=4000; seeker:UpdateCallIns()
+local goldMiner=miningDrop.ship.cargo[1]
 miningDrop.arrivalTimer.ElapsedSimTimeMS=2000; seeker:UpdateCallIns()
-local goldMiner=miningDrop.miner
 assert(goldMiner.AIMode==Actor.AIMODE_GOTO and goldMiner.waypoint.X>=1500 and goldMiner.waypoint.X<=1544)
 goldMiner.Pos=Vector(goldMiner.waypoint.X,565); seeker:UpdateMiners()
 assert(goldMiner.AIMode==Actor.AIMODE_GOLDDIG)
@@ -898,7 +899,7 @@ end
 assert(restricted:SupportTargetAllowed(0,180) and restricted:SupportTargetAllowed(1,SceneMan.SceneWidth-180))
 print('Enemy-base support exclusion applies to both teams and all call-ins')
 
--- Compact HUD totals stacked income, non-stacking discounts, both sides' deaths
+-- Compact HUD totals stacking income and discounts, both sides' deaths
 -- and elapsed match time. Disabled outpost bonuses must not be advertised.
 actors={}; SceneMan.SceneWidth=15600
 local scoreboard=setmetatable({deathCounts={[0]=4,[1]=7}}, {__index=Frontline})
@@ -907,7 +908,7 @@ scoreboard.outposts[1].owner=0; scoreboard.outposts[4].owner=0
 scoreboard.outposts[2].owner=0; scoreboard.outposts[5].owner=0; scoreboard.outposts[3].owner=0
 local hudText={}; PrimitiveMan.DrawScreenTextPrimitive=function(_,_,_,label) hudText[#hudText+1]=label end
 Frontline.DrawHUD(scoreboard); local hud=table.concat(hudText,' | ')
-assert(hud:find('Post bonuses: +4/s',1,true) and hud:find('Research -20%',1,true) and hud:find('Support -20%',1,true))
+assert(hud:find('Post bonuses: +10/s',1,true) and hud:find('Research -36%',1,true) and hud:find('Support -20%',1,true))
 assert(hud:find('Deaths: 4 / 7',1,true) and hud:find('Match time: 2:05',1,true))
 scoreboard.settings.outpostBonuses=false; hudText={}; Frontline.DrawHUD(scoreboard); hud=table.concat(hudText,' | ')
 assert(hud:find('Post bonuses: +0/s',1,true) and hud:find('Research -0%',1,true) and hud:find('Support -0%',1,true))

@@ -12,8 +12,15 @@ function CreateACDropShip(n,m)
         SetGoldValue=function(self,value) self.goldValue=value end,
         GetTotalValue=function(self) return self.returnValue or 0 end,
         OpenHatch=function(self) self.hatchOpen=true; self.openedWithCargo=#self.cargo; self.cargo={}; self.InventorySize=0 end,
-        RemoveInventoryItemAtIndex=function(self,index) local item=table.remove(self.cargo,index+1); self.InventorySize=#self.cargo; return item end,
-        AddInventoryItem=function(self,item) table.insert(self.cargo,item); self.InventorySize=#self.cargo end}
+        RemoveInventoryItemAtIndex=function(self,index)
+            local item=table.remove(self.cargo,index+1); self.InventorySize=#self.cargo
+            if item then assert(item._cargoOwner=='ship'); item._cargoOwner='lua' end
+            return item
+        end,
+        AddInventoryItem=function(self,item)
+            assert(not item._borrowed and not item._cargoOwner,'cargo must transfer from its owner')
+            item._cargoOwner='ship'; table.insert(self.cargo,item); self.InventorySize=#self.cargo
+        end}
 end
 local function entity(name)
     local item={name=name,numberValues={}}
@@ -32,7 +39,10 @@ function CreateMOSRotating(n,m) local item=entity(n); function item:GibThis() se
 function CreateMOPixel(n,m) return entity(n) end
 function CreateMOSParticle(n,m) return entity(n) end
 function ToTDExplosive(item) return item end
-function ToActor(item) return item end
+-- ToActor returns a borrowed view; the original removed cargo remains owned.
+function ToActor(item)
+    return setmetatable({_borrowed=true},{__index=item,__newindex=function(_,key,value) item[key]=value end})
+end
 function CreateSoundContainer() return {Play=function(self) self.playCount=(self.playCount or 0)+1 end} end
 function CreateTerrainObject(name) return {name=name} end
 local function iterator(items)
@@ -51,7 +61,11 @@ PresetMan={Modules=iterator({{Presets=iterator(presets)}})}
 local actors={}
 MovableMan={
     Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(),
-    AddActor=function(s,a) table.insert(actors,a) end,
+    AddActor=function(s,a) assert(not a._borrowed,'AddActor cannot adopt a borrowed cast'); table.insert(actors,a) end,
+    AddMO=function(s,a)
+        assert(not a._borrowed and a._cargoOwner=='lua','AddMO must adopt the original removed cargo')
+        a._cargoOwner='world'; table.insert(actors,a)
+    end,
     AddParticle=function(s,p) s.lastParticle=p; s.particleCount=(s.particleCount or 0)+1; s.particles=s.particles or {}; table.insert(s.particles,p) end,
     AddItem=function(s,item) s.items=s.items or {}; table.insert(s.items,item) end,
     IsActor=function(s,a) return a~=nil and not a.deleted end,
@@ -306,6 +320,7 @@ assert(#actors==actorsBeforeMedic+2 and actors[#actors].name=='Medic Drone' and 
 assert(medic.ship.openedWithCargo==0, 'medic cargo must be removed before opening the hatch auto-ejects it')
 local shieldOK,shieldMessage=activity.commanders[0]:CallIn('shield', 2); assert(shieldOK,shieldMessage); assert(activity.jamFields[#activity.jamFields].duration==60000)
 assert(activity.commanders[0]:CallIn('mining', 2)); local mining=activity.pendingDrops[#activity.pendingDrops]; assert(mining.kind=='mining' and mining.miner)
+assert(mining.miner.inventory.name=='Light Digger','mining support must carry a real digger')
 local medicUpgrade,medicUpgradeError=activity.commanders[0]:Research(12); assert(medicUpgrade,medicUpgradeError)
 assert(not activity.commanders[0]:Research(27), 'Energy Shield must require Support Jammer Lv.2')
 local shieldUpgrade,shieldUpgradeError=activity.commanders[0]:Research(13); assert(shieldUpgrade,shieldUpgradeError)
@@ -334,9 +349,11 @@ upgradedMedic.arrivalTimer.ElapsedSimTimeMS=2000; activity:UpdateCallIns()
 assert(#actors==actorsBeforeUpgrade+3 and actors[#actors].name=='Medic Drone' and actors[#actors-1].name=='Medic Drone')
 team.shieldTimer.ElapsedSimTimeMS=60000; assert(activity.commanders[0]:CallIn('shield', 2)); assert(activity.jamFields[#activity.jamFields].duration==90000)
 mining.timer.ElapsedSimTimeMS=4000; activity:UpdateCallIns(); assert(mining.arrivalTimer and mining.ship)
-assert(mining.ship.cargo[1]==mining.miner, 'dropship inventory must carry the researched Dummy miner')
+local miner=mining.ship.cargo[1]
+assert(miner.name=='Dummy' and miner._cargoOwner=='ship' and mining.miner==nil,
+    'the ship owns the miner after loading; the order must not retain a stale reference')
 mining.arrivalTimer.ElapsedSimTimeMS=2000; activity:UpdateCallIns()
-assert(mining.miner.Pos.X==target.x and mining.miner.Pos.Y==592 and mining.miner.PinStrength==0)
+assert(miner._cargoOwner=='world' and miner.Pos.X==target.x and miner.Pos.Y==592 and miner.PinStrength==0)
 assert(activity.commanders[0]:CallIn('bomb', 2)); local bomb=activity.pendingDrops[#activity.pendingDrops]
 assert(bomb.startX==target.x-192 and bomb.flightDistance==360)
 bomb.timer.ElapsedSimTimeMS=800; activity:UpdateCallIns()
@@ -613,8 +630,49 @@ assert(ai.stats.deployed==deploymentsAfterBudgetChoice,
 ai.funds=750; ai.levels[28]=1
 ai.timer.ElapsedSimTimeMS=100000
 activity:UpdateAI()
-assert(ai.stats.deployed>deploymentsAfterBudgetChoice and ai.forward>0 and activity.outposts[ai.forward].owner==1,
-    'AI should deploy again after the deployment cooldown expires')
+assert(ai.stats.deployed>deploymentsAfterBudgetChoice and (ai.forward==0 or activity.outposts[ai.forward].owner==1),
+    'AI should deploy from an affordable legal destination after the cooldown expires')
 activity.settings.unitCap=savedUnitCap
 print('AI rally, coordinated advance, retargeting, budget-feasible deployment, cooldowns, and forward deployment passed')
 print('Research pricing/progression, reversible UI controls, tech tree, and support panels passed')
+
+-- Lost and jammed mining ships must not leave a borrowed passenger reference.
+do
+    local function miningOrder()
+        actors={}
+        local a=setmetatable({deathCounts={[0]=0,[1]=0}},{__index=Frontline})
+        a:StartActivity(); a:StartBattle(); a.matchTimer.ElapsedSimTimeMS=15000
+        a.teams[0].funds=1000; a.teams[0].levels[14]=1
+        assert(a.commanders[0]:CallIn('mining',2))
+        local drop=a.pendingDrops[1]
+        drop.timer.ElapsedSimTimeMS=4000; a:UpdateCallIns()
+        assert(drop.miner==nil and drop.ship.cargo[1]._cargoOwner=='ship')
+        return a,drop
+    end
+    local lost,drop=miningOrder()
+    drop.ship.deleted=true
+    lost:UpdateCallIns()
+    assert(#lost.pendingDrops==0,'destroyed ship must discard its order without accessing freed cargo')
+
+    local jammed
+    jammed,drop=miningOrder()
+    local cargo=drop.ship.cargo[1]
+    local before=jammed.teams[0].funds
+    jammed.ShieldBlocks=function() return true end
+    jammed:UpdateCallIns()
+    assert(#jammed.pendingDrops==0 and drop.ship.InventorySize==0
+        and cargo._cargoOwner=='lua' and cargo.ToDelete and jammed.teams[0].funds>before,
+        'interception removes ship-owned cargo and refunds the order')
+
+    actors={}
+    local missing=setmetatable({deathCounts={[0]=0,[1]=0}},{__index=Frontline})
+    missing:StartActivity(); missing:StartBattle(); missing.matchTimer.ElapsedSimTimeMS=15000
+    missing.teams[0].funds=1000; missing.teams[0].levels[14]=1
+    local firearm=CreateHDFirearm
+    CreateHDFirearm=function(name,mod) if name=='Light Digger' then return nil end; return firearm(name,mod) end
+    local ok=missing.commanders[0]:CallIn('mining',2)
+    CreateHDFirearm=firearm
+    assert(not ok and missing.teams[0].funds==1000 and #missing.pendingDrops==0,
+        'missing miner equipment must reject the order without charging')
+end
+print('Mining, medic and turret cargo transfers preserve engine ownership')

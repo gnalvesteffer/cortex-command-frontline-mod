@@ -193,16 +193,18 @@ do
         'the AI must pay the actual batch cost without borrowing for an unavailable investment')
 end
 
--- Forward prices participate in AI budgeting and the committed charge.
+-- An expensive forward post must not prevent an affordable home deployment.
 do
     local activity=newBattle()
     local ai=activity.teams[1]
     activity.outposts[1].owner=1
     ai.funds=580
     activity:UpdateAI()
-    assert(ai.forward==1 and activity:ForwardDeploymentCost(1)==75)
-    assert(not ai.autoDeploy and ai.stats.deployed==0,
-        'AI must reserve funds after the full position-based forward charge')
+    assert(ai.forward==0 and ai.stats.deployed==3 and ai.funds==415,
+        'the AI should choose the affordable base batch, retaining its reserve')
+
+    activity=newBattle(); ai=activity.teams[1]
+    activity.outposts[1].owner=1
     ai.funds=590
     local choose=activity.ChooseAIAction
     activity.ChooseAIAction=function(self,actions,pressured)
@@ -213,8 +215,93 @@ do
     end
     activity:UpdateAI()
     local cost,count=activity:Batch(1)
-    assert(cost==390 and count==3 and ai.stats.deployed==3 and ai.funds==590-cost,
-        'AI forward deployment must pay the same per-unit charge as the player')
+    assert(ai.forward==1 and cost==390 and count==3 and ai.stats.deployed==3 and ai.funds==590-cost,
+        'an affordable forward deployment must pay the same position-based price as the player')
+end
+
+-- Unlocking one troop type must not reduce a full batch to a single soldier.
+do
+    local activity=newBattle()
+    local ai=activity.teams[1]
+    ai.stats.deployed=3; ai.levels[1]=1; ai.funds=700
+    activity:UpdateAI()
+    assert(ai.stats.deployed==6 and ai.counts[1]==3 and ai.funds==460,
+        'the AI should repeat its unlocked, affordable unit to fill the squad and pay for it')
+end
+
+-- A threatened base should spend its reserve on a legal emergency squad.
+do
+    local activity=newBattle()
+    local ai=activity.teams[1]
+    ai.stats.deployed=3; ai.funds=200
+    for i=1,4 do
+        local attacker=CreateAHuman('attacker')
+        attacker.Team=0; attacker.Pos=Vector(activity.brains[1].Pos.X-100,565)
+        MovableMan:AddActor(attacker)
+    end
+    activity:UpdateAI()
+    assert(ai.order=='Defend' and ai.orderTarget==0 and ai.stats.deployed==6 and ai.funds==35,
+        'home defense should buy the affordable emergency squad without granting money')
+    activity:UpdateAI()
+    assert(ai.stats.deployed==6 and ai.funds==35,'emergency deployment must still respect cooldown and funds')
+end
+
+-- Counters must actually affect selection; newly available equipment must also
+-- enter research competition rather than being absent from every priority list.
+do
+    local function researchDecision(focus,equipmentOnly)
+        local activity=newBattle()
+        local ai=activity.teams[1]
+        ai.funds=2000; ai.timer.ElapsedSimTimeMS=0
+        activity.settings.income=8
+        for i=1,29 do ai.levels[i]=10 end
+        if equipmentOnly then ai.levels[18]=0; ai.levels[19]=0; ai.levels[20]=0
+        else ai.levels[2]=0; ai.levels[3]=0 end
+        activity.playerBehavior.researchFocus=focus
+        local choose=activity.ChooseAIAction
+        activity.ChooseAIAction=function(self,actions,pressured)
+            local candidates={}
+            for _,action in ipairs(actions) do if action.kind=='research' then candidates[#candidates+1]=action end end
+            return choose(self,#candidates>0 and candidates or actions,pressured)
+        end
+        activity:UpdateAI()
+        return ai.lastAIAction and ai.lastAIAction.target
+    end
+    assert(researchDecision('',false)==3 and researchDecision('infantry',false)==2,
+        'observed infantry research should promote the income counter over bounty')
+    assert(researchDecision('',true)==18,'equipment research must be available to the AI')
+end
+
+-- Repeated bonuses compound for both teams, transfer immediately and can be
+-- disabled. Research purchases use the same rounded price shown by the UI.
+do
+    local activity=newBattle()
+    for i=1,9 do
+        local post=activity.outposts[i] or {name='extra',x=2600,groundY=600}
+        post.kind=((i-1)%3)+1
+        post.owner=0
+        activity.outposts[i]=post
+    end
+    assert(activity:TeamIncome(0)==20 and activity:TeamIncome(1)==5)
+    assert(activity:ResearchCost(0,3)==164 and activity:CallinCooldown(0,45000)==23040)
+    for i=1,3 do activity.outposts[i].owner=1 end
+    assert(activity:TeamIncome(0)==15 and activity:TeamIncome(1)==10)
+    assert(activity:ResearchCost(0,3)==205 and activity:ResearchCost(1,3)==256)
+    assert(activity:CallinCooldown(0,45000)==28800 and activity:CallinCooldown(1,45000)==36000)
+    activity.teams[0].levels[2]=1
+    assert(activity:TeamIncome(0)==17,'income research still adds 2/s independently of posts')
+    activity.settings.outpostBonuses=false
+    assert(activity:TeamIncome(0)==7 and activity:TeamIncome(1)==5)
+    assert(activity:ResearchCost(0,3)==320 and activity:ResearchCost(1,3)==320)
+    assert(activity:CallinCooldown(0,45000)==45000 and activity:CallinCooldown(1,45000)==45000)
+    activity.settings.outpostBonuses=true
+    for team=0,1 do
+        local before=1000
+        local price=activity:ResearchCost(team,3)
+        activity.teams[team].funds=before
+        assert(activity.commanders[team]:Research(3))
+        assert(activity.teams[team].funds==before-price,'both teams pay the stacked research price')
+    end
 end
 
 -- An identical world and personality must not make a different strategic

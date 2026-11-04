@@ -6,6 +6,10 @@ wizard lets you choose and review starting funds, income, unit cap, outpost
 bonuses and call-ins. Neither team earns or deploys until you click START
 BATTLE; the 15-second grace period then begins and settings lock.
 
+All outpost bonuses stack: each income post adds 5 oz/s, while each research
+or call-in post multiplies the remaining price or cooldown by 0.8. Two such
+discount posts reduce the original value by 36%; rounding up happens once.
+
 Tab toggles the panel. The tabs are Squad, Research, Support, Base, Battle and
 Setup, in that order. Squad selection is manual and has no presets. The default
 selection is 3 units. Six Squad Size upgrades increase the maximum by one each,
@@ -24,8 +28,9 @@ is index 29, with up to six upgrades.
 Support call-ins have research unlocks. Orbital Gatling Barrage unlocks Orbital
 Precision Strike, then Carpet Bomb. Mines follow Cover and the turret follows
 Mines. Medic research unlocks a Medic Drone delivery, and level two increases
-the drop to two drones. Mining Call-In drops a mining unit. The Support Jammer's
-two levels increase its duration.
+the drop to two drones. Mining Call-In delivers a Dummy with a pistol and
+Light Digger; it seeks deposits and digs. The Support Jammer's two levels
+increase its duration.
 
 Weapon Cache Pod is delivered by a landing pod that opens and dispenses three
 random firearms from loaded-game HDFirearm presets, including exotic weapons.
@@ -73,6 +78,11 @@ score bias, not a replacement for tactical context. Successful player
 deployments, research and call-ins are tracked for adaptation. A base threat
 strength of 4 within 800 pixels interrupts the current goal for home defense;
 the goal clears below strength 2.
+The AI fills squads with unlocked units, compares safe forward sites against
+the base when a preferred landing is unaffordable, and can spend its deployment
+reserve during an urgent defense. It promotes research responses to the
+player's observed focus and considers equipment unlocks. These choices still
+use normal squad limits, funds, deployment prices and cooldowns.
 
 Both sides issue orders and purchases through the same team commander. Rush,
 Advance and Defend apply to the whole team, not separate squads; miners keep

@@ -6,7 +6,7 @@ local CONFIG = {
     TEAM_UNIT_CAP = 50, STARTING_SQUAD_SIZE=3, MAX_SQUAD_SIZE=9, SQUAD_SIZE_RESEARCH=29,
     UNIT_ARMOR_COST = 60, UNIT_ARMOR_HEALTH = 50,
     FORWARD_SHIP_PASSENGERS = 3, FORWARD_LANDING_OFFSET = 150, FORWARD_SHIP_SEPARATION = 170, FORWARD_DROP_HEIGHT = 650,
-    GRACE_MS = 15000, OUTPOST_CAPTURE_SECONDS = 8, OUTPOST_INCOME = 2, OUTPOST_RADIUS = 180,
+    GRACE_MS = 15000, OUTPOST_CAPTURE_SECONDS = 8, OUTPOST_INCOME = 5, OUTPOST_RADIUS = 180,
     MINER_GOLD_SCAN_STEP = 24, MINER_CHECK_INTERVAL_MS = 1000, MINER_RESCAN_INTERVAL_MS = 15000, MINER_DIG_DISTANCE = 45,
     economy={incomePerResearchLevel=2,bountyPerResearch=15,outpostResearchCostMultiplier=0.8,callinCooldownMultiplier=0.8},
     researchEffects={
@@ -132,7 +132,7 @@ CONFIG.ai={
     researchResponses={infantry={2,4},vehicles={3,6}},
     playerResearchFocus={[1]="infantry",[4]="infantry",[5]="vehicles",[6]="infantry",
         [7]="infantry",[8]="infantry",[9]="infantry",[10]="vehicles",[16]="infantry"},
-    researchTargets={repeatable={[1]=true,[2]=true,[13]=true,[29]=true},missile=10,supportFirst=21,supportLast=28},
+    researchTargets={repeatable={[1]=true,[2]=true,[13]=true,[29]=true},missile=10,equipmentFirst=18,equipmentLast=20,supportFirst=21,supportLast=28},
     roster={roninIndex=6,initialRonins=CONFIG.STARTING_SQUAD_SIZE,selectableCount=5},
     weaponResearch={pistol=1,smg=7,shotgun=8,sniper=9,missile=10,assault=16,sidearms=19,medkits=17,grenades=18,armor=20},
     weaponIndices={pistol=1,smg=2,shotgun=3,assault=4,sniper=5,missile=6},
@@ -217,7 +217,7 @@ CONFIG.map={
         largeSceneWidth=15000,mediumSceneWidth=10000,
         smallCount=3,mediumCount=5,largeCount=9,
         smallNames={"WEST","CENTER","EAST"},
-        bonuses={"Income +2/s","Research -20%","Call-ins -20%"},
+        bonuses={"Income +5/s","Research -20%","Call-ins -20%"},
         groundProbe=4,structureYOffset=24,
     },
     mining={scanMargin=12,depositMergeVertical=80,verticalDistanceWeight=0.2,verticalDigRange=120},
@@ -1038,13 +1038,20 @@ function Frontline:PostBonusCount(team,kind)
     end
     return count
 end
+-- Round only after applying every post. Avoid floating-point noise turning an
+-- exact integer into the next higher price or cooldown.
+local function discountedAmount(base,multiplier,count)
+    if count==0 then return base end
+    return math.max(1,math.ceil(base*multiplier^count-1e-9))
+end
+
 
 function Frontline:ResearchCost(team,index)
     local t=self.teams[team]
     local research=CONFIG.research[index]
     local level=(t.levels[index] or 0)+1
     local price=research.prices and research.prices[level] or research.price*level
-    return self:PostBonusCount(team,2)>0 and math.ceil(price*CONFIG.economy.outpostResearchCostMultiplier) or price
+    return discountedAmount(price,CONFIG.economy.outpostResearchCostMultiplier,self:PostBonusCount(team,2))
 end
 
 function Frontline:TeamIncome(team)
@@ -1052,7 +1059,7 @@ function Frontline:TeamIncome(team)
 end
 
 function Frontline:CallinCooldown(team,base)
-    return self:PostBonusCount(team,3)>0 and math.ceil(base*CONFIG.economy.callinCooldownMultiplier) or base
+    return discountedAmount(base,CONFIG.economy.callinCooldownMultiplier,self:PostBonusCount(team,3))
 end
 
 local function researchUnlocked(levels,research)
@@ -1399,7 +1406,11 @@ function TeamCommander:CallIn(kind,index)
         local ground=SceneMan:MovePointToGround(Vector(outpost.x,0),0,CONFIG.map.outposts.groundProbe)
         local startY=math.max(CONFIG.map.cover.minimumShipHeight,ground.Y-CONFIG.map.cover.startOffset)
         local miner=CreateAHuman("Dummy","Dummy.rte")
-        if not miner then return false,"Mining unit unavailable" end
+        local pistol=CreateHDFirearm("Pistol","Base.rte")
+        local digger=CreateHDFirearm("Light Digger","Base.rte")
+        if not miner or not pistol or not digger then return false,"Mining unit or equipment unavailable" end
+        miner:AddInventoryItem(pistol)
+        miner:AddInventoryItem(digger)
         miner.Team=team
         miner.Pos=Vector(outpost.x,ground.Y+CONFIG.map.cover.minerSpawnYOffset)
         miner.PinStrength=CONFIG.supportEffects.miningPinStrength
@@ -1588,7 +1599,6 @@ function Frontline:UpdateCallIns()
         elseif not order.arrivalTimer then
             if self:ShieldBlocks(target,order.team) then
                 self.teams[order.team].funds=self.teams[order.team].funds+order.cost
-                if order.miner then order.miner.ToDelete=true end
                 self:Notify("Jammer intercepted "..order.kind.." drop; cost refunded")
                 table.remove(self.pendingDrops,i)
             else
@@ -1596,12 +1606,14 @@ function Frontline:UpdateCallIns()
                 ship=self:CreateSupportShip(order.team,order.kind,order.count,target.x,order.startY)
                 if not ship then
                     self.teams[order.team].funds=self.teams[order.team].funds+order.cost
-                    if order.miner then order.miner.ToDelete=true end
                     self:Notify("Support dropship unavailable; cost refunded")
                     table.remove(self.pendingDrops,i)
                 else
                     order.ship=ship
-                    if order.miner then ship:AddInventoryItem(order.miner) end
+                    if order.miner then
+                        ship:AddInventoryItem(order.miner)
+                        order.miner=nil -- The ship now owns the passenger.
+                    end
                     self.frontlineCraft[ship.UniqueID]=true
                     MovableMan:AddActor(ship)
                     order.arrivalTimer=Timer()
@@ -1609,12 +1621,15 @@ function Frontline:UpdateCallIns()
                 end
             end
         elseif not MovableMan:IsActor(ship) or (ship.Health and ship.Health<=0) then
-            if order.miner then order.miner.ToDelete=true end
             self:Notify("Support dropship lost before delivery")
             table.remove(self.pendingDrops,i)
         elseif self:ShieldBlocks(target,order.team) then
             self.teams[order.team].funds=self.teams[order.team].funds+order.cost
-            if order.miner then order.miner.ToDelete=true end
+            if order.kind=="mining" then
+                -- Dispose of the ship-owned passenger before returning the craft.
+                local cargo=ship:RemoveInventoryItemAtIndex(0)
+                if cargo then cargo.ToDelete=true end
+            end
             ship.PinStrength=0
             ship.CanEnterOrbit=true
             ship.AIMode=Actor.AIMODE_RETURN
@@ -1640,26 +1655,26 @@ function Frontline:UpdateCallIns()
                         item.Team=order.team
                         item.AIMode=Actor.AIMODE_SENTRY
                         item.PinStrength=delivery.turretPinStrength
-                        MovableMan:AddActor(item)
+                        MovableMan:AddMO(cargo)
                     end
                 elseif order.kind=="medic" then
                     local ground=SceneMan:MovePointToGround(Vector(target.x,0),0,CONFIG.map.outposts.groundProbe)
                     local drones={}
                     for n=1,order.count do
                         local cargo=ship:RemoveInventoryItemAtIndex(0)
-                        local drone=cargo and ToActor(cargo) or nil
-                        if drone then table.insert(drones,drone) end
+                        if cargo then table.insert(drones,cargo) end
                     end
                     -- Open after extracting the robots: the engine ejects any
                     -- cargo still aboard as soon as the hatch opens.
                     ship:OpenHatch()
-                    for n,drone in ipairs(drones) do
+                    for n,cargo in ipairs(drones) do
+                        local drone=ToActor(cargo)
                         local spread=n-(#drones+1)/2
                         drone.Pos=Vector(target.x+spread*delivery.medicSpread,ground.Y-delivery.medicVerticalOffset)
                         drone.Team=order.team
                         drone.HFlipped=order.team==1
                         self:AssignOrder(drone,order.team)
-                        MovableMan:AddActor(drone)
+                        MovableMan:AddMO(cargo)
                     end
                 elseif order.kind=="mining" then
                     -- Release the Dummy miner from the dropship at the target.
@@ -1670,7 +1685,7 @@ function Frontline:UpdateCallIns()
                         local ground=SceneMan:MovePointToGround(Vector(order.target.x,0),0,CONFIG.map.outposts.groundProbe)
                         miner.Pos=Vector(order.target.x,ground.Y-delivery.miningGroundOffset)
                         miner.PinStrength=0
-                        MovableMan:AddActor(miner)
+                        MovableMan:AddMO(cargo)
                         self.miners[miner.UniqueID]={}
                         self:UpdateMiner(miner,self.miners[miner.UniqueID])
                     elseif miner then
@@ -2049,15 +2064,14 @@ function Frontline:UpdateAI()
     elseif self.aiPersonality=="economic" then priorities=copyArray(configured.economic)
     else priorities=copyArray(pressured and configured.balancedPressured or configured.balancedNeutral) end
     
-    -- Counter player's research focus if detected
-    local responses=CONFIG.ai.researchResponses
-    if snapshot.playerResearchFocus=="infantry" then
-        for _,index in ipairs(responses.infantry) do table.insert(priorities,index) end
-    elseif snapshot.playerResearchFocus=="vehicles" then
-        for _,index in ipairs(responses.vehicles) do table.insert(priorities,index) end
-    end
+    -- Promote responses before deduplication, rather than appending duplicates.
+    local responses=CONFIG.ai.researchResponses[snapshot.playerResearchFocus]
     table.insert(priorities,1,1)
+    if responses then
+        for i=#responses,1,-1 do table.insert(priorities,1,responses[i]) end
+    end
     local supportRange=CONFIG.ai.researchTargets
+    for index=supportRange.equipmentFirst,supportRange.equipmentLast do priorities[#priorities+1]=index end
     for index=supportRange.supportFirst,supportRange.supportLast do priorities[#priorities+1]=index end
     
     -- Compete feasible purchases in one budget choice instead of spending in a fixed category order.
@@ -2128,13 +2142,17 @@ function Frontline:UpdateAI()
         ai.counts[CONFIG.ai.roster.roninIndex]=math.min(CONFIG.ai.roster.initialRonins,squadLimit)
         selectedCount=ai.counts[CONFIG.ai.roster.roninIndex]
     else
+        local best
         for i,entry in ipairs(CONFIG.roster) do
             if i<=CONFIG.ai.roster.selectableCount and selectedCount<squadLimit
                 and entry.unlock<=ai.tier and (not entry.research or (ai.levels[entry.research] or 0)>0) then
                 ai.counts[i]=1
                 selectedCount=selectedCount+1
+                best=i
             end
         end
+        local fill=best or CONFIG.ai.roster.roninIndex
+        ai.counts[fill]=ai.counts[fill]+squadLimit-selectedCount
     end
 
     -- Keep every selected weapon researched and available.
@@ -2148,6 +2166,7 @@ function Frontline:UpdateAI()
     elseif (ai.levels[research.shotgun] or 0)>0 then weaponChoice=weaponIndices.shotgun
     elseif (ai.levels[research.smg] or 0)>0 then weaponChoice=weaponIndices.smg end
     ai.weapons={weaponChoice,weaponChoice,weaponChoice,weaponChoice,weaponChoice,basic}
+    ai.sidearms={}; ai.medkits={}; ai.grenades={}; ai.armor={}
     if ai.funds>=aiTuning.equipmentFunds then
         for i,entry in ipairs(CONFIG.roster) do
             if (ai.counts[i] or 0)>0 and (ai.levels[research.armor] or 0)>0 then ai.armor[i]=true end
@@ -2211,18 +2230,57 @@ function Frontline:UpdateAI()
     end
     commander:SetForward(forward)
     ai.autoDeploy=false
-    if self.battleStarted and self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS)
-        and ai.timer:IsPastSimMS(self:DeployCooldown(team)) then
-        local cost,count=self:Batch(team)
-        if not cost or count==0 or cost>ai.funds-aiTuning.deploymentReserve then
+    if self.battleStarted and self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS) then
+        local reserve=(urgentBaseDefense or snapshot.urgentPostDefense) and 0 or aiTuning.deploymentReserve
+        local budget=ai.funds-reserve
+        -- Prefer the tactical destination, then compare safe owned posts and
+        -- home using the real batch price and destination-specific cooldown.
+        local function affordableDestination()
+            local ready=false
+            local function candidate(index)
+                commander:SetForward(index)
+                local destinationReady=ai.timer:IsPastSimMS(self:DeployCooldown(team))
+                if destinationReady then ready=true end
+                local cost,count=self:Batch(team)
+                if destinationReady and cost and count>0 and cost<=budget and count<=snapshot.freeUnitSlots then
+                    return cost,count
+                end
+            end
+            local cost,count=candidate(forward)
+            if cost then return cost,count,true end
+            local best,bestCost,bestCount
+            for i,post in ipairs(self.outposts) do
+                if i~=forward and post.owner==team and posts[i].enemies==0 then
+                    local alternative,amount=candidate(i)
+                    if alternative and (not bestCost or alternative<bestCost) then
+                        best,bestCost,bestCount=i,alternative,amount
+                    end
+                end
+            end
+            if forward~=0 then
+                local alternative,amount=candidate(0)
+                if alternative and (not bestCost or alternative<bestCost) then
+                    best,bestCost,bestCount=0,alternative,amount
+                end
+            end
+            commander:SetForward(best or forward)
+            return bestCost,bestCount,ready
+        end
+        local cost,count,ready=affordableDestination()
+        if not cost and ready then
             ai.counts={}
             for i=1,#CONFIG.roster do ai.counts[i]=0 end
-            ai.counts[CONFIG.ai.roster.roninIndex]=math.min(CONFIG.ai.roster.initialRonins,self:MaxSquadSize(team),snapshot.freeUnitSlots)
+            local ronin=CONFIG.ai.roster.roninIndex
+            ai.counts[ronin]=math.min(squadLimit,CONFIG.ai.roster.initialRonins)
             ai.weapons={1,1,1,1,1,1}
             ai.sidearms={}; ai.medkits={}; ai.grenades={}; ai.armor={}
-            cost,count=self:Batch(team)
+            while ai.counts[ronin]>0 do
+                cost,count=affordableDestination()
+                if cost then break end
+                ai.counts[ronin]=ai.counts[ronin]-1
+            end
         end
-        if cost and count>0 and cost<=ai.funds-aiTuning.deploymentReserve and count<=snapshot.freeUnitSlots then
+        if cost then
             ai.autoDeploy=true
             local deficit=math.max(0,CONFIG.ai.strategy.attackGroupSize-snapshot.unitCounts[team])
                 /CONFIG.ai.strategy.attackGroupSize
@@ -2553,8 +2611,8 @@ function Frontline:DrawHUD()
     local lines={}
     local function text(y,s) lines[#lines+1]={y=y,text=s} end
     local bonusIncome=self:PostBonusCount(0,1)*CONFIG.OUTPOST_INCOME
-    local researchDiscount=self:PostBonusCount(0,2)>0 and math.floor((1-CONFIG.economy.outpostResearchCostMultiplier)*100+0.5) or 0
-    local supportDiscount=self:PostBonusCount(0,3)>0 and math.floor((1-CONFIG.economy.callinCooldownMultiplier)*100+0.5) or 0
+    local researchDiscount=math.floor((1-CONFIG.economy.outpostResearchCostMultiplier^self:PostBonusCount(0,2))*100+0.5)
+    local supportDiscount=math.floor((1-CONFIG.economy.callinCooldownMultiplier^self:PostBonusCount(0,3))*100+0.5)
     text(26,"FRONTLINE | TAB: COMMAND | Funds: "..math.floor(t.funds).." +"..income.."/s | Bounty: "..(CONFIG.BOUNTY+CONFIG.economy.bountyPerResearch*(t.levels[3] or 0)))
     text(38,"Batch: "..(count or 0).." / "..(cost or 0).." oz | Units: "..self:UnitCount(0).." / "..self.settings.unitCap.." | Deploy: "..self:AutoReason(0))
     text(50,"Posts: "..owned.." | Post bonuses: +"..bonusIncome.."/s | Research -"..researchDiscount.."% | Support -"..supportDiscount.."%")
@@ -2808,9 +2866,9 @@ function Frontline:DrawPanel()
                 end
             end
         end
-        if columns<3 then text(15,335,"Connectors show prerequisites. Research outposts reduce costs by 20%.") end
+        if columns<3 then text(15,335,"Connectors show prerequisites. Research outpost discounts stack.") end
     elseif self.tab=="Battle" then
-        text(15,84,"OUTPOSTS: hold for bonuses (income stacks)")
+        text(15,84,"OUTPOSTS: hold for stacking bonuses")
         for i,outpost in ipairs(self.outposts) do
             local owner=outpost.owner==0 and "YOUR TEAM" or (outpost.owner==1 and "ENEMY" or "NEUTRAL")
             text(15,86+i*12,outpost.name..": "..owner.."  "..outpost.bonus.."  "..math.floor((outpost.progress+1)*50).."%")
