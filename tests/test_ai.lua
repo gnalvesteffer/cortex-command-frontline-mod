@@ -1,190 +1,213 @@
--- Frontline Mod AI Tests
--- Validates AI personality assignment, adaptive research, deployment strategies,
--- and call-in rotation logic.
+-- Behavior tests exercise the real activity with lightweight engine doubles.
+Frontline={}
+Actor={AIMODE_SENTRY=1,AIMODE_BRAINHUNT=2,AIMODE_GOTO=3,AIMODE_DELIVER=5,AIMODE_RETURN=6}
+Controller={CIM_AI=1,CIM_DISABLED=0}
+Activity={OBSERVE=1,OVER=2,NOTEAM=-1}
+Key={TAB=1}; MouseButtons={MOUSE_LEFT=1,MOUSE_RIGHT=2}; rte={goldID=2}
+function Timer() return {ElapsedSimTimeMS=0,IsPastSimMS=function(s,n) return s.ElapsedSimTimeMS>=n end,Reset=function(s) s.ElapsedSimTimeMS=0 end} end
+function Vector(x,y) return setmetatable({X=x,Y=y},{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
+local nextId=0
+function CreateAHuman(name)
+    nextId=nextId+1
+    return {name=name,UniqueID=nextId,Team=0,Health=100,MaxHealth=100,Height=70,
+        AddInventoryItem=function(self,item) self.inventory=item end,
+        ClearAIWaypoints=function(self) self.waypoint=nil end,
+        AddAISceneWaypoint=function(self,v) self.waypoint=v end}
+end
+function CreateACrab(name) local actor=CreateAHuman(name); actor.vehicle=true; return actor end
+function CreateHDFirearm(name) return {name=name} end
+function CreateTDExplosive(name) return {name=name} end
+function CreateACDropShip(name)
+    nextId=nextId+1
+    return {name=name,ship=true,UniqueID=nextId,MaxPassengers=4,MaxInventoryMass=800,InventorySize=0,cargo={},
+        SetControllerMode=function() end,SetGoldValue=function() end,
+        AddInventoryItem=function(self,item) table.insert(self.cargo,item); self.InventorySize=#self.cargo end}
+end
+function ToActor(actor) return actor end
+function CreateSoundContainer() return {Play=function() end} end
+function CreateTerrainObject(name) return {name=name} end
+local actors={}
+MovableMan={
+    Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(),
+    AddActor=function(_,actor) table.insert(actors,actor) end,
+    IsActor=function(_,actor) return actor~=nil and not actor.deleted end,
+}
+MovableMan.Particles=function() return nil end
+function IsAHuman(actor) return not actor.vehicle and not actor.ship end
+function IsACrab(actor) return actor.vehicle==true end
+SceneMan={SceneWidth=5200,SceneHeight=800,CastMaterialRay=function() return false end,
+    AddSceneObject=function() end,MovePointToGround=function(_,p) return Vector(p.X,600) end}
+FrameMan={IsHudDisabled=function() return false end,SetHudDisabled=function() end}
+PrimitiveMan={}; MusicMan={PlayDynamicSong=function() end}
+TimerMan={DeltaTimeSecs=1}; UInputMan={KeyPressed=function() return false end}
+ActivityMan={EndActivity=function() end}
+function Frontline:SetPlayerBrain() end
+function Frontline:SetViewState() end
+function Frontline:SetObservationTarget() end
+function Frontline:GetTeamDeathCount(team) return self.deathCounts[team] end
+assert(loadfile('Frontline.rte/Frontline.lua'))()
 
-local TESTS_PASSED = 0
-local TESTS_FAILED = 0
+local function newBattle()
+    actors={}
+    local activity=setmetatable({deathCounts={[0]=0,[1]=0}},{__index=Frontline})
+    activity:StartActivity()
+    activity.aiPersonality='balanced'
+    activity:StartBattle()
+    activity.matchTimer.ElapsedSimTimeMS=15000
+    activity.settings.callins=false
+    return activity
+end
 
-function assert(condition, message)
-    if condition then
-        TESTS_PASSED = TESTS_PASSED + 1
-        print("✓ " .. message)
-    else
-        TESTS_FAILED = TESTS_FAILED + 1
-        print("✗ " .. message)
+-- Player aggression must reflect committed deployments, not attempts or frames.
+do
+    local activity=newBattle()
+    local player=activity.teams[0]
+    player.auto=false
+    player.funds=0
+    local beforeFunds=player.funds
+    assert(not activity:Deploy(0),'an unaffordable batch must fail')
+    assert(player.funds==beforeFunds and player.stats.deployed==0,'failed deployment must not charge or add units')
+    player.funds=1000
+    local cost=activity:Batch(0)
+    assert(activity:Deploy(0),'an affordable, ready batch must deploy')
+    assert(player.stats.deployed==3 and player.funds==1000-cost,'successful deployment must charge for exactly its batch')
+    assert(activity.playerBehavior.lastDeployTime==15000 and activity.playerBehavior.lastDeploymentCount==3,
+        'the observed deployment includes its match time and actual batch size')
+    assert(not activity:Deploy(0),'an immediate second batch must respect the deployment cooldown')
+    assert(player.stats.deployed==3 and player.funds==1000-cost,'cooldown failure must not spend or deploy')
+    activity:UpdateAI()
+    assert(activity.playerBehavior.deployments==1,'AI must observe one successful player deployment, not failed attempts')
+    activity:UpdateAI()
+    assert(activity.playerBehavior.deployments==1,'AI decisions must not count the same deployment twice')
+    player.timer.ElapsedSimTimeMS=100000
+    local createGun=CreateHDFirearm
+    CreateHDFirearm=function() return nil end
+    assert(not activity:Deploy(0),'a missing equipment preset must reject the whole batch')
+    CreateHDFirearm=createGun
+    assert(activity.playerBehavior.deployments==1 and player.stats.deployed==3 and player.funds==1000-cost,
+        'a failed construction must not record or charge a deployment')
+    assert(activity:Deploy(0),'a later valid batch must deploy')
+    assert(activity.playerBehavior.deployments==2 and player.stats.deployed==6,
+        'the signal counts successful batches, not their unit count')
+end
+
+-- Normal activity updates and automatic deployment must use the same accounting.
+do
+    local activity=newBattle()
+    local player=activity.teams[0]
+    activity.panel=false
+    activity.DrawHUD=function() end
+    activity.DrawOutpost=function() end
+    player.auto=true
+    player.funds=0
+    local delta=TimerMan.DeltaTimeSecs
+    TimerMan.DeltaTimeSecs=0
+    activity:UpdateActivity()
+    activity:UpdateActivity()
+    assert(activity.playerBehavior.deployments==0,'failed automatic attempts and idle frames must not count as deployments')
+    player.funds=1000
+    activity:UpdateActivity()
+    assert(activity.playerBehavior.deployments==1 and player.stats.deployed==3,'one automatic batch must be counted once')
+    activity:UpdateActivity()
+    assert(activity.playerBehavior.deployments==1,'automatic cooldown failures must not inflate the counter')
+    TimerMan.DeltaTimeSecs=delta
+end
+
+-- Other observed player actions must likewise be recorded only when paid.
+do
+    local activity=newBattle()
+    local player=activity.teams[0]
+    player.funds=0
+    assert(not activity:Research(0,1),'unaffordable research must fail')
+    player.funds=5000
+    assert(activity:Research(0,1),'affordable unlocked research must succeed')
+    assert(activity.playerBehavior.researchPurchases==1,'only successful player research must be observed')
+    assert(activity.playerBehavior.lastResearchIndex==1,'the observed research identifies the purchased upgrade')
+    activity.settings.callins=true
+    player.levels[24]=1
+    assert(activity:CallIn(0,'strike',2),'unlocked, ready strike must succeed')
+    assert(not activity:CallIn(0,'strike',2),'strike cooldown must reject a second call')
+    assert(activity.playerBehavior.callinsUsed==1,'only successful player call-ins must be observed')
+    assert(activity.playerBehavior.lastCallin=='strike','the observed call-in identifies the successful support kind')
+    local enemy=activity.teams[1]
+    enemy.funds=5000
+    enemy.levels[24]=1
+    assert(activity:Research(1,1) and activity:CallIn(1,'strike',2),'the opponent can also purchase research and support')
+    assert(activity.playerBehavior.researchPurchases==1 and activity.playerBehavior.callinsUsed==1,
+        'opponent purchases must not be attributed to the player')
+end
+
+-- A home emergency must interrupt ordinary strategy and cease after attackers
+-- leave; budget and deployment cooldown still apply during the emergency.
+do
+    local activity=newBattle()
+    local ai=activity.teams[1]
+    ai.funds=0
+    activity:UpdateAI()
+    assert(ai.goal~='defendBase','an unthreatened base should not demand emergency defense')
+    local lone=CreateAHuman('Soldier Light')
+    lone.Team=0; lone.Pos=Vector(activity.brains[1].Pos.X-200,565)
+    MovableMan:AddActor(lone)
+    local ally=CreateAHuman('Soldier Light')
+    ally.Team=1; ally.Pos=Vector(activity.brains[1].Pos.X-200,565)
+    MovableMan:AddActor(ally)
+    local dead=CreateAHuman('Soldier Light')
+    dead.Team=0; dead.Health=0; dead.Pos=Vector(activity.brains[1].Pos.X-200,565)
+    MovableMan:AddActor(dead)
+    activity:UpdateAI()
+    assert(ai.goal~='defendBase','a lone enemy, friendly unit, and dead enemy are not a mass rush')
+    local attackers={}
+    for i=1,6 do
+        local actor=CreateAHuman('Soldier Light')
+        actor.Team=0
+        actor.Pos=Vector(activity.brains[1].Pos.X-250-i*10,565)
+        MovableMan:AddActor(actor)
+        attackers[#attackers+1]=actor
     end
+    local deployed=ai.stats.deployed
+    activity:UpdateAI()
+    assert(ai.goal=='defendBase' and ai.order=='Defend' and ai.orderTarget==0,
+        'a base rush must override ordinary objectives with home defense')
+    assert(ai.funds==0 and ai.stats.deployed==deployed,'base defense must not grant free deployments')
+    ai.funds=1000
+    ai.timer.ElapsedSimTimeMS=0
+    activity:UpdateAI()
+    assert(ai.stats.deployed==deployed,'base defense must not bypass the deployment cooldown')
+    for _,actor in ipairs(attackers) do actor.Team=2 end
+    activity:UpdateAI()
+    assert(ai.goal~='defendBase' and not (ai.order=='Defend' and ai.orderTarget==0),
+        'after attackers leave, the commander must reassess rather than remain stuck at home')
 end
 
-function test_ai_personality_assignment()
-    print("\n=== AI Personality Assignment ===")
-    
-    -- Test that personality is assigned at match start
-    local frontline = {teams = {{}, {}}, aiPersonality = nil}
-    frontline.teams[1].funds = 1000
-    
-    -- Simulate personality assignment (normally happens in UpdateAI)
-    local roll = math.random(1, 4)
-    if roll == 1 then frontline.aiPersonality = "aggressive"
-    elseif roll == 2 then frontline.aiPersonality = "defensive"
-    elseif roll == 3 then frontline.aiPersonality = "economic"
-    else frontline.aiPersonality = "balanced" end
-    
-    assert(frontline.aiPersonality ~= nil, "AI personality is assigned at match start")
-    assert(type(frontline.aiPersonality) == "string", "AI personality is a string")
-    
-    -- Verify all four personalities are possible
-    local valid_personalities = {"aggressive", "defensive", "economic", "balanced"}
-    local found = false
-    for _, p in ipairs(valid_personalities) do
-        if frontline.aiPersonality == p then found = true; break end
+-- A legal, affordable squad must not be held hostage by an unavailable
+-- research purchase; the commander still pays the normal batch price.
+do
+    local activity=newBattle()
+    local ai=activity.teams[1]
+    ai.funds=400
+    activity:UpdateAI()
+    local cost,count=activity:Batch(1)
+    assert(count==3 and ai.stats.deployed==count,
+        'with a scarce budget and a ready starting squad, the AI should deploy a feasible batch')
+    assert(ai.funds==400-cost and ai.funds>=0,
+        'the AI must pay the actual batch cost without borrowing for an unavailable investment')
+end
+
+-- An identical world and personality must not make a different strategic
+-- decision merely because unrelated engine randomness has advanced.
+do
+    local function decide(seed)
+        math.randomseed(seed)
+        local activity=newBattle()
+        local ai=activity.teams[1]
+        ai.funds=0
+        activity:UpdateAI()
+        return ai.goal,ai.goalTarget,ai.order,ai.orderTarget
     end
-    assert(found, "AI personality is one of the four valid options")
+    local goal,target,order,orderTarget=decide(1)
+    local otherGoal,otherTarget,otherOrder,otherOrderTarget=decide(98765)
+    assert(goal==otherGoal and target==otherTarget and order==otherOrder and orderTarget==otherOrderTarget,
+        'equivalent snapshots must make the same strategic decision')
 end
 
-function test_ai_research_priorities()
-    print("\n=== AI Research Priorities ===")
-    
-    -- Test that different personalities have different research priorities
-    local aggressive_priorities = {3, 4, 7, 8, 2, 6, 1, 10, 11, 16, 13, 14, 15, 9, 5}
-    local defensive_priorities = {1, 12, 3, 6, 2, 10, 16, 13, 14, 15, 8, 7, 9, 4, 5}
-    local economic_priorities = {1, 12, 11, 3, 6, 2, 10, 16, 13, 14, 15, 8, 7, 9, 4, 5}
-    
-    assert(aggressive_priorities[1] == 3, "Aggressive AI prioritizes infantry weapons first")
-    assert(defensive_priorities[1] == 1, "Defensive AI prioritizes infantry first")
-    assert(economic_priorities[1] == 1, "Economic AI prioritizes infantry first")
-    
-    -- Test adaptive priorities under pressure
-    local pressured_priorities = {12, 3, 4, 7, 8, 2, 1, 10, 11, 16, 13, 14, 15, 9, 6, 5}
-    assert(pressured_priorities[1] == 12, "Under pressure, AI prioritizes SMGs first")
-end
-
-function test_ai_deployment_batch_sizes()
-    print("\n=== AI Deployment Batch Sizes ===")
-    
-    -- Test that batch sizes vary by personality and funds
-    local aggressive_batch = 4 + math.random(0, 1)  -- 4-5 units
-    local defensive_batch = 2 + math.random(0, 1)   -- 2-3 units
-    local balanced_batch = 3 + math.random(0, 1)     -- 3-4 units
-    
-    assert(aggressive_batch >= 4 and aggressive_batch <= 5, "Aggressive AI deploys 4-5 units per batch")
-    assert(defensive_batch >= 2 and defensive_batch <= 3, "Defensive AI deploys 2-3 units per batch")
-    assert(balanced_batch >= 3 and balanced_batch <= 4, "Balanced AI deploys 3-4 units per batch")
-end
-
-function test_ai_callin_rotation()
-    print("\n=== AI Call-In Rotation ===")
-    
-    -- Test that AI rotates through all three offensive call-ins
-    local kinds = {"strike", "bomb", "orbital"}
-    local offense_choice = 1
-    
-    for i = 1, 6 do
-        local choice = (offense_choice - 1) % #kinds + 1
-        assert(kinds[choice] ~= nil, "Call-in choice is valid at iteration " .. i)
-        offense_choice = choice % #kinds + 1
-    end
-    
-    -- Test adaptive call-in selection based on player unit count
-    local aggressive_kinds = {"orbital", "bomb", "strike"}
-    assert(aggressive_kinds[1] == "orbital", "Aggressive AI prioritizes orbital strikes vs large forces")
-end
-
-function test_ai_fortification_strategy()
-    print("\n=== AI Fortification Strategy ===")
-    
-    -- Test that AI alternates between cover and mines
-    local fortify_choice = nil
-    
-    -- First choice: cover (default)
-    assert(fortify_choice == nil or fortify_choice == "mines", "AI starts with cover fortifications")
-    
-    -- After using cover, switch to mines
-    fortify_choice = "cover"
-    local next_choice = fortify_choice == "mines" and "cover" or "mines"
-    assert(next_choice == "mines", "AI switches to mines after cover")
-    
-    -- After using mines, switch back to cover
-    fortify_choice = "mines"
-    next_choice = fortify_choice == "mines" and "cover" or "mines"
-    assert(next_choice == "cover", "AI switches back to cover after mines")
-end
-
-function test_player_behavior_tracking()
-    print("\n=== Player Behavior Tracking ===")
-    
-    -- Test that player behavior is tracked for adaptation
-    local player_behavior = {deployments = 0, callins_used = 0, research_focus = ""}
-    
-    -- Simulate player deployments
-    for i = 1, 6 do
-        player_behavior.deployments = player_behavior.deployments + 1
-    end
-    
-    assert(player_behavior.deployments == 6, "Player deployment count is tracked")
-    
-    -- Test adaptive response to aggressive player
-    local ai_response = player_behavior.deployments > 5 and "advance" or "balanced"
-    assert(ai_response == "advance", "AI adapts to aggressive player by advancing")
-end
-
-function test_ai_weapon_selection()
-    print("\n=== AI Weapon Selection ===")
-    
-    -- Test that AI selects appropriate weapons based on research unlocks
-    local ai = {levels = {}, tier = 1}
-    
-    -- No research: basic rifle
-    local weapon = 6  -- Basic rifle index
-    assert(weapon == 6, "Unresearched AI uses basic rifles")
-    
-    -- After SMG research
-    ai.levels[12] = 1
-    weapon = 1  -- SMG index
-    assert(weapon == 1, "AI upgrades to SMGs after research")
-    
-    -- After LMG research
-    ai.levels[2] = 1
-    weapon = 2  -- LMG index
-    assert(weapon == 2, "AI upgrades to LMGs after research")
-    
-    -- After sniper research and detecting player threat
-    ai.levels[4] = 1
-    weapon = 4  -- Sniper index
-    assert(weapon == 4, "AI uses snipers when researched and needed")
-end
-
-function test_ai_base_upgrades()
-    print("\n=== AI Base Upgrades ===")
-    
-    -- Test that AI invests in base upgrades before research
-    local ai = {funds = 10000, base_armor = 0}
-    local brain = {Health = 50, MaxHealth = 100}
-    
-    -- Should repair damaged brain first
-    assert(brain.Health < brain.MaxHealth - 25 and ai.funds >= 240, "AI prioritizes brain repair when damaged")
-    
-    -- Then turret if not present
-    local has_turret = false
-    assert(not has_turret and ai.funds >= 300, "AI builds turret if missing")
-    
-    -- Then armor upgrades
-    assert(ai.base_armor < 3 and ai.funds >= 400, "AI upgrades base armor when affordable")
-end
-
--- Run all tests
-test_ai_personality_assignment()
-test_ai_research_priorities()
-test_ai_deployment_batch_sizes()
-test_ai_callin_rotation()
-test_ai_fortification_strategy()
-test_player_behavior_tracking()
-test_ai_weapon_selection()
-test_ai_base_upgrades()
-
-print("\n=== Test Results ===")
-print("Passed: " .. TESTS_PASSED)
-print("Failed: " .. TESTS_FAILED)
-
-if TESTS_FAILED > 0 then
-    os.exit(1)
-end
+print('AI deployment accounting, base emergency recovery, budget and cooldown passed')

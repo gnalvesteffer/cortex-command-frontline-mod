@@ -364,12 +364,22 @@ for i=1,6 do
     MovableMan:AddActor(attacker)
 end
 ra.timer.ElapsedSimTimeMS=100000; ra.funds=5000
-rush:UpdateAI()
+rush.aiTimer.ElapsedSimTimeMS=0
+rush.aiEmergencyTimer.ElapsedSimTimeMS=250
+rush.panel=false; rush.DrawOutpost=function() end; rush.DrawHUD=function() end
+local aiDecisionCount=0
+local performAIUpdate=rush.UpdateAI
+rush.UpdateAI=function(self) aiDecisionCount=aiDecisionCount+1; return performAIUpdate(self) end
+assert(rush.aiTimer.ElapsedSimTimeMS<rush.aiInterval,'the ordinary decision interval has not elapsed')
+rush:UpdateActivity()
+assert(aiDecisionCount==1,'urgent event should invoke one full AI decision')
+rush:UpdateActivity()
+assert(aiDecisionCount==1,'persistent threat must not run the full AI again before the next bounded check')
 assert(ra.order=='Defend' and ra.orderTarget==0 and ra.orderPhase=='assembling'
     and ra.attackTarget==nil and ra.forward==0,
     'overwhelming base rush must supersede forward strategy with home defense')
-assert(ra.stats.deployed>=unitsBefore+6 and ra.autoDeploy,
-    'counter-rush response must commit available troops to an extra defensive deployment')
+assert(ra.stats.deployed>unitsBefore and ra.lastAIAction and ra.lastAIAction.kind=='deployment',
+    'counter-rush response must commit an available force through a real defensive deployment')
 local baseOrders=0
 for id,assignment in pairs(rush.orderAssignments) do
     if assignment.base then
@@ -382,11 +392,28 @@ end
 assert(baseOrders>0,'field units must receive real base-defense waypoints')
 print('AI preserves normal advance, then deploys and reassigns forces to repel a mass base rush')
 
+-- Capacity decisions must include units reserved aboard forward dropships.
+actors={}; local reserved=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+reserved:StartActivity(); reserved:StartBattle(); reserved.matchTimer.ElapsedSimTimeMS=15000
+reserved.settings.unitCap=8; reserved.settings.callins=false
+local reservedAI=reserved.teams[1]
+reservedAI.funds=400; reservedAI.stats.deployed=3; reservedAI.tier=3
+reservedAI.timer.ElapsedSimTimeMS=100000; reservedAI.baseArmor=3; reservedAI.turretLevel=2
+for index=1,29 do reservedAI.levels[index]=10 end
+for id=9001,9006 do reserved.inTransit[id]={team=1} end
+assert(reserved:UnitCount(1)==6)
+reserved:UpdateAI()
+assert(reservedAI.stats.deployed==5 and reservedAI.lastAIAction.kind=='deployment'
+    and reserved:UnitCount(1)==reserved.settings.unitCap,
+    'AI should select the two legal open slots after accounting for six in-flight reservations')
+print('AI capacity decisions include in-flight passenger reservations')
+
 -- AI makes purchases and decisions through the same mechanisms as the player.
 actors={}; local bot=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 bot:StartActivity(); bot:StartBattle(); bot.DrawHUD=function() end; bot.DrawOutpost=function() end
 bot.matchTimer.ElapsedSimTimeMS=15000
 local ai=bot.teams[1]; ai.funds=2000; ai.levels={2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1}; ai.tier=3; ai.stats.deployed=2
+ai.timer.ElapsedSimTimeMS=0 -- Hold deployment cooldown so the funded turret upgrade can be selected.
 for i=1,27 do ai.levels[i]=1 end
 bot.outposts[3].owner=1
 local enemyVehicle=CreateACrab('Gatling Drone','Coalition.rte'); enemyVehicle.Team=0; enemyVehicle.Pos=Vector(100,565); MovableMan:AddActor(enemyVehicle)
@@ -397,7 +424,8 @@ local aiCost,aiSize=bot:Batch(1); assert(aiSize>0 and aiSize<=bot:MaxSquadSize(1
 -- Same base income with no difficulty multiplier.
 bot.aiTimer.ElapsedSimTimeMS=0; bot.settings.outpostBonuses=false; ai.auto=false; bot.teams[0].auto=false
 local f0,f1=bot.teams[0].funds,ai.funds; bot:UpdateActivity()
-assert(bot.teams[0].funds-f0==5 and ai.funds-f1==9) -- AI owns two income upgrades.
+assert(bot.teams[0].funds-f0==5 and ai.funds-f1==7,
+    'base income deltas: player='..tostring(bot.teams[0].funds-f0)..' AI='..tostring(ai.funds-f1))
 -- Support reactions use normal costs/cooldowns and do not target friendly clusters.
 local medic1=CreateAHuman('Soldier Light','Coalition.rte'); medic1.Team=1; medic1.Pos=Vector(bot.outposts[3].x,565); medic1.Health=40; MovableMan:AddActor(medic1)
 local medic2=CreateAHuman('Soldier Light','Coalition.rte'); medic2.Team=1; medic2.Pos=Vector(bot.outposts[3].x+30,565); medic2.Health=40; MovableMan:AddActor(medic2)

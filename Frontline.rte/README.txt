@@ -57,10 +57,16 @@ Tweak balance values at the start of Frontline.lua. This build needs further
 in-game testing, especially vehicle navigation, forward spawn, shields and the
 match report. Research and settings reset each match.
 
-The AI uses the same units, research, base upgrades, orders, forward spawns and call-ins,
-with normal prices, cooldowns, capacity limits and prerequisites. It scores
-objectives against pressure and resource needs, gathers six units at safe owned
-posts before advancing together, retains targets until capture, and saves funds
-for near-term research instead of automatically deploying. A four-unit player
-rush within 800 pixels of its brain overrides that plan: the AI recalls field
-units to defend home and prioritizes troop deployment over optional research.
+The AI builds a bounded battlefield/resource snapshot and selects interruptible
+goals with hysteresis: defend a threatened base or post, regroup, then advance
+or rush. It scores only feasible deployments, research, base upgrades and
+support actions against the current threat and budget, executing its best
+spend through the same purchase/cooldown rules as the player. Personality is a
+score bias, not a replacement for tactical context. Successful player
+deployments, research and call-ins are tracked for adaptation. A base threat
+strength of 4 within 800 pixels interrupts the current goal for home defense;
+the goal clears below strength 2.
+
+Urgent base or owned-post threats are checked every 250 ms and interrupt the
+normal decision cadence without running the full AI every frame. Deployment
+capacity includes dropship passengers whose unit slots are reserved in transit.

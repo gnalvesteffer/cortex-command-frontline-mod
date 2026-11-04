@@ -117,6 +117,10 @@ CONFIG.ai={
         mine={base=40,incomePost=8,economic=25,pressured=-10},
         supply={base=16,ally=4},
         fortify={base=22,threat=10,ally=-2,defensive=12,pressured=8},
+        regroup={base=12,strength=8,defensive=10,aggressive=-6},
+        deployment={base=30,aggressive=10,defensive=10,economic=-5,costBurden=5,deficit=5},
+        research={base=20,economic=10,defensive=2,costBurden=8},
+        baseUpgrade={base=24,defensive=10,costBurden=5,damage=35},
     },
     researchPriorities={
         aggressive={3,4,5,6,7,8,9,2,29,10,11,12,13,14,15,16,17},
@@ -126,12 +130,13 @@ CONFIG.ai={
         balancedNeutral={3,6,7,8,9,2,29,10,11,12,13,14,15,16,17,4,5},
     },
     researchResponses={infantry={2,4},vehicles={3,6}},
+    playerResearchFocus={[1]="infantry",[4]="infantry",[5]="vehicles",[6]="infantry",
+        [7]="infantry",[8]="infantry",[9]="infantry",[10]="vehicles",[16]="infantry"},
     researchTargets={repeatable={[1]=true,[2]=true,[13]=true,[29]=true},missile=10,supportFirst=21,supportLast=28},
     roster={roninIndex=6,initialRonins=CONFIG.STARTING_SQUAD_SIZE,selectableCount=5},
     weaponResearch={pistol=1,smg=7,shotgun=8,sniper=9,missile=10,assault=16,sidearms=19,medkits=17,grenades=18,armor=20},
     weaponIndices={pistol=1,smg=2,shotgun=3,assault=4,sniper=5,missile=6},
-    actionOrder={fortify={"cover","mines","turret"},offense={"strike","bomb","orbital"}},
-    strategy={attackGroupSize=6,minimumRallyForce=1,researchSaveGap=400},
+    strategy={attackGroupSize=6},
     tuning={
         pressureUnitAdvantage=2,
         researchReserve=240,
@@ -141,7 +146,6 @@ CONFIG.ai={
         highResearchFunds=3000,
         highResearchLevels=10,
         normalResearchLevels=2,
-        deploymentThreshold=200,
         deploymentReserve=200,
         firstBatchSize=CONFIG.STARTING_SQUAD_SIZE,
         normalBatchMin=3,
@@ -152,15 +156,17 @@ CONFIG.ai={
         defensiveBatchMin=2,
         defensiveBatchRandom=1,
         equipmentFunds=1000,
-        forwardFunds=600,
         callinReserve=240,
-        shieldReserve=150,
         threatRadiusMultiplier=2,
         baseRushRadius=800,
-        baseRushMinimumUnits=4,
+        baseRushMinimumStrength=4,
+        baseRushClearStrength=2,
         baseDefenseBatchSize=6,
         enemyClusterRadius=120,
         enemyClusterMinimum=2,
+        playerDeploymentWindowMs=30000,
+        playerRushDeploymentCount=3,
+        playerCallinWindowMs=20000,
         playerDeploymentsBeforeFortify=5,
         playerDeploymentsForRushBonus=5,
         rushBonus=4,
@@ -174,8 +180,16 @@ CONFIG.ai={
         interceptReserve=150,
         brainHealthMargin=25,
         singleLevelResearchTarget=1,
+        researchRankPenalty=0.6,
         personalityCount=4,
-        decisionInterval={minimum=2000,base=6000,difficultyScale=40,defaultDifficulty=50},
+        baseRushVerticalRadius=300,
+        goalSwitchMargin=12,
+        postThreatUrgency=80,
+        deploymentUrgency=80,
+        regroupUtility=45,
+        decisionInterval={minimum=1000,base=3000,difficultyScale=30,defaultDifficulty=50},
+        emergencyCheckInterval=250,
+        tacticalCostBurden=5,
         bubbleProtectionUtility=6,
     },
 }
@@ -272,6 +286,24 @@ local function scoreAIAction(action, personality, pressured)
         score=score+action.threats*weights.threat+action.allies*weights.ally
         if personality=="defensive" then score=score+weights.defensive end
         if pressured then score=score+weights.pressured end
+    elseif action.kind=="regroup" then
+        score=score+action.allies*weights.strength
+        if personality=="defensive" then score=score+weights.defensive end
+        if personality=="aggressive" then score=score+weights.aggressive end
+    elseif action.kind=="deployment" or action.kind=="research" or action.kind=="baseUpgrade" then
+        if weights[personality] then score=score+weights[personality] end
+        if action.rank then score=score-math.max(0,action.rank-1)*CONFIG.ai.tuning.researchRankPenalty end
+        if weights.costBurden and action.cost and action.availableFunds and action.availableFunds>0 then
+            score=score-(action.cost/action.availableFunds)*weights.costBurden
+        end
+        if action.kind=="deployment" then
+            score=score+(action.deficit or 0)*weights.deficit+(action.urgent or 0)
+        end
+        if action.kind=="baseUpgrade" then score=score+(action.damageRatio or 0)*weights.damage end
+    end
+    if action.kind~="deployment" and action.kind~="research" and action.kind~="baseUpgrade"
+        and action.cost and action.availableFunds and action.availableFunds>0 then
+        score=score-(action.cost/action.availableFunds)*CONFIG.ai.tuning.tacticalCostBurden
     end
     return score
 end
@@ -333,6 +365,9 @@ function Frontline:StartActivity()
     self.screenUI=ok and method~=nil
     self.teams = {[0]=freshTeam(), [1]=freshTeam()}
     for team=0,1 do self.teams[team].bubbleTimer=Timer() end
+    self.playerBehavior={deployments=0,researchPurchases=0,callinsUsed=0,lastDeployTime=0,
+        lastDeploymentCount=0,lastResearchIndex=nil,lastCallin=nil,lastCallinTime=nil,researchFocus="",
+        recentDeployments={},researchFocusCounts={infantry=0,vehicles=0}}
     if self.SetTeamFunds then for team=0,1 do self:SetTeamFunds(self.teams[team].funds,team) end end
     local defaults=CONFIG.matchSetup.defaults
     self.settings={startFunds=defaults.startFunds,income=defaults.income,unitCap=defaults.unitCap,
@@ -482,6 +517,9 @@ function Frontline:StartActivity()
     self.cursorX=200; self.cursorY=100
     self.message="Build a batch and click DEPLOY."
     self.aiTimer=Timer()
+    self.aiEmergencyTimer=Timer()
+    self.aiUrgentBaseActive=false
+    self.aiUrgentPostActive=false
     MusicMan:PlayDynamicSong("Generic Battle Music")
 end
 
@@ -785,6 +823,43 @@ function Frontline:DeployCooldown(team)
     return math.max(t.lastDeployCooldown or CONFIG.DEPLOY_COOLDOWN_MS,destination)
 end
 
+function Frontline:RecordPlayerAction(team,kind,detail)
+    if team~=0 then return end
+    local behavior=self.playerBehavior
+    if not behavior then
+        behavior={deployments=0,researchPurchases=0,callinsUsed=0,lastDeployTime=0,
+            lastDeploymentCount=0,lastResearchIndex=nil,lastCallin=nil,lastCallinTime=nil,researchFocus="",
+            recentDeployments={},researchFocusCounts={infantry=0,vehicles=0}}
+        self.playerBehavior=behavior
+    end
+    local now=self.matchTimer.ElapsedSimTimeMS
+    if kind=="deployment" then
+        behavior.deployments=behavior.deployments+1
+        behavior.lastDeployTime=now
+        behavior.lastDeploymentCount=detail
+        local recent=behavior.recentDeployments or {}
+        behavior.recentDeployments=recent
+        recent[#recent+1]=now
+        while #recent>8 do table.remove(recent,1) end
+        while recent[1] and now-recent[1]>CONFIG.ai.tuning.playerDeploymentWindowMs do table.remove(recent,1) end
+        behavior.recentDeploymentCount=#recent
+    elseif kind=="research" then
+        behavior.researchPurchases=behavior.researchPurchases+1
+        behavior.lastResearchIndex=detail
+        local focus=CONFIG.ai.playerResearchFocus[detail]
+        if focus then
+            behavior.researchFocusCounts=behavior.researchFocusCounts or {infantry=0,vehicles=0}
+            behavior.researchFocusCounts[focus]=behavior.researchFocusCounts[focus]+1
+            local other=focus=="infantry" and "vehicles" or "infantry"
+            if behavior.researchFocusCounts[focus]>=behavior.researchFocusCounts[other] then behavior.researchFocus=focus end
+        end
+    elseif kind=="callin" then
+        behavior.callinsUsed=behavior.callinsUsed+1
+        behavior.lastCallin=detail
+        behavior.lastCallinTime=now
+    end
+end
+
 function Frontline:Deploy(team)
     local t=self.teams[team]
     local cost,count,err=self:Batch(team)
@@ -890,6 +965,7 @@ function Frontline:Deploy(team)
     t.funds=t.funds-cost
     t.stats.deployed=t.stats.deployed+count
     t.lastDeployCooldown=t.forward>0 and CONFIG.FORWARD_DEPLOY_COOLDOWN_MS or CONFIG.DEPLOY_COOLDOWN_MS
+    self:RecordPlayerAction(team,"deployment",count)
     t.timer:Reset()
     if team==0 then self:Notify(t.forward>0 and ("Dropship incoming: "..count.." units") or ("Squad deployed: "..count.." units")) end
     return true,"Batch deployed"
@@ -951,6 +1027,7 @@ function Frontline:Research(team,index)
             if actor.Team==team and self:IsFieldUnit(actor) then actor.Perceptiveness=math.min(training.maximumPerception,training.basePerception+training.perLevel*t.levels[index]) end
         end
     end
+    self:RecordPlayerAction(team,"research",index)
     if team==0 then self:Notify("Research complete: "..r.name) end
     return true,"Research complete"
 end
@@ -1336,6 +1413,7 @@ function Frontline:CallIn(team,kind,index)
     end
     t.funds=t.funds-cost
     timer:Reset()
+    self:RecordPlayerAction(team,"callin",kind)
     local cue=self.supportSounds[kind]
     if cue then cue:Play() end
     return true,"Call-in ordered"
@@ -1698,12 +1776,183 @@ function Frontline:StartBattle()
     self.battleStarted=true
     self.matchTimer:Reset()
     self.aiTimer:Reset()
+    self.aiEmergencyTimer:Reset()
+    self.aiUrgentBaseActive=false
+    self.aiUrgentPostActive=false
     self.tab="Squad"
     self:Notify("Battle starting: 15 second grace period")
 end
 
 -- The opponent uses the same team state and purchase/deployment functions as
 -- the player. Its difficulty controls decision frequency, not free resources.
+function Frontline:CollectAISnapshot(team)
+    local posts={}
+    for i,post in ipairs(self.outposts) do
+        posts[i]={owner=post.owner,progress=post.progress,x=post.x,groundY=post.groundY,
+            allies=0,enemies=0,wounded=0,threats=0,projectiles=0,alliedStrength=0,enemyStrength=0}
+    end
+    local fieldActors={}
+    local unitCounts={[0]=0,[1]=0}
+    local forceStrength={[0]=0,[1]=0}
+    local enemyVehicle=false
+    local base=self.brains[team]
+    local enemyBaseThreatStrength=0
+    local radius=CONFIG.ai.tuning.baseRushRadius
+    local vertical=CONFIG.ai.tuning.baseRushVerticalRadius
+    for actor in MovableMan.Actors do
+        if self:IsFieldUnit(actor) and actor.Health>0 then
+            fieldActors[#fieldActors+1]=actor
+            unitCounts[actor.Team]=unitCounts[actor.Team]+1
+            local vehicle=IsACrab(actor)
+            local health=actor.MaxHealth and actor.MaxHealth>0 and math.max(0,math.min(1,actor.Health/actor.MaxHealth)) or 1
+            local strength=health*(vehicle and 3 or 1)
+            forceStrength[actor.Team]=forceStrength[actor.Team]+strength
+            local dx=actor.Pos.X-base.Pos.X
+            local dy=actor.Pos.Y-base.Pos.Y
+            if actor.Team==0 and dx*dx+dy*dy<=radius*radius and math.abs(dy)<=vertical then
+                enemyBaseThreatStrength=enemyBaseThreatStrength+strength
+            end
+            if actor.Team==0 and vehicle then enemyVehicle=true end
+            for i,post in ipairs(self.outposts) do
+                local distance=math.abs(actor.Pos.X-post.x)
+                if distance<=CONFIG.OUTPOST_RADIUS then
+                    if actor.Team==team then
+                        posts[i].allies=posts[i].allies+1
+                        posts[i].alliedStrength=posts[i].alliedStrength+strength
+                        if actor.Health<actor.MaxHealth then posts[i].wounded=posts[i].wounded+1 end
+                    else
+                        posts[i].enemies=posts[i].enemies+1
+                        posts[i].enemyStrength=posts[i].enemyStrength+strength
+                    end
+                end
+                if actor.Team~=team and distance<=CONFIG.OUTPOST_RADIUS*CONFIG.ai.tuning.threatRadiusMultiplier then
+                    posts[i].threats=posts[i].threats+1
+                end
+            end
+        end
+    end
+    for particle in MovableMan.Particles do
+        if particle and not particle.ToDelete and particle.HitsMOs and particle.Team~=team then
+            for i,post in ipairs(self.outposts) do
+                local dx=particle.Pos.X-post.x
+                local dy=particle.Pos.Y-post.groundY
+                if dx*dx+dy*dy<=CONFIG.OUTPOST_RADIUS*CONFIG.OUTPOST_RADIUS then
+                    posts[i].projectiles=posts[i].projectiles+1
+                end
+            end
+        end
+    end
+    local owned={[0]=0,[1]=0}
+    for _,post in ipairs(self.outposts) do
+        if post.owner==0 then owned[0]=owned[0]+1 elseif post.owner==1 then owned[1]=owned[1]+1 end
+    end
+    local urgentPostDefense=false
+    for i,post in ipairs(self.outposts) do
+        if post.owner==team and posts[i].threats>0 then urgentPostDefense=true; break end
+    end
+    local brainHealth=base.MaxHealth and base.MaxHealth>0 and base.Health/base.MaxHealth or 1
+    local baseRushThreshold=self.teams[team].goal=="defendBase"
+        and CONFIG.ai.tuning.baseRushClearStrength or CONFIG.ai.tuning.baseRushMinimumStrength
+    local behavior=self.playerBehavior or {}
+    local now=self.matchTimer.ElapsedSimTimeMS
+    local recent=behavior.recentDeployments or {}
+    while recent[1] and now-recent[1]>CONFIG.ai.tuning.playerDeploymentWindowMs do table.remove(recent,1) end
+    local playerCallinRecently=behavior.lastCallinTime
+        and now-behavior.lastCallinTime<=CONFIG.ai.tuning.playerCallinWindowMs or false
+    local deploymentBurst=#recent>=CONFIG.ai.tuning.playerRushDeploymentCount
+    return {
+        team=team,posts=posts,fieldActors=fieldActors,unitCounts=unitCounts,forceStrength=forceStrength,ownedPosts=owned,
+        enemyVehicle=enemyVehicle,baseThreatStrength=enemyBaseThreatStrength,
+        urgentBaseDefense=enemyBaseThreatStrength>=baseRushThreshold,
+        urgentPostDefense=urgentPostDefense,
+        pressured=unitCounts[0]>unitCounts[1]+CONFIG.ai.tuning.pressureUnitAdvantage
+            or forceStrength[0]>forceStrength[1]+CONFIG.ai.tuning.pressureUnitAdvantage
+            or owned[0]>owned[1] or deploymentBurst or playerCallinRecently,
+        funds=self.teams[team].funds,income=self:TeamIncome(team),
+        freeUnitSlots=math.max(0,self.settings.unitCap-self:UnitCount(team)),
+        brainHealthFraction=brainHealth,now=now,playerDeploymentBurst=deploymentBurst,
+        playerDeployments=behavior.deployments or 0,playerCallinsUsed=behavior.callinsUsed or 0,
+        playerResearchPurchases=behavior.researchPurchases or 0,
+        playerCallinRecently=playerCallinRecently,playerResearchFocus=behavior.researchFocus or "",
+    }
+end
+function Frontline:CheckUrgentAIThreats(team)
+    local base=self.brains[team]
+    local baseStrength=0
+    local postThreat=false
+    local radius=CONFIG.ai.tuning.baseRushRadius
+    local vertical=CONFIG.ai.tuning.baseRushVerticalRadius
+    for actor in MovableMan.Actors do
+        if actor.Team==1-team and actor.Health>0 and self:IsFieldUnit(actor) then
+            local vehicle=IsACrab(actor)
+            local health=actor.MaxHealth and actor.MaxHealth>0 and math.max(0,math.min(1,actor.Health/actor.MaxHealth)) or 1
+            if vehicle then health=health*3 end
+            local dx=actor.Pos.X-base.Pos.X
+            local dy=actor.Pos.Y-base.Pos.Y
+            if dx*dx+dy*dy<=radius*radius and math.abs(dy)<=vertical then
+                baseStrength=baseStrength+health
+            end
+            for _,post in ipairs(self.outposts) do
+                if post.owner==team and math.abs(actor.Pos.X-post.x)<=CONFIG.OUTPOST_RADIUS*CONFIG.ai.tuning.threatRadiusMultiplier then
+                    postThreat=true
+                    break
+                end
+            end
+        end
+    end
+    local threshold=self.teams[team].goal=="defendBase"
+        and CONFIG.ai.tuning.baseRushClearStrength or CONFIG.ai.tuning.baseRushMinimumStrength
+    return baseStrength>=threshold,postThreat
+end
+
+function Frontline:ChooseAIStrategicGoal(snapshot,ai)
+    local goals={}
+    local allPostsHeld=true
+    local rallyTarget=0
+    local strongestRally=0
+    for i,post in ipairs(self.outposts) do
+        local situation=snapshot.posts[i]
+        if post.owner~=snapshot.team then
+            allPostsHeld=false
+            local nearest=math.abs(self.brains[snapshot.team].Pos.X-post.x)
+            for _,actor in ipairs(snapshot.fieldActors) do
+                if actor.Team==snapshot.team then nearest=math.min(nearest,math.abs(actor.Pos.X-post.x)) end
+            end
+            local progress=snapshot.team==0 and post.progress or -post.progress
+            local distanceValue=math.max(-20,12-nearest/80)
+            goals[#goals+1]={goal="advance",kind="advance",target=i,neutral=post.owner==-1,
+                enemies=situation.enemies,utility=distanceValue+(post.owner==-1 and 4 or 0)
+                    +progress*12+i*CONFIG.ai.tuning.targetTieBreak}
+        elseif situation.threats>0 then
+            goals[#goals+1]={goal="defendPost",kind="defend",target=i,threats=situation.threats,
+                allies=situation.allies,utility=situation.threats*CONFIG.ai.tuning.postThreatUrgency}
+        elseif situation.allies>strongestRally then
+            strongestRally=situation.allies
+            rallyTarget=i
+        end
+    end
+    if snapshot.urgentBaseDefense then
+        return {goal="defendBase",kind="defend",target=0,score=math.huge,urgent=true}
+    end
+    if rallyTarget>0 and strongestRally<CONFIG.ai.strategy.attackGroupSize then
+        goals[#goals+1]={goal="regroup",kind="regroup",target=rallyTarget,allies=strongestRally,
+            utility=CONFIG.ai.tuning.regroupUtility}
+    end
+    if allPostsHeld then
+        goals[#goals+1]={goal="rush",kind="rush",allPostsHeld=true,
+            utility=snapshot.playerDeployments>CONFIG.ai.tuning.playerDeploymentsForRushBonus
+                and CONFIG.ai.tuning.rushBonus or 0}
+    end
+    local chosen=self:ChooseAIAction(goals,snapshot.pressured)
+    if not chosen then return {goal="advance",kind="advance",target=1,score=0} end
+    local current
+    for _,candidate in ipairs(goals) do
+        if candidate.goal==ai.goal and candidate.target==(ai.goalTarget or 0) then current=candidate; break end
+    end
+    if current and current~=chosen and chosen.score<current.score+CONFIG.ai.tuning.goalSwitchMargin then chosen=current end
+    return chosen
+end
+
 function Frontline:UpdateAI()
     local team=1
     local aiTuning=CONFIG.ai.tuning
@@ -1718,51 +1967,18 @@ function Frontline:UpdateAI()
         else self.aiPersonality="balanced" end
     end
     
-    -- Track player behavior for adaptive strategy
     if not self.playerBehavior then
-        self.playerBehavior={deployments=0,callinsUsed=0,researchFocus="",lastDeployTime=0}
+        self.playerBehavior={deployments=0,researchPurchases=0,callinsUsed=0,lastDeployTime=0,
+            lastDeploymentCount=0,lastResearchIndex=nil,lastCallin=nil,lastCallinTime=nil,researchFocus="",
+            recentDeployments={},researchFocusCounts={infantry=0,vehicles=0}}
     end
-    
-    local posts={}
-    for i=1,#self.outposts do posts[i]={allies=0,enemies=0,wounded=0,threats=0,projectiles=0} end
-    local enemyVehicle=false
-    local fieldActors={}
-    local enemyBaseX=self.brains[team].Pos.X
-    local enemyBaseThreats=0
-    for actor in MovableMan.Actors do
-        if self:IsFieldUnit(actor) then
-            table.insert(fieldActors,actor)
-            if actor.Team==0 and actor.Health>0 and math.abs(actor.Pos.X-enemyBaseX)<=aiTuning.baseRushRadius then
-                enemyBaseThreats=enemyBaseThreats+1
-            end
-            if actor.Team==0 and IsACrab(actor) then enemyVehicle=true end
-            for i,post in ipairs(self.outposts) do
-                local dist=math.abs(actor.Pos.X-post.x)
-                if dist<=CONFIG.OUTPOST_RADIUS then
-                    if actor.Team==team then
-                        posts[i].allies=posts[i].allies+1
-                        if actor.Health>0 and actor.Health<actor.MaxHealth then posts[i].wounded=posts[i].wounded+1 end
-                    else posts[i].enemies=posts[i].enemies+1 end
-                end
-                if actor.Team==0 and dist<=CONFIG.OUTPOST_RADIUS*2 then posts[i].threats=posts[i].threats+1 end
-            end
-        end
-    end
-    for particle in MovableMan.Particles do
-        if particle and not particle.ToDelete and particle.HitsMOs and particle.Team==0 then
-            for i,post in ipairs(self.outposts) do
-                local dx=particle.Pos.X-post.x
-                local dy=particle.Pos.Y-post.groundY
-                if dx*dx+dy*dy<=CONFIG.OUTPOST_RADIUS*CONFIG.OUTPOST_RADIUS then
-                    posts[i].projectiles=posts[i].projectiles+1
-                end
-            end
-        end
-    end
-    local urgentBaseDefense=enemyBaseThreats>=aiTuning.baseRushMinimumUnits
-    local pressured=self:UnitCount(0)>self:UnitCount(1)+CONFIG.ai.tuning.pressureUnitAdvantage
-        or self:OutpostCount(0)>self:OutpostCount(1)
-
+    local snapshot=self:CollectAISnapshot(team)
+    self.aiSnapshot=snapshot
+    local posts=snapshot.posts
+    local enemyVehicle=snapshot.enemyVehicle
+    local fieldActors=snapshot.fieldActors
+    local urgentBaseDefense=snapshot.urgentBaseDefense
+    local pressured=snapshot.pressured
     -- Each decision gets a private priority list before adapting to player research.
     local configured=CONFIG.ai.researchPriorities
     local priorities
@@ -1773,46 +1989,59 @@ function Frontline:UpdateAI()
     
     -- Counter player's research focus if detected
     local responses=CONFIG.ai.researchResponses
-    if self.playerBehavior.researchFocus=="infantry" then
+    if snapshot.playerResearchFocus=="infantry" then
         for _,index in ipairs(responses.infantry) do table.insert(priorities,index) end
-    elseif self.playerBehavior.researchFocus=="vehicles" then
+    elseif snapshot.playerResearchFocus=="vehicles" then
         for _,index in ipairs(responses.vehicles) do table.insert(priorities,index) end
     end
     table.insert(priorities,1,1)
     local supportRange=CONFIG.ai.researchTargets
     for index=supportRange.supportFirst,supportRange.supportLast do priorities[#priorities+1]=index end
     
-    -- Invest from the same budget and keep a reserve for troop deployments.
+    -- Compete feasible purchases in one budget choice instead of spending in a fixed category order.
+    local investments={}
+    local function addInvestment(action)
+        action.availableFunds=ai.funds
+        investments[#investments+1]=action
+    end
     local brain=self.brains[team]
     local targets=CONFIG.ai.researchTargets
-    if brain.Health<brain.MaxHealth-aiTuning.brainHealthMargin and ai.funds>=CONFIG.BASE_REPAIR_COST+aiTuning.baseRepairReserve then
-        self:BaseUpgrade(team,"repair")
-    elseif (not ai.turret or not MovableMan:IsActor(ai.turret) or (ai.turret.Health and ai.turret.Health<=0))
-        and ai.funds>=CONFIG.BASE_TURRET_COST+aiTuning.baseTurretReserve then
-        self:BaseUpgrade(team,"turret")
-    elseif ai.turretLevel<2 and ai.turret and MovableMan:IsActor(ai.turret)
-        and (not ai.turret.Health or ai.turret.Health>0)
-        and ai.funds>=CONFIG.BASE_TURRET_UPGRADE_COST+aiTuning.baseTurretReserve then
-        self:BaseUpgrade(team,"turretUpgrade")
-    elseif ai.baseArmor<CONFIG.BASE_ARMOR_LEVELS and ai.funds>=CONFIG.BASE_ARMOR_COST*(ai.baseArmor+1)+aiTuning.baseArmorReserve then
-        self:BaseUpgrade(team,"armor")
+    local repairCost=CONFIG.BASE_REPAIR_COST
+    if brain.Health<brain.MaxHealth-aiTuning.brainHealthMargin
+        and ai.funds>=repairCost+aiTuning.baseRepairReserve then
+        addInvestment({kind="baseUpgrade",purchase="repair",cost=repairCost,
+            utility=28,damageRatio=(brain.MaxHealth-brain.Health)/brain.MaxHealth})
+    end
+    local turretActive=ai.turret and MovableMan:IsActor(ai.turret) and (not ai.turret.Health or ai.turret.Health>0)
+    if not turretActive and ai.funds>=CONFIG.BASE_TURRET_COST+aiTuning.baseTurretReserve then
+        addInvestment({kind="baseUpgrade",purchase="turret",cost=CONFIG.BASE_TURRET_COST,utility=30})
+    elseif turretActive and ai.turretLevel<2 and ai.funds>=CONFIG.BASE_TURRET_UPGRADE_COST+aiTuning.baseTurretReserve then
+        addInvestment({kind="baseUpgrade",purchase="turretUpgrade",cost=CONFIG.BASE_TURRET_UPGRADE_COST,utility=22})
+    end
+    local armorCost=CONFIG.BASE_ARMOR_COST*(ai.baseArmor+1)
+    if ai.baseArmor<CONFIG.BASE_ARMOR_LEVELS and ai.funds>=armorCost+aiTuning.baseArmorReserve then
+        addInvestment({kind="baseUpgrade",purchase="armor",cost=armorCost,utility=14-ai.baseArmor*2})
     end
 
-    local researchSavingIndex
-    if not urgentBaseDefense then
-        for _,index in ipairs(priorities) do
-            local r=CONFIG.research[index]
+    local seenResearch={}
+    for rank,index in ipairs(priorities) do
+        local r=CONFIG.research[index]
+        if r and not seenResearch[index] then
+            seenResearch[index]=true
             local researchTarget=targets.repeatable[index] and (ai.funds>=aiTuning.highResearchFunds and aiTuning.highResearchLevels or aiTuning.normalResearchLevels)
                 or (index==targets.missile and ai.funds>=aiTuning.highResearchFunds and aiTuning.highResearchLevels or aiTuning.singleLevelResearchTarget)
-            local unlocked=researchUnlocked(ai.levels,r)
-            if unlocked and (ai.levels[index] or 0)<math.min(r.max,researchTarget) then
+            if researchUnlocked(ai.levels,r) and (ai.levels[index] or 0)<math.min(r.max,researchTarget) then
                 local cost=self:ResearchCost(team,index)
                 if ai.funds>=cost+aiTuning.researchReserve then
-                    local ok=self:Research(team,index)
-                    if ok then break end
-                elseif cost+aiTuning.researchReserve-ai.funds<=CONFIG.ai.strategy.researchSaveGap then
-                    researchSavingIndex=index
-                    break
+                    local utility=0
+                    if r.kind=="income" then utility=math.max(0,8-snapshot.income)*3
+                    elseif r.kind=="unit" then utility=14
+                    elseif r.kind=="capacity" then utility=snapshot.freeUnitSlots<6 and 8 or 0
+                    elseif r.kind=="equipment" and index==targets.missile and enemyVehicle then utility=30
+                    end
+                    if r.kind=="support" and pressured then utility=utility+5 end
+                    if snapshot.urgentBaseDefense or snapshot.urgentPostDefense then utility=utility-15 end
+                    addInvestment({kind="research",purchase=index,cost=cost,rank=rank,utility=utility})
                 end
             end
         end
@@ -1831,11 +2060,11 @@ function Frontline:UpdateAI()
 
     ai.counts={}
     for i=1,#CONFIG.roster do ai.counts[i]=0 end
-    local squadLimit=math.min(self:MaxSquadSize(team),batchSize)
+    local squadLimit=math.min(self:MaxSquadSize(team),batchSize,snapshot.freeUnitSlots)
     local selectedCount=0
     if ai.stats.deployed==0 then
-        ai.counts[CONFIG.ai.roster.roninIndex]=CONFIG.ai.roster.initialRonins
-        selectedCount=CONFIG.ai.roster.initialRonins
+        ai.counts[CONFIG.ai.roster.roninIndex]=math.min(CONFIG.ai.roster.initialRonins,squadLimit)
+        selectedCount=ai.counts[CONFIG.ai.roster.roninIndex]
     else
         for i,entry in ipairs(CONFIG.roster) do
             if i<=CONFIG.ai.roster.selectableCount and selectedCount<squadLimit
@@ -1868,76 +2097,43 @@ function Frontline:UpdateAI()
         end
     end
     
-    -- Score strategic objectives, then retain plans until the objective changes.
-    local actions={}
-    local allPostsHeld=true
-    local rallyTarget=0
-    local urgentDefense=false
-    local urgentDefenseTarget=0
-    for i,post in ipairs(self.outposts) do
-        if post.owner~=team then
-            allPostsHeld=false
-            actions[#actions+1]={kind="advance",target=i,neutral=post.owner==-1,enemies=posts[i].enemies,utility=i*aiTuning.targetTieBreak}
-        elseif posts[i].threats>0 then
-            urgentDefense=true
-            if urgentDefenseTarget==0 or posts[i].threats>posts[urgentDefenseTarget].threats then urgentDefenseTarget=i end
-            actions[#actions+1]={kind="defend",target=i,threats=posts[i].threats,allies=posts[i].allies}
-        elseif posts[i].allies>=CONFIG.ai.strategy.minimumRallyForce
-            and (rallyTarget==0 or posts[i].allies>posts[rallyTarget].allies) then
-            rallyTarget=i
-        end
-    end
-    actions[#actions+1]={kind="rush",allPostsHeld=allPostsHeld,utility=self.playerBehavior.deployments>aiTuning.playerDeploymentsForRushBonus and aiTuning.rushBonus or 0}
-    local decision=self:ChooseAIAction(actions,pressured)
+    local decision=self:ChooseAIStrategicGoal(snapshot,ai)
     local target=decision.target or 0
-    local desired=decision.kind=="defend" and "Defend" or (decision.kind=="advance" and "Advance" or "Rush")
-    local strategy=CONFIG.ai.strategy
-
-    if urgentBaseDefense then
-        target=0
+    local desired
+    ai.goal=decision.goal
+    ai.goalTarget=target
+    ai.goalScore=decision.score
+    if decision.goal=="defendBase" then
         desired="Defend"
         ai.orderPhase="assembling"
         ai.attackTarget=nil
         ai.rallyTarget=0
-    elseif urgentDefense then
-        target=urgentDefenseTarget
+    elseif decision.goal=="defendPost" then
         desired="Defend"
         ai.orderPhase="assembling"
         ai.attackTarget=nil
         ai.rallyTarget=target
-    elseif ai.orderPhase=="attacking" then
-        local attackPost=ai.attackTarget and self.outposts[ai.attackTarget]
-        if attackPost and attackPost.owner~=team then
-            target=ai.attackTarget
-            desired="Advance"
-        else
-            ai.orderPhase="assembling"
-            ai.attackTarget=nil
-        end
+    elseif decision.goal=="regroup" then
+        desired="Defend"
+        ai.orderPhase="assembling"
+        ai.attackTarget=nil
+        ai.rallyTarget=target
+    elseif decision.goal=="advance" then
+        desired="Advance"
+        ai.orderPhase="attacking"
+        ai.attackTarget=target
+        ai.rallyTarget=nil
+    else
+        desired="Rush"
+        ai.orderPhase="attacking"
+        ai.attackTarget=nil
+        ai.rallyTarget=nil
     end
-    if not urgentBaseDefense and not urgentDefense and ai.orderPhase~="attacking" then
-        if rallyTarget>0 and posts[rallyTarget].allies<strategy.attackGroupSize then
-            ai.orderPhase="assembling"
-            ai.rallyTarget=rallyTarget
-            target=rallyTarget
-            desired="Defend"
-        elseif decision.kind=="advance" then
-            ai.orderPhase="attacking"
-            ai.attackTarget=target
-            ai.rallyTarget=nil
-        elseif ai.orderPhase=="assembling" and rallyTarget>0 then
-            ai.rallyTarget=rallyTarget
-            target=rallyTarget
-            desired="Defend"
-        end
-    end
-
     if ai.order~=desired or ai.orderTarget~=target then
         ai.order=desired
         ai.orderTarget=target
         self:ApplyTeamOrder(team)
     end
-    
     ai.forward=0
     if not urgentBaseDefense then
         local preferred=ai.orderPhase=="assembling" and ai.rallyTarget or nil
@@ -1954,45 +2150,36 @@ function Frontline:UpdateAI()
             end
         end
     end
-    ai.autoDeploy=urgentBaseDefense or researchSavingIndex==nil or ai.stats.deployed==0
-    
-    -- Save for a near-term priority research before funding another squad.
-    if ai.autoDeploy and ai.funds>=aiTuning.deploymentThreshold then
+    ai.autoDeploy=false
+    if self.battleStarted and self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS)
+        and ai.timer:IsPastSimMS(self:DeployCooldown(team)) then
         local cost,count=self:Batch(team)
-        if not cost or count==0 then
-            -- Research or roster changes can invalidate the mixed selection.
-            -- Fall back to the starting number of always-available Ronin Bandits.
+        if not cost or count==0 or cost>ai.funds-aiTuning.deploymentReserve then
             ai.counts={}
             for i=1,#CONFIG.roster do ai.counts[i]=0 end
-            ai.counts[CONFIG.ai.roster.roninIndex]=math.min(CONFIG.ai.roster.initialRonins,self:MaxSquadSize(team))
+            ai.counts[CONFIG.ai.roster.roninIndex]=math.min(CONFIG.ai.roster.initialRonins,self:MaxSquadSize(team),snapshot.freeUnitSlots)
             ai.weapons={1,1,1,1,1,1}
             ai.sidearms={}; ai.medkits={}; ai.grenades={}; ai.armor={}
             cost,count=self:Batch(team)
         end
-        local targetBatch=math.min(batchSize,self:MaxSquadSize(team))
-        while cost and count<targetBatch
-            and self:UnitCount(team)+count<self.settings.unitCap do
-            ai.counts[CONFIG.ai.roster.roninIndex]=(ai.counts[CONFIG.ai.roster.roninIndex] or 0)+1
-            local nextCost,nextCount=self:Batch(team)
-            if not nextCost or nextCost>ai.funds-aiTuning.deploymentReserve then
-                ai.counts[CONFIG.ai.roster.roninIndex]=ai.counts[CONFIG.ai.roster.roninIndex]-1
-                break
-            end
-            cost,count=nextCost,nextCount
+        if cost and count>0 and cost<=ai.funds-aiTuning.deploymentReserve and count<=snapshot.freeUnitSlots then
+            ai.autoDeploy=true
+            local deficit=math.max(0,CONFIG.ai.strategy.attackGroupSize-snapshot.unitCounts[team])
+                /CONFIG.ai.strategy.attackGroupSize
+            addInvestment({kind="deployment",purchase="deploy",cost=cost,utility=20+deficit*20,
+                deficit=deficit,urgent=(urgentBaseDefense or snapshot.urgentPostDefense) and aiTuning.deploymentUrgency or 0})
         end
-        if cost and count>0 then self:Deploy(team) end
     end
     
-    if not self.settings.callins or not self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS) then return end
-    
-    -- Build viable tactical actions, score them against the current situation,
-    -- then try them from highest utility downward.
     local actions={}
+    if self.settings.callins and self.matchTimer:IsPastSimMS(CONFIG.GRACE_MS) then
+        -- Only create tactical actions after the same rules used by manual orders say they are feasible.
     local calls={
         strike={cost=CONFIG.CALLIN_STRIKE_COST,cooldown=CONFIG.CALLIN_STRIKE_COOLDOWN_MS,timer=ai.strikeTimer},
         medic={cost=CONFIG.CALLIN_MEDIC_COST,cooldown=CONFIG.CALLIN_MEDIC_COOLDOWN_MS,timer=ai.medicTimer},
         cover={cost=CONFIG.CALLIN_COVER_COST,cooldown=CONFIG.CALLIN_COVER_COOLDOWN_MS,timer=ai.coverTimer},
         mines={cost=CONFIG.CALLIN_MINES_COST,cooldown=CONFIG.CALLIN_MINES_COOLDOWN_MS,timer=ai.minesTimer},
+        mining={cost=CONFIG.supportEffects.miningCost,cooldown=CONFIG.CALLIN_MINES_COOLDOWN_MS,timer=ai.minesTimer},
         bomb={cost=CONFIG.CALLIN_BOMB_COST,cooldown=CONFIG.CALLIN_BOMB_COOLDOWN_MS,timer=ai.bombTimer},
         orbital={cost=CONFIG.CALLIN_ORBITAL_COST,cooldown=CONFIG.CALLIN_ORBITAL_COOLDOWN_MS,timer=ai.orbitalTimer},
         shield={cost=CONFIG.CALLIN_SHIELD_COST,cooldown=CONFIG.CALLIN_SHIELD_COOLDOWN_MS,timer=ai.shieldTimer},
@@ -2003,12 +2190,16 @@ function Frontline:UpdateAI()
     local function addAction(kind,callin,target,context,reserve)
         local option=calls[callin]
         local required=CONFIG.supportResearch[callin]
-        if option and (ai.levels[required] or 0)>0
+        local outpost=type(target)=="table" and target or self.outposts[target]
+        if option and outpost and (ai.levels[required] or 0)>0
             and ai.funds>=option.cost+(reserve or aiTuning.callinReserve)
-            and option.timer:IsPastSimMS(self:CallinCooldown(team,option.cooldown)) then
+            and option.timer:IsPastSimMS(self:CallinCooldown(team,option.cooldown))
+            and self:SupportTargetAllowed(team,outpost.x) and not self:ShieldBlocks(outpost,team) then
             context.kind=kind
             context.callin=callin
             context.target=target
+            context.cost=option.cost
+            context.availableFunds=ai.funds
             actions[#actions+1]=context
         end
     end
@@ -2026,6 +2217,21 @@ function Frontline:UpdateAI()
             end
         end
     end
+    local minerPresent=false
+    for _,actor in ipairs(fieldActors) do
+        if actor.Team==team and self.miners[actor.UniqueID] then minerPresent=true; break end
+    end
+    for _,pending in ipairs(self.pendingDrops) do
+        if pending.team==team and pending.kind=="mining" then minerPresent=true; break end
+    end
+    if not minerPresent and (ai.levels[14] or 0)>0 then
+        for i,post in ipairs(self.outposts) do
+            if post.owner==team and posts[i].enemies==0 then
+                addAction("mine","mining",i,{incomePost=post.kind==1})
+                break
+            end
+        end
+    end
     for i,post in ipairs(self.outposts) do
         if posts[i].wounded>=aiTuning.woundedMinimum then
             addAction("heal","medic",i,{wounded=posts[i].wounded})
@@ -2034,7 +2240,7 @@ function Frontline:UpdateAI()
             addAction("protect","bubble",i,{threats=posts[i].projectiles,allies=posts[i].allies,utility=aiTuning.bubbleProtectionUtility},aiTuning.interceptReserve)
         end
         if post.owner==team and posts[i].allies>0
-            and (posts[i].threats>0 or self.playerBehavior.deployments>aiTuning.playerDeploymentsBeforeFortify) then
+            and (posts[i].threats>0 or snapshot.playerDeployments>aiTuning.playerDeploymentsBeforeFortify) then
             local kinds={"cover","mines","turret"}
             for _,kind in ipairs(kinds) do
                 addAction("fortify",kind,i,{
@@ -2079,13 +2285,26 @@ function Frontline:UpdateAI()
         end
     end
 
+    end
+    for _,investment in ipairs(investments) do actions[#actions+1]=investment end
     while #actions>0 do
         local action=self:ChooseAIAction(actions,pressured)
         for i,candidate in ipairs(actions) do
             if candidate==action then table.remove(actions,i); break end
         end
-        local ok=self:CallIn(team,action.callin,action.target)
+        local ok,reason
+        if action.kind=="deployment" then
+            ok,reason=self:Deploy(team)
+        elseif action.kind=="research" then
+            ok,reason=self:Research(team,action.purchase)
+        elseif action.kind=="baseUpgrade" then
+            ok,reason=self:BaseUpgrade(team,action.purchase)
+        else
+            ok,reason=self:CallIn(team,action.callin,action.target)
+        end
         if ok then
+            ai.lastAIAction={kind=action.kind,target=action.target or action.purchase,
+                cost=action.cost,score=action.score}
             if action.kind=="offense" then
                 local sequence={strike=1,bomb=2,orbital=3}
                 ai.offenseChoice=(sequence[action.callin]%3)+1
@@ -2165,8 +2384,21 @@ function Frontline:UpdateActivity()
         end
         if team==0 and t.auto then self:Deploy(team) end
         end
-        if team==0 then self.playerBehavior.deployments=self.playerBehavior.deployments+1 end
-    if self.aiTimer:IsPastSimMS(self.aiInterval) then
+    local aiUpdated=false
+    if self.aiEmergencyTimer:IsPastSimMS(CONFIG.ai.tuning.emergencyCheckInterval) then
+        self.aiEmergencyTimer:Reset()
+        local urgentBase,urgentPost=self:CheckUrgentAIThreats(1)
+        local shouldInterrupt=(urgentBase and not self.aiUrgentBaseActive)
+            or (urgentPost and not self.aiUrgentPostActive)
+        self.aiUrgentBaseActive=urgentBase
+        self.aiUrgentPostActive=urgentPost
+        if shouldInterrupt then
+            self.aiTimer:Reset()
+            self:UpdateAI()
+            aiUpdated=true
+        end
+    end
+    if not aiUpdated and self.aiTimer:IsPastSimMS(self.aiInterval) then
         self.aiTimer:Reset()
         self:UpdateAI()
     end

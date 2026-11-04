@@ -549,30 +549,72 @@ activity:UpdateAI()
 assert(ai.order=='Defend' and ai.orderTarget==1 and ai.rallyTarget==1,
     'urgent defense must order the force to the threatened owned post')
 threat.Team=2
+-- Only successful player deployments count toward the AI's adaptive response threshold.
+activity:UpdateAI()
+local player=activity.teams[0]
+local savedPlayerCounts,savedPlayerFunds,savedPlayerTimer={},player.funds,player.timer.ElapsedSimTimeMS
+local savedPlayerStats,savedPlayerCooldown=player.stats.deployed,player.lastDeployCooldown
+local savedPlayerForward=player.forward
+for index,count in ipairs(player.counts) do savedPlayerCounts[index]=count end
+local savedBehaviorDeployments=activity.playerBehavior.deployments
+activity:UpdateAI()
+assert(activity.playerBehavior.deployments==savedBehaviorDeployments,
+    'an AI decision without a player deployment must not increment the player event counter')
+player.forward=0
+player.counts={0,0,0,0,0,0}
+player.timer.ElapsedSimTimeMS=activity:DeployCooldown(0)
+local failedDeploy=activity:Deploy(0)
+assert(not failedDeploy and activity.playerBehavior.deployments==savedBehaviorDeployments,
+    'a rejected player deployment must not count as an adaptive event')
+for index=1,6 do
+    player.counts={0,0,0,0,0,1}
+    player.funds=10000
+    player.timer.ElapsedSimTimeMS=activity:DeployCooldown(0)
+    local deployed,deployError=activity:Deploy(0)
+    assert(deployed, 'real player deployment '..index..' must succeed: '..tostring(deployError))
+    if index==1 then
+        assert(activity.playerBehavior.deployments==savedBehaviorDeployments+1,
+            'one successful player deployment must increment the adaptive event counter once')
+    end
+end
+assert(activity.playerBehavior.deployments==savedBehaviorDeployments+6
+    and activity.playerBehavior.deployments>5,
+    'six successful deployments must cross the AI player-deployment response threshold')
+player.counts=savedPlayerCounts; player.funds=savedPlayerFunds; player.timer.ElapsedSimTimeMS=savedPlayerTimer
+player.stats.deployed=savedPlayerStats; player.lastDeployCooldown=savedPlayerCooldown; player.forward=savedPlayerForward
 
 
--- In the final approach to a researched upgrade, pause automatic deployment and use owned forward posts.
+local savedUnitCap=activity.settings.unitCap
+activity.settings.unitCap=50
+-- A near-but-unaffordable optional research must not block a feasible deployment.
 for index=1,28 do ai.levels[index]=10 end
 ai.levels[28]=0
-ai.funds=1040; ai.baseArmor=99; ai.turret={}
+ai.funds=activity:ResearchCost(1,28)+239
+ai.baseArmor=99; ai.turret={}
 ai.timer.ElapsedSimTimeMS=100000
 activity.settings.callins=false
-local deploymentsBeforeSaving=ai.stats.deployed
+local deploymentsBeforeBudgetChoice=ai.stats.deployed
 activity:UpdateAI()
-assert(ai.autoDeploy==false and ai.stats.deployed==deploymentsBeforeSaving,
-    'AI should save a near-term research purchase rather than auto-deploying')
+assert(ai.levels[28]==0 and ai.stats.deployed>deploymentsBeforeBudgetChoice,
+    'AI should leave unaffordable optional research untouched and use its available budget for a legal deployment')
+local deploymentsAfterBudgetChoice=ai.stats.deployed
+activity:UpdateAI()
+assert(ai.stats.deployed==deploymentsAfterBudgetChoice,
+    'AI must respect the deployment cooldown after making a feasible purchase')
+assert(ai.forward>0 and activity.outposts[ai.forward].owner==1,
+    'AI forward choice: index='..tostring(ai.forward)..' funds='..ai.funds..' owner='..tostring(ai.forward>0 and activity.outposts[ai.forward].owner))
 activity.aiTimer.ElapsedSimTimeMS=0
 activity.panel=false
 activity.DrawOutpost=function() end
 activity.DrawHUD=function() end
 activity:UpdateActivity()
-assert(ai.stats.deployed==deploymentsBeforeSaving,
-    'the regular activity update must not bypass the AI research-saving gate')
-assert(ai.forward>0 and activity.outposts[ai.forward].owner==1,
-    'AI forward choice: index='..tostring(ai.forward)..' funds='..ai.funds..' owner='..tostring(ai.forward>0 and activity.outposts[ai.forward].owner))
-ai.funds=2000; ai.levels[28]=1
+assert(ai.stats.deployed==deploymentsAfterBudgetChoice,
+    'the regular activity update must not bypass the AI deployment cooldown')
+ai.funds=500; ai.levels[28]=1
+ai.timer.ElapsedSimTimeMS=100000
 activity:UpdateAI()
-assert(ai.stats.deployed>deploymentsBeforeSaving and ai.forward>0 and activity.outposts[ai.forward].owner==1,
-    'AI should resume deployment at an owned forward post after its savings goal is met')
-print('AI rally, coordinated advance, retargeting, research saving, and forward deployment passed')
+assert(ai.stats.deployed>deploymentsAfterBudgetChoice and ai.forward>0 and activity.outposts[ai.forward].owner==1,
+    'AI should deploy again after the deployment cooldown expires')
+activity.settings.unitCap=savedUnitCap
+print('AI rally, coordinated advance, retargeting, budget-feasible deployment, cooldowns, and forward deployment passed')
 print('Research pricing/progression, reversible UI controls, tech tree, and support panels passed')
