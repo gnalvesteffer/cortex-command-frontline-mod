@@ -32,7 +32,8 @@ local CONFIG = {
     CALLIN_WEAPON_POD_COST=320, CALLIN_WEAPON_POD_COOLDOWN_MS=60000, CALLIN_WEAPON_POD_DELAY_MS=3000,
     BASE_ARMOR_COST = 200, BASE_ARMOR_HEALTH = 50, BASE_ARMOR_LEVELS = 3,
     BASE_REPAIR_COST = 120, BASE_REPAIR_HEALTH = 50, BASE_TURRET_COST = 350, BASE_TURRET_UPGRADE_COST=650,
-    BASE_TURRET_RANGE_MULTIPLIER=1.5, BASE_TURRET_AIM_DISTANCE=30,
+    BASE_TURRET_RANGE_MULTIPLIER=2, BASE_TURRET_AIM_DISTANCE=30, BASE_TURRET_VIEWPORT_RANGE_FACTOR=0.51,
+    BASE_TURRET_HEALTH=200,
     BASE_TOWER_DISTANCE=484, BASE_TOWER_HEIGHT=102, BASE_TURRET_ROOM_OFFSET_Y=15, BASE_TURRET_PIN_STRENGTH=100000,
     -- Unit and equipment catalogs
     roster = {
@@ -671,7 +672,7 @@ function TeamCommander:BaseUpgrade(kind)
         local upgrading=kind=="turretUpgrade"
         if upgrading then
             if t.turretLevel>=2 then return false,"Base turret already upgraded" end
-            if not active then return false,"Build a Gatling turret first" end
+            if not active then return false,"Build the base turret first" end
             cost=CONFIG.BASE_TURRET_UPGRADE_COST
         else
             if active then return false,"Base turret already active" end
@@ -681,14 +682,17 @@ function TeamCommander:BaseUpgrade(kind)
         local upgraded=upgrading or (t.turretLevel>=2)
         local turret
         if upgraded then turret=CreateACrab("Frontline HE Turret","Frontline.rte")
-        else turret=CreateACrab("Gatling Turret","Coalition.rte") end
+        else turret=CreateACrab("Frontline HE Base Turret","Frontline.rte") end
         if not turret then return false,"Turret preset unavailable" end
         turret.Team=team
         local x=team==0 and CONFIG.BASE_TOWER_DISTANCE or SceneMan.SceneWidth-CONFIG.BASE_TOWER_DISTANCE
         turret.Pos=Vector(x,self.baseGround[team]-CONFIG.BASE_TOWER_HEIGHT+CONFIG.BASE_TURRET_ROOM_OFFSET_Y)
         turret.HFlipped=team==1
         turret.AIMode=Actor.AIMODE_SENTRY
-        turret.AimDistance=CONFIG.BASE_TURRET_AIM_DISTANCE*(upgraded and CONFIG.BASE_TURRET_RANGE_MULTIPLIER or 1)
+        turret.MaxHealth=CONFIG.BASE_TURRET_HEALTH
+        turret.Health=CONFIG.BASE_TURRET_HEALTH
+        turret.AimDistance=CONFIG.BASE_TURRET_AIM_DISTANCE*CONFIG.BASE_TURRET_RANGE_MULTIPLIER
+            +FrameMan.PlayerScreenWidth*CONFIG.BASE_TURRET_VIEWPORT_RANGE_FACTOR
         turret.PinStrength=CONFIG.BASE_TURRET_PIN_STRENGTH
         if current and MovableMan:IsActor(current) then current.ToDelete=true end
         t.turretLevel=upgraded and 2 or 1
@@ -2939,19 +2943,19 @@ function Frontline:DrawPanel()
         text(15,104,"Brain health: "..math.floor(brain.Health).." / "..math.floor(brain.MaxHealth))
         text(15,120,"Armor level: "..t.baseArmor.." / "..CONFIG.BASE_ARMOR_LEVELS)
         local active=t.turret and MovableMan:IsActor(t.turret) and (not t.turret.Health or t.turret.Health>0)
-        local turretName=not active and "ABSENT" or (t.turretLevel>=2 and "ACTIVE (HE)" or "ACTIVE (GATLING)")
+        local turretName=not active and "ABSENT" or (t.turretLevel>=2 and "ACTIVE (HE MK2)" or "ACTIVE (HE)")
         text(15,136,"Upper-room turret: "..turretName)
         local armorCost=CONFIG.BASE_ARMOR_COST*(t.baseArmor+1)
         button(15,160,300,"ARMOR +50 HP  "..armorCost.." oz",t.baseArmor<CONFIG.BASE_ARMOR_LEVELS and t.funds>=armorCost and "available" or "disabled",function() local ok,msg=self.commanders[0]:BaseUpgrade("armor"); if not ok then self:Notify(msg) end end)
         button(15,185,300,"REPAIR +50 HP  "..CONFIG.BASE_REPAIR_COST.." oz",brain.Health<brain.MaxHealth and t.funds>=CONFIG.BASE_REPAIR_COST and "available" or "disabled",function() local ok,msg=self.commanders[0]:BaseUpgrade("repair"); if not ok then self:Notify(msg) end end)
         if active and t.turretLevel<2 then
-            button(15,210,300,"UPGRADE TO HE TURRET  "..CONFIG.BASE_TURRET_UPGRADE_COST.." oz",t.funds>=CONFIG.BASE_TURRET_UPGRADE_COST and "available" or "disabled",function()
+            button(15,210,300,"UPGRADE HE FRAGMENTS  "..CONFIG.BASE_TURRET_UPGRADE_COST.." oz",t.funds>=CONFIG.BASE_TURRET_UPGRADE_COST and "available" or "disabled",function()
                 local ok,msg=self.commanders[0]:BaseUpgrade("turretUpgrade"); if not ok then self:Notify(msg) end
             end)
         elseif active then
-            button(15,210,300,"HE TURRET  |  RANGE "..math.floor(t.turret.AimDistance),"selected",function() end)
+            button(15,210,300,"HE TURRET  |  ACQUISITION "..math.floor(t.turret.AimDistance+FrameMan.PlayerScreenWidth*CONFIG.BASE_TURRET_VIEWPORT_RANGE_FACTOR),"selected",function() end)
         else
-            button(15,210,300,"GATLING TURRET  "..CONFIG.BASE_TURRET_COST.." oz",t.funds>=CONFIG.BASE_TURRET_COST and "available" or "disabled",function()
+            button(15,210,300,"BUILD HE TURRET  "..CONFIG.BASE_TURRET_COST.." oz",t.funds>=CONFIG.BASE_TURRET_COST and "available" or "disabled",function()
                 local ok,msg=self.commanders[0]:BaseUpgrade("turret"); if not ok then self:Notify(msg) end
             end)
         end

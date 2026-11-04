@@ -4,7 +4,10 @@ function Timer() return {ElapsedSimTimeMS=0, IsPastSimMS=function(s,n) return s.
 function Vector(x,y) return setmetatable({X=x,Y=y},{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
 local nextId=0
 function CreateAHuman(n,m) nextId=nextId+1; return {Team=0,UniqueID=nextId,name=n,Health=100,MaxHealth=100,Height=70,AddInventoryItem=function(self,item) self.inventory=item end,ClearAIWaypoints=function(self) self.waypoint=nil end,AddAISceneWaypoint=function(self,v) self.waypoint=v end} end
-local turretMuzzles={["Gatling Turret"]={x=11,y=-8},["Frontline HE Turret"]={x=49,y=-6}}
+local turretMuzzles={
+    ["Frontline HE Base Turret"]={x=11,y=-8},
+    ["Frontline HE Turret"]={x=11,y=-8},
+}
 function CreateACrab(n,m)
     local a=CreateAHuman(n,m); a.vehicle=true; a.MuzzleOffset=turretMuzzles[n]
     a.SpriteOffset=Vector(-13,-7); a.SpriteHeight=16
@@ -63,7 +66,7 @@ MovableMan.Particles=(function() local i=0; return function() i=i+1; local items
 function IsAHuman(a) return not a.vehicle and not a.ship end; function IsACrab(a) return a.vehicle==true end
 local sceneObjects={}
 SceneMan={SceneWidth=5200, SceneHeight=800, CastMaterialRay=function() return false end, AddSceneObject=function(_,o) table.insert(sceneObjects,o) end, MovePointToGround=function(_,p) return Vector(p.X,600) end}; MusicMan={PlayDynamicSong=function() end}
-FrameMan={IsHudDisabled=function() return false end,SetHudDisabled=function() end}
+FrameMan={PlayerScreenWidth=640,IsHudDisabled=function() return false end,SetHudDisabled=function() end}
 PrimitiveMan={}
 TimerMan={DeltaTimeSecs=1}; UInputMan={KeyPressed=function()return false end}
 ActivityMan={EndActivity=function() end}
@@ -126,25 +129,21 @@ local function worldMuzzle(turret)
     local direction=turret.HFlipped and -1 or 1
     return turret.Pos.X+turret.MuzzleOffset.x*direction,turret.Pos.Y+turret.MuzzleOffset.y
 end
-for _,turret in ipairs({{object=CreateACrab("Gatling Turret"),team=0},{object=CreateACrab("Gatling Turret"),team=1},
+for _,turret in ipairs({{object=CreateACrab("Frontline HE Base Turret"),team=0},{object=CreateACrab("Frontline HE Base Turret"),team=1},
     {object=CreateACrab("Frontline HE Turret"),team=0},{object=CreateACrab("Frontline HE Turret"),team=1}}) do
     local object=turret.object
     local room=turret.team==0 and upperLeft or upperRight
     object.Pos=Vector(room.Pos.X,room.Pos.Y+15)
     object.HFlipped=turret.team==1
     assert(object.Pos.Y+object.SpriteOffset.Y+object.SpriteHeight==materialFloorY(room),
-        'Gatling and copied HE turret sprite bottom must meet the upper Tunnel A floor')
+        'base HE and Mk2 turret sprite bottom must meet the upper Tunnel A floor')
     local muzzleX,muzzleY=worldMuzzle(object)
     assert(muzzleY>=upperOpeningTop and muzzleY<=upperOpeningBottom and muzzleY<hallwayRoof,
-        'stock Gatling/HE preset muzzle must lie in the upper Tunnel A bore above the lower corridor roof')
-    if object.name=="Frontline HE Turret" then
-        local exit=turret.team==0 and playerExit or enemyExit
-        assert(turret.team==0 and muzzleX==exit+1 or turret.team==1 and muzzleX==exit-1,
-            'mirrored HE muzzle must emerge just outside its outer hallway exit')
-    else
-        assert(turret.team==0 and muzzleX<playerExit or turret.team==1 and muzzleX>enemyExit,
-            'mirrored Gatling muzzle must face outward through the upper bore')
-    end
+        'both base cannon muzzle variants must lie in the upper Tunnel A bore above the lower corridor roof')
+    local exit=turret.team==0 and playerExit or enemyExit
+    assert(turret.team==0 and muzzleX>room.Pos.X and muzzleX<exit
+        or turret.team==1 and muzzleX<room.Pos.X and muzzleX>exit,
+        'both mirrored custom cannon muzzles must remain inside the outward half of the upper bore')
 end
 assert(sceneObjects[6].Pos.Y-sceneObjects[9].Pos.Y==72 and sceneObjects[10].Pos.Y-sceneObjects[13].Pos.Y==72,
     'moving the hallway down must preserve upper room and turret vertical alignment')
@@ -482,7 +481,8 @@ for i=1,27 do ai.levels[i]=1 end
 bot.outposts[3].owner=1
 local enemyVehicle=CreateACrab('Gatling Drone','Coalition.rte'); enemyVehicle.Team=0; enemyVehicle.Pos=Vector(100,565); MovableMan:AddActor(enemyVehicle)
 bot:UpdateAI(); assert(bot:MaxSquadSize(1)==3 and ai.forward==3)
-assert(ai.turret and ai.turret.name=='Gatling Turret'); ai.baseArmor=3
+assert(ai.turret and ai.turret.name=='Frontline HE Base Turret' and ai.turret.Health==200
+    and ai.turret.MaxHealth==200); ai.baseArmor=3
 assert(ai.order=='Advance' and ai.orderTarget==2)
 local aiCost,aiSize=bot:Batch(1); assert(aiSize>0 and aiSize<=bot:MaxSquadSize(1))
 -- Same base income with no difficulty multiplier.
@@ -519,6 +519,7 @@ local oldDrops=#bot.pendingDrops; bot:UpdateAI(); assert(#bot.pendingDrops==oldD
 ai.minesTimer.ElapsedSimTimeMS=45000; ai.funds=2000; bot:UpdateAI(); assert(bot.pendingDrops[#bot.pendingDrops].kind=='mines' and bot.pendingDrops[#bot.pendingDrops].team==1 and ai.funds==1820)
 print('AI can use bomb, orbital cannon, turret and mines through standard call-in rules')
 
+
 -- Base upgrades spend funds, affect the brain and exclude the sentry from
 -- mobile army capacity and issued commands. Both teams can purchase them.
 actors={}; local base=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
@@ -529,37 +530,50 @@ assert(not base.commanders[0]:BaseUpgrade('repair')); base.brains[0].Health=90
 assert(base.commanders[0]:BaseUpgrade('repair')); assert(base.brains[0].Health==140 and bt.funds==1680)
 assert(base.commanders[0]:BaseUpgrade('turret'))
 local playerMuzzleX,playerMuzzleY=worldMuzzle(bt.turret)
-assert(bt.turret.name=='Gatling Turret' and bt.turret.AIMode==Actor.AIMODE_SENTRY
-    and bt.turret.AimDistance==30 and bt.turret.Pos.X==484 and bt.turret.Pos.Y==513
-    and not bt.turret.HFlipped and playerMuzzleX<playerExit
-    and playerMuzzleY>=upperOpeningTop and playerMuzzleY<=upperOpeningBottom and bt.funds==1330
+local expectedTurretAimDistance=549.6
+assert(bt.turret.name=='Frontline HE Base Turret' and bt.turret.AIMode==Actor.AIMODE_SENTRY
+    and bt.turret.AimDistance==expectedTurretAimDistance and bt.turret.Health==200 and bt.turret.MaxHealth==200
+    and bt.turret.Pos.X==484 and bt.turret.Pos.Y==513 and not bt.turret.HFlipped
+    and playerMuzzleX>upperLeft.Pos.X and playerMuzzleX<playerExit and playerMuzzleY>=upperOpeningTop and playerMuzzleY<=upperOpeningBottom
+    and bt.funds==1330
     and bt.turret.Pos.Y+bt.turret.SpriteOffset.Y+bt.turret.SpriteHeight==materialFloorY(upperLeft))
 local gatling=bt.turret
 assert(base.commanders[0]:BaseUpgrade('turretUpgrade'))
 local upgradedPlayerMuzzleX,upgradedPlayerMuzzleY=worldMuzzle(bt.turret)
-assert(gatling.ToDelete and bt.turret.name=='Frontline HE Turret' and bt.turret.AimDistance==45
-    and upgradedPlayerMuzzleX==playerExit+1 and upgradedPlayerMuzzleY>=upperOpeningTop
+assert(gatling.ToDelete and bt.turret.name=='Frontline HE Turret'
+    and bt.turret.AimDistance==expectedTurretAimDistance and bt.turret.Health==200 and bt.turret.MaxHealth==200
+    and upgradedPlayerMuzzleX>upperLeft.Pos.X and upgradedPlayerMuzzleX<playerExit and upgradedPlayerMuzzleY>=upperOpeningTop
     and upgradedPlayerMuzzleY<=upperOpeningBottom and bt.funds==680
     and bt.turret.Pos.Y+bt.turret.SpriteOffset.Y+bt.turret.SpriteHeight==materialFloorY(upperLeft),
-    'custom HE turret must replace Gatling, sit on the outer room floor and retain 1.5x range')
-assert(base:UnitCount(0)==0 and not base.commanders[0]:BaseUpgrade('turret'))
+    'HE upgrade retains floor contact, doubled health/range, and outward fragmentation cannon')
+assert(base:UnitCount(0)==0 and not base.commanders[0]:BaseUpgrade('turret'),
+    'stationary HE base turret must not count as a field unit or be purchased twice')
+bt.turret.deleted=true; bt.funds=1000
+assert(base.commanders[0]:BaseUpgrade('turret'))
+assert(bt.turret.name=='Frontline HE Turret' and bt.turret.Health==200 and bt.turret.MaxHealth==200
+    and bt.turret.AimDistance==expectedTurretAimDistance
+    and bt.turret.Pos.Y+bt.turret.SpriteOffset.Y+bt.turret.SpriteHeight==materialFloorY(upperLeft),
+    'rebuilt upgraded turret must retain HE variant, health, range and floor position')
+assert(not base.commanders[0]:BaseUpgrade('turret'))
 base.commanders[0]:SetOrder('Advance',2); assert(bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.turret.waypoint==nil)
 base.settings.callins=false
 local bi=base.teams[1]
 for index=1,29 do bi.levels[index]=10 end
 bi.baseArmor=3; bi.auto=false; bi.funds=3000; bi.timer.ElapsedSimTimeMS=0
 base:UpdateAI()
-assert(bi.turret and bi.turret.name=='Gatling Turret' and bi.turret.AimDistance==30
+assert(bi.turret and bi.turret.name=='Frontline HE Base Turret'
+    and bi.turret.AimDistance==expectedTurretAimDistance and bi.turret.Health==200 and bi.turret.MaxHealth==200
     and bi.turret.Team==1 and bi.turret.Pos.X==4716 and bi.turret.Pos.Y==513 and bi.turret.HFlipped
     and bi.turret.Pos.Y+bi.turret.SpriteOffset.Y+bi.turret.SpriteHeight==materialFloorY(upperRight))
 bi.funds=2000
 base:UpdateAI()
 local upgradedEnemyMuzzleX,upgradedEnemyMuzzleY=worldMuzzle(bi.turret)
-assert(bi.turret.name=='Frontline HE Turret' and bi.turret.AimDistance==45
-    and upgradedEnemyMuzzleX==enemyExit-1 and upgradedEnemyMuzzleY>=upperOpeningTop
+assert(bi.turret.name=='Frontline HE Turret' and bi.turret.AimDistance==expectedTurretAimDistance
+    and bi.turret.Health==200 and bi.turret.MaxHealth==200
+    and upgradedEnemyMuzzleX<upperRight.Pos.X and upgradedEnemyMuzzleX>enemyExit and upgradedEnemyMuzzleY>=upperOpeningTop
     and upgradedEnemyMuzzleY<=upperOpeningBottom
     and bi.turret.Pos.Y+bi.turret.SpriteOffset.Y+bi.turret.SpriteHeight==materialFloorY(upperRight),
-    'AI HE turret must replace Gatling, sit on mirrored outer room floor and retain clear lane')
+    'AI HE turret must preserve doubled health/range and clear mirrored lane')
 print('Base armor, repair, symmetric turret geometry, HE range, unit-cap exclusion and AI upgrades passed')
 
 -- Larger maps get the right number of posts and income bonuses stack.

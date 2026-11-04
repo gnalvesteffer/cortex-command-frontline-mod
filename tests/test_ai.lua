@@ -37,7 +37,7 @@ function IsAHuman(actor) return not actor.vehicle and not actor.ship end
 function IsACrab(actor) return actor.vehicle==true end
 SceneMan={SceneWidth=5200,SceneHeight=800,CastMaterialRay=function() return false end,
     AddSceneObject=function() end,MovePointToGround=function(_,p) return Vector(p.X,600) end}
-FrameMan={IsHudDisabled=function() return false end,SetHudDisabled=function() end}
+FrameMan={PlayerScreenWidth=640,IsHudDisabled=function() return false end,SetHudDisabled=function() end}
 PrimitiveMan={}; MusicMan={PlayDynamicSong=function() end}
 TimerMan={DeltaTimeSecs=1}; UInputMan={KeyPressed=function() return false end}
 ActivityMan={EndActivity=function() end}
