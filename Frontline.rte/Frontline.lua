@@ -33,7 +33,7 @@ local CONFIG = {
     BASE_ARMOR_COST = 200, BASE_ARMOR_HEALTH = 50, BASE_ARMOR_LEVELS = 3,
     BASE_REPAIR_COST = 120, BASE_REPAIR_HEALTH = 50, BASE_TURRET_COST = 350, BASE_TURRET_UPGRADE_COST=650,
     BASE_TURRET_RANGE_MULTIPLIER=1.5, BASE_TURRET_AIM_DISTANCE=30,
-    BASE_TOWER_DISTANCE=340, BASE_TOWER_HEIGHT=112, BASE_TURRET_PIN_STRENGTH=100000,
+    BASE_TOWER_DISTANCE=318, BASE_TOWER_HEIGHT=112, BASE_TURRET_PIN_STRENGTH=100000,
     -- Unit and equipment catalogs
     roster = {
         {name="Coalition Light", actor="Soldier Light", mod="Coalition.rte", price=75, unlock=0, research=1},
@@ -156,6 +156,9 @@ CONFIG.ai={
         callinReserve=240,
         shieldReserve=150,
         threatRadiusMultiplier=2,
+        baseRushRadius=800,
+        baseRushMinimumUnits=4,
+        baseDefenseBatchSize=6,
         enemyClusterRadius=120,
         enemyClusterMinimum=2,
         playerDeploymentsBeforeFortify=5,
@@ -205,6 +208,7 @@ CONFIG.map={
     },
     mining={scanMargin=12,depositMergeVertical=80,verticalDistanceWeight=0.2,verticalDigRange=120},
     baseApproach={
+        -- Keep the tunnel floor at ground level alongside the vault opening.
         corridorYOffset=40,
         -- Tunnel A/B footprints are 96/48px wide; centers meet edge-to-edge.
         sections={{distance=340,preset="Tunnel A"},{distance=436,preset="Tunnel A"},{distance=508,preset="Tunnel B"}},
@@ -717,11 +721,19 @@ function Frontline:AssignOrder(actor,team)
     if t.order=="Rush" then
         actor.AIMode=Actor.AIMODE_BRAINHUNT
     else
-        local target=self.outposts[t.orderTarget]
-        actor.AIMode=Actor.AIMODE_GOTO
         local spread=(actor.UniqueID%CONFIG.orders.formationSlots-CONFIG.orders.formationCenter)*CONFIG.orders.formationSpacing
-        actor:AddAISceneWaypoint(Vector(target.x+spread,target.groundY-CONFIG.orders.waypointOffsetY))
-        self.orderAssignments[actor.UniqueID]={order=t.order,target=t.orderTarget}
+        if t.order=="Defend" and t.orderTarget==0 then
+            local baseX=self.brains[team].Pos.X
+            local baseY=self.baseGround[team]
+            actor.AIMode=Actor.AIMODE_GOTO
+            actor:AddAISceneWaypoint(Vector(baseX+spread,baseY-CONFIG.orders.waypointOffsetY))
+            self.orderAssignments[actor.UniqueID]={order=t.order,base=true,targetX=baseX,targetY=baseY}
+        else
+            local target=self.outposts[t.orderTarget]
+            actor.AIMode=Actor.AIMODE_GOTO
+            actor:AddAISceneWaypoint(Vector(target.x+spread,target.groundY-CONFIG.orders.waypointOffsetY))
+            self.orderAssignments[actor.UniqueID]={order=t.order,target=t.orderTarget}
+        end
     end
 end
 
@@ -740,15 +752,24 @@ function Frontline:UpdateOrders()
         local assignment=self.orderAssignments[actor.UniqueID]
         if assignment then
             alive[actor.UniqueID]=true
-            local target=self.outposts[assignment.target]
-            if math.abs(actor.Pos.X-target.x)<CONFIG.orders.arrivalRadiusX and math.abs(actor.Pos.Y-target.groundY)<CONFIG.orders.arrivalRadiusY then
-                if assignment.order=="Advance" and target.owner~=actor.Team then
-                    -- Stay in the capture zone until it is secured.
-                    actor.AIMode=Actor.AIMODE_SENTRY
-                else
+            if assignment.base then
+                if math.abs(actor.Pos.X-assignment.targetX)<CONFIG.orders.arrivalRadiusX
+                    and math.abs(actor.Pos.Y-assignment.targetY)<CONFIG.orders.arrivalRadiusY then
                     actor:ClearAIWaypoints()
-                    actor.AIMode=assignment.order=="Defend" and Actor.AIMODE_SENTRY or Actor.AIMODE_BRAINHUNT
+                    actor.AIMode=Actor.AIMODE_SENTRY
                     self.orderAssignments[actor.UniqueID]=nil
+                end
+            else
+                local target=self.outposts[assignment.target]
+                if math.abs(actor.Pos.X-target.x)<CONFIG.orders.arrivalRadiusX and math.abs(actor.Pos.Y-target.groundY)<CONFIG.orders.arrivalRadiusY then
+                    if assignment.order=="Advance" and target.owner~=actor.Team then
+                        -- Stay in the capture zone until it is secured.
+                        actor.AIMode=Actor.AIMODE_SENTRY
+                    else
+                        actor:ClearAIWaypoints()
+                        actor.AIMode=assignment.order=="Defend" and Actor.AIMODE_SENTRY or Actor.AIMODE_BRAINHUNT
+                        self.orderAssignments[actor.UniqueID]=nil
+                    end
                 end
             end
         end
@@ -1685,6 +1706,7 @@ end
 -- the player. Its difficulty controls decision frequency, not free resources.
 function Frontline:UpdateAI()
     local team=1
+    local aiTuning=CONFIG.ai.tuning
     local ai=self.teams[team]
     
     -- Pick a personality at match start for randomized playstyle
@@ -1705,9 +1727,14 @@ function Frontline:UpdateAI()
     for i=1,#self.outposts do posts[i]={allies=0,enemies=0,wounded=0,threats=0,projectiles=0} end
     local enemyVehicle=false
     local fieldActors={}
+    local enemyBaseX=self.brains[team].Pos.X
+    local enemyBaseThreats=0
     for actor in MovableMan.Actors do
         if self:IsFieldUnit(actor) then
             table.insert(fieldActors,actor)
+            if actor.Team==0 and actor.Health>0 and math.abs(actor.Pos.X-enemyBaseX)<=aiTuning.baseRushRadius then
+                enemyBaseThreats=enemyBaseThreats+1
+            end
             if actor.Team==0 and IsACrab(actor) then enemyVehicle=true end
             for i,post in ipairs(self.outposts) do
                 local dist=math.abs(actor.Pos.X-post.x)
@@ -1732,6 +1759,7 @@ function Frontline:UpdateAI()
             end
         end
     end
+    local urgentBaseDefense=enemyBaseThreats>=aiTuning.baseRushMinimumUnits
     local pressured=self:UnitCount(0)>self:UnitCount(1)+CONFIG.ai.tuning.pressureUnitAdvantage
         or self:OutpostCount(0)>self:OutpostCount(1)
 
@@ -1756,7 +1784,6 @@ function Frontline:UpdateAI()
     
     -- Invest from the same budget and keep a reserve for troop deployments.
     local brain=self.brains[team]
-    local aiTuning=CONFIG.ai.tuning
     local targets=CONFIG.ai.researchTargets
     if brain.Health<brain.MaxHealth-aiTuning.brainHealthMargin and ai.funds>=CONFIG.BASE_REPAIR_COST+aiTuning.baseRepairReserve then
         self:BaseUpgrade(team,"repair")
@@ -1772,19 +1799,21 @@ function Frontline:UpdateAI()
     end
 
     local researchSavingIndex
-    for _,index in ipairs(priorities) do
-        local r=CONFIG.research[index]
-        local researchTarget=targets.repeatable[index] and (ai.funds>=aiTuning.highResearchFunds and aiTuning.highResearchLevels or aiTuning.normalResearchLevels)
-            or (index==targets.missile and ai.funds>=aiTuning.highResearchFunds and aiTuning.highResearchLevels or aiTuning.singleLevelResearchTarget)
-        local unlocked=researchUnlocked(ai.levels,r)
-        if unlocked and (ai.levels[index] or 0)<math.min(r.max,researchTarget) then
-            local cost=self:ResearchCost(team,index)
-            if ai.funds>=cost+aiTuning.researchReserve then
-                local ok=self:Research(team,index)
-                if ok then break end
-            elseif cost+aiTuning.researchReserve-ai.funds<=CONFIG.ai.strategy.researchSaveGap then
-                researchSavingIndex=index
-                break
+    if not urgentBaseDefense then
+        for _,index in ipairs(priorities) do
+            local r=CONFIG.research[index]
+            local researchTarget=targets.repeatable[index] and (ai.funds>=aiTuning.highResearchFunds and aiTuning.highResearchLevels or aiTuning.normalResearchLevels)
+                or (index==targets.missile and ai.funds>=aiTuning.highResearchFunds and aiTuning.highResearchLevels or aiTuning.singleLevelResearchTarget)
+            local unlocked=researchUnlocked(ai.levels,r)
+            if unlocked and (ai.levels[index] or 0)<math.min(r.max,researchTarget) then
+                local cost=self:ResearchCost(team,index)
+                if ai.funds>=cost+aiTuning.researchReserve then
+                    local ok=self:Research(team,index)
+                    if ok then break end
+                elseif cost+aiTuning.researchReserve-ai.funds<=CONFIG.ai.strategy.researchSaveGap then
+                    researchSavingIndex=index
+                    break
+                end
             end
         end
     end
@@ -1798,6 +1827,7 @@ function Frontline:UpdateAI()
             batchSize=aiTuning.defensiveBatchMin+math.random(0,aiTuning.defensiveBatchRandom)
         end
     end
+    if urgentBaseDefense and ai.stats.deployed>0 then batchSize=aiTuning.baseDefenseBatchSize end
 
     ai.counts={}
     for i=1,#CONFIG.roster do ai.counts[i]=0 end
@@ -1863,7 +1893,13 @@ function Frontline:UpdateAI()
     local desired=decision.kind=="defend" and "Defend" or (decision.kind=="advance" and "Advance" or "Rush")
     local strategy=CONFIG.ai.strategy
 
-    if urgentDefense then
+    if urgentBaseDefense then
+        target=0
+        desired="Defend"
+        ai.orderPhase="assembling"
+        ai.attackTarget=nil
+        ai.rallyTarget=0
+    elseif urgentDefense then
         target=urgentDefenseTarget
         desired="Defend"
         ai.orderPhase="assembling"
@@ -1879,7 +1915,7 @@ function Frontline:UpdateAI()
             ai.attackTarget=nil
         end
     end
-    if not urgentDefense and ai.orderPhase~="attacking" then
+    if not urgentBaseDefense and not urgentDefense and ai.orderPhase~="attacking" then
         if rallyTarget>0 and posts[rallyTarget].allies<strategy.attackGroupSize then
             ai.orderPhase="assembling"
             ai.rallyTarget=rallyTarget
@@ -1896,27 +1932,29 @@ function Frontline:UpdateAI()
         end
     end
 
-    if ai.order~=desired or (target>0 and ai.orderTarget~=target) then
+    if ai.order~=desired or ai.orderTarget~=target then
         ai.order=desired
-        if target>0 then ai.orderTarget=target end
+        ai.orderTarget=target
         self:ApplyTeamOrder(team)
     end
     
     ai.forward=0
-    local preferred=ai.orderPhase=="assembling" and ai.rallyTarget or nil
-    if preferred and self.outposts[preferred].owner==team and posts[preferred].enemies==0 then
-        ai.forward=preferred
-    else
-        local bestScore=-math.huge
-        for i,post in ipairs(self.outposts) do
-            if post.owner==team and posts[i].enemies==0 then
-                local score=posts[i].allies
-                if ai.attackTarget then score=score-math.abs(post.x-self.outposts[ai.attackTarget].x)/CONFIG.OUTPOST_RADIUS end
-                if score>bestScore then bestScore=score; ai.forward=i end
+    if not urgentBaseDefense then
+        local preferred=ai.orderPhase=="assembling" and ai.rallyTarget or nil
+        if preferred and self.outposts[preferred].owner==team and posts[preferred].enemies==0 then
+            ai.forward=preferred
+        else
+            local bestScore=-math.huge
+            for i,post in ipairs(self.outposts) do
+                if post.owner==team and posts[i].enemies==0 then
+                    local score=posts[i].allies
+                    if ai.attackTarget then score=score-math.abs(post.x-self.outposts[ai.attackTarget].x)/CONFIG.OUTPOST_RADIUS end
+                    if score>bestScore then bestScore=score; ai.forward=i end
+                end
             end
         end
     end
-    ai.autoDeploy=researchSavingIndex==nil or ai.stats.deployed==0
+    ai.autoDeploy=urgentBaseDefense or researchSavingIndex==nil or ai.stats.deployed==0
     
     -- Save for a near-term priority research before funding another squad.
     if ai.autoDeploy and ai.funds>=aiTuning.deploymentThreshold then

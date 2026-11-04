@@ -32,6 +32,10 @@ random firearms from loaded-game HDFirearm presets, including exotic weapons.
 The upgradeable base turret progresses from a Gatling Turret at level 1 to the
 custom Frontline HE Turret at level 2; its upgrade has 1.5x base range.
 
+The approach hallway floor meets the main vault floor. The mirrored upper
+turret room aligns with the vault exit, leaving a clear firing lane toward the
+battlefield.
+
 
 The Support tab orders the offense as Orbital Gatling Barrage, Orbital Precision
 Strike, then Carpet Bomb. The Support Jammer blocks hostile call-ins aimed within
@@ -57,4 +61,6 @@ The AI uses the same units, research, base upgrades, orders, forward spawns and 
 with normal prices, cooldowns, capacity limits and prerequisites. It scores
 objectives against pressure and resource needs, gathers six units at safe owned
 posts before advancing together, retains targets until capture, and saves funds
-for near-term research instead of automatically deploying.
+for near-term research instead of automatically deploying. A four-unit player
+rush within 800 pixels of its brain overrides that plan: the AI recalls field
+units to defend home and prioritizes troop deployment over optional research.

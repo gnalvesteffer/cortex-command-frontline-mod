@@ -66,8 +66,8 @@ for index,expectedX in ipairs({1300,2600,3900}) do
 end
 assert(sceneObjects[4].name=="Frontline Mirrored Brain Vault" and sceneObjects[4].Team==0 and sceneObjects[4].Pos.X==180)
 assert(sceneObjects[5].name=="Brain Vault" and sceneObjects[5].Team==1 and sceneObjects[5].Pos.X==5020)
-local expectedLeft={{340,560,"Tunnel A"},{436,560,"Tunnel A"},{508,560,"Tunnel B"},{340,488,"Tunnel A"}}
-local expectedRight={{4860,560,"Tunnel A"},{4764,560,"Tunnel A"},{4692,560,"Tunnel B"},{4860,488,"Tunnel A"}}
+local expectedLeft={{340,560,"Tunnel A"},{436,560,"Tunnel A"},{508,560,"Tunnel B"},{318,488,"Tunnel A"}}
+local expectedRight={{4860,560,"Tunnel A"},{4764,560,"Tunnel A"},{4692,560,"Tunnel B"},{4882,488,"Tunnel A"}}
 local moduleWidths={96,96,48}
 for index,expected in ipairs(expectedLeft) do
     local left,right=sceneObjects[5+index],sceneObjects[9+index]
@@ -80,8 +80,25 @@ for index,expected in ipairs(expectedLeft) do
         assert(math.abs(right.Pos.X-expectedRight[index-1][1])==span)
     end
 end
-assert(sceneObjects[4].Pos.X-117+255-(sceneObjects[6].Pos.X-48)==26)
-assert(sceneObjects[10].Pos.X+48-(sceneObjects[5].Pos.X-138)==26)
+local groundY=600
+local hallwayFloor=sceneObjects[6].Pos.Y+40
+local mainRoomFloor=sceneObjects[4].Pos.Y+31
+local turretRoom=sceneObjects[9]
+local turretX,turretY=turretRoom.Pos.X,turretRoom.Pos.Y
+local hallwayCeiling=sceneObjects[6].Pos.Y-48
+local mainRoomExit=sceneObjects[4].Pos.X+138
+local corridorExit=sceneObjects[8].Pos.X+24
+local hallwayDoorTop, hallwayDoorBottom=sceneObjects[6].Pos.Y-24,sceneObjects[6].Pos.Y+24
+local vaultDoorTop, vaultDoorBottom=sceneObjects[4].Pos.Y+6,sceneObjects[4].Pos.Y+42
+assert(hallwayFloor==mainRoomFloor and hallwayFloor==groundY,
+    'approach hallway and main vault floors must connect at ground level')
+assert(sceneObjects[6].Pos.X-48<mainRoomExit and mainRoomExit<sceneObjects[6].Pos.X+48
+    and hallwayDoorTop<vaultDoorBottom and vaultDoorTop<hallwayDoorBottom,
+    'the hallway aperture must physically overlap the main vault exit')
+assert(turretX==mainRoomExit and turretY==488 and turretY>turretRoom.Pos.Y-24 and turretY<turretRoom.Pos.Y+24,
+    'the upper turret-room firing opening must be centered on the bunker exit')
+assert(turretX+48<corridorExit and turretY<hallwayCeiling and corridorExit<1300-48,
+    'the +X shot must clear the hallway roof after leaving the turret room and reach the exterior approach')
 assert(sceneObjects[6].Pos.Y-sceneObjects[9].Pos.Y==72 and sceneObjects[10].Pos.Y-sceneObjects[13].Pos.Y==72)
 assert(508+24<1300-48 and 4692-24>3900+48,'base tunnel segments must remain separate from outpost bunkers')
 for _,object in ipairs(sceneObjects) do assert(object.name~="Tut Roof Attachment","bunker must not add floating roof attachments") end
@@ -330,6 +347,41 @@ Frontline.DrawWizard(u); assert(u.settings.unitCap==32)
 Frontline.DrawWizard(u); assert(u.settings.unitCap==50)
 print('Unit-cap choices cycle 50, 8, 12, 16 and 32 per team')
 
+-- A mass rush must interrupt normal objectives and send forces to the enemy base.
+actors={}; local rush=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+rush:StartActivity(); rush:StartBattle(); rush.matchTimer.ElapsedSimTimeMS=15000
+local ra=rush.teams[1]
+for index=1,29 do ra.levels[index]=10 end
+ra.tier=3; ra.funds=5000; ra.baseArmor=3; ra.turretLevel=2
+ra.turret=CreateAHuman('Gatling Turret','Base.rte'); ra.turret.Team=1; ra.turret.Health=100; ra.turretID=ra.turret.UniqueID
+ra.timer.ElapsedSimTimeMS=100000; ra.stats.deployed=0
+rush.aiPersonality='economic'; rush:UpdateAI()
+assert(ra.order=='Advance' and ra.orderTarget>0,'normal AI strategy should keep advancing when its base is not threatened')
+local unitsBefore=ra.stats.deployed
+for i=1,6 do
+    local attacker=CreateAHuman('Soldier Light','Coalition.rte')
+    attacker.Team=0; attacker.Pos=Vector(rush.brains[1].Pos.X-500+i*8,565); attacker.Health=100
+    MovableMan:AddActor(attacker)
+end
+ra.timer.ElapsedSimTimeMS=100000; ra.funds=5000
+rush:UpdateAI()
+assert(ra.order=='Defend' and ra.orderTarget==0 and ra.orderPhase=='assembling'
+    and ra.attackTarget==nil and ra.forward==0,
+    'overwhelming base rush must supersede forward strategy with home defense')
+assert(ra.stats.deployed>=unitsBefore+6 and ra.autoDeploy,
+    'counter-rush response must commit available troops to an extra defensive deployment')
+local baseOrders=0
+for id,assignment in pairs(rush.orderAssignments) do
+    if assignment.base then
+        baseOrders=baseOrders+1
+        for actor in MovableMan.Actors do
+            if actor.UniqueID==id then assert(actor.AIMode==Actor.AIMODE_GOTO) end
+        end
+    end
+end
+assert(baseOrders>0,'field units must receive real base-defense waypoints')
+print('AI preserves normal advance, then deploys and reassigns forces to repel a mass base rush')
+
 -- AI makes purchases and decisions through the same mechanisms as the player.
 actors={}; local bot=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 bot:StartActivity(); bot:StartBattle(); bot.DrawHUD=function() end; bot.DrawOutpost=function() end
@@ -385,7 +437,7 @@ assert(not base:BaseUpgrade(0,'repair')); base.brains[0].Health=90
 assert(base:BaseUpgrade(0,'repair')); assert(base.brains[0].Health==140 and bt.funds==1680)
 assert(base:BaseUpgrade(0,'turret'))
 assert(bt.turret.name=='Gatling Turret' and bt.turret.AIMode==Actor.AIMODE_SENTRY
-    and bt.turret.AimDistance==30 and bt.turret.Pos.X==340 and bt.turret.Pos.Y==488
+    and bt.turret.AimDistance==30 and bt.turret.Pos.X==318 and bt.turret.Pos.Y==488
     and not bt.turret.HFlipped and bt.funds==1330)
 local gatling=bt.turret
 assert(base:BaseUpgrade(0,'turretUpgrade'))
@@ -399,7 +451,7 @@ for index=1,29 do bi.levels[index]=10 end
 bi.baseArmor=3; bi.auto=false; bi.funds=3000; bi.timer.ElapsedSimTimeMS=0
 base:UpdateAI()
 assert(bi.turret and bi.turret.name=='Gatling Turret' and bi.turret.AimDistance==30
-    and bi.turret.Team==1 and bi.turret.Pos.X==SceneMan.SceneWidth-340 and bi.turret.Pos.Y==488 and bi.turret.HFlipped)
+    and bi.turret.Team==1 and bi.turret.Pos.X==SceneMan.SceneWidth-318 and bi.turret.Pos.Y==488 and bi.turret.HFlipped)
 bi.funds=2000
 base:UpdateAI()
 assert(bi.turret.name=='Frontline HE Turret' and bi.turret.AimDistance==45,
