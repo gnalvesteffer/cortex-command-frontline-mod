@@ -15,14 +15,20 @@ Unit research follows the Coalition Light -> Coalition Heavy -> Dummy/Gatling
 Drone -> Browncoat chain. Weapon and equipment unlocks are in the Arsenal tree.
 The Research tab has three categorized pages; connector lines mark prerequisites.
 Each support call-in has a research unlock. Orbital Gatling Barrage unlocks
-Orbital Precision Strike, which unlocks the 500kg Bomb. Mines follow cover and
-the turret follows mines. Medic and shield each have separate level-1 and
-level-2 research.
+Orbital Precision Strike, then Carpet Bomb. Mines follow Cover and the turret
+follows Mines. Medic research unlocks a Medic Drone delivery, and its second
+level increases the drop to two drones. Shield levels extend the jammer.
 
-The Support tab orders offensive call-ins as Orbital Gatling Barrage, Orbital
-Precision Strike, then 500kg Bomb. A shield requires an owned post and blocks
-hostile precision strikes, bombs and orbital barrages for 20 seconds. Each
-call-in has a separate cooldown.
+The Support tab orders the offense as Orbital Gatling Barrage, Orbital Precision
+Strike, then Carpet Bomb. The jammer blocks hostile call-ins aimed within its
+180-pixel radius for 20, 60, or 90 seconds depending on research. It refunds an
+intercepted call-in before payload release; a Carpet Bomb run intercepted after
+releasing bombs loses its remaining drops without a refund. Released bombs and
+weapons are not blocked. The Energy Shield destroys hostile projectiles inside
+its researched 180-pixel bubble for 30 seconds.
+The Gatling barrage fires 72 rounds and 16 fragments per round;
+turret research extends it to 108 rounds. Carpet Bomb releases three bombs
+across its flight path.
 
 Both manual and automatic deployment cost funds and share a cooldown. Both brains have Gatling Guns. Buy brain armor,
 repairs and a rebuildable upper-room turret on the Base tab. Destroy
@@ -34,6 +40,7 @@ in-game testing, especially vehicle navigation, forward spawn, shields and the
 match report. Research and settings reset each match.
 
 The AI uses the same units, research, base upgrades, orders, forward spawns and call-ins,
-including their normal prices, cooldowns, capacity limits and prerequisites. It
-scores objectives and available tactical supports against pressure, captured
-posts, enemy concentrations, wounded allies, income needs and its playstyle.
+with normal prices, cooldowns, capacity limits and prerequisites. It scores
+objectives against pressure and resource needs, gathers six units at safe owned
+posts before advancing together, retains targets until capture, and saves funds
+for near-term research instead of automatically deploying.

@@ -5,8 +5,8 @@ This is a Cortex Command mod called "Frontline" that adds squad-based tactical g
 
 ## Testing Workflow
 1. **Syntax check**: Run `for f in Frontline.rte/*.lua; do luajit -b "$f" /dev/null || exit; done`.
-2. **Regression tests**: Run `luajit tests/test_ai.lua`, `luajit tests/test_units.lua`, and `luajit tests/test_support_callins.lua`.
-3. **In-game test**: Launch `/var/home/xorberax/CortexCommand.linux/CortexCommand.AppImage` with the mod loaded, then test each feature (bomb call-in, turret drop, weapon unlocks, etc.).
+2. **Regression tests**: Run `luajit tests/test_ai.lua`, `luajit tests/test_units.lua`, `luajit tests/test_support_callins.lua`, and `luajit tests/test_frontline.lua`.
+3. **In-game test**: Launch `/var/home/xorberax/CortexCommand.linux/CortexCommand.AppImage` with the mod loaded, then verify the changed feature paths in-game.
 
 ## Key Files
 - `Frontline.rte/Frontline.lua` - Main mod script (~103k chars) containing all gameplay logic
@@ -15,27 +15,29 @@ This is a Cortex Command mod called "Frontline" that adds squad-based tactical g
 - `Frontline.rte/BombRunBomb.lua` - Bomb run bomb entity (falls and explodes on impact)
 
 ## Research System
-Research items are 1-indexed in the CONFIG.research array:
-- Index 3: Infantry: Heavy Troop (tier 1)
-- Index 4: Faction: Dummy / Gatling (tier 2)
-- Index 5: Faction: Browncoat (tier 3)
-- Index 6: Equipment: SMG
-- Index 7: Equipment: Shotgun
-- Index 8: Equipment: Sniper Rifle
-- Index 9: Equipment: Missile Launcher
-- Index 14: Equipment: Assault Rifle
+Research is 1-indexed in `CONFIG.research`:
+- 1: Coalition Light
+- 2: Income +2/s; 3: Bounty +15
+- 4: Coalition Heavy; 5: Dummy / Gatling Drone; 6: Browncoat Light
+- 7–10: SMG, Shotgun, Sniper Rifle, Missile Launcher
+- 11–14: Medic Drone levels and Shield levels
+- 15: Mining call-in; 16: Perception training
+- 17–21: Assault Rifle, Medikit Packs, Grenade Packs, Sidearms, Unit Armor
+- 22: Orbital Gatling Barrage; 23: Cover; 24: Mines
+- 25: Orbital Precision Strike; 26: Carpet Bomb; 27: Static Turret; 28: Energy Shield
 
-Weapons require both tier unlock AND specific research items (see CONFIG.weapons for details).
+Unit unlocks follow the tier chain (1 → 4 → 5 → 6). Support availability is controlled by `CONFIG.supportResearch`.
 
 ## Call-In System
 Call-ins use the CreateSupportShip function to spawn dropships that deliver payloads. Bomb runs are handled separately with scripted flight paths in UpdateCallIns.
 
 Key call-in types:
-- strike: Precision orbital strike
-- bomb: Scripted bomb run (3 bombs dropped at intervals)
+- strike: Orbital Precision Strike
+- bomb: Carpet Bomb, a scripted three-bomb run
 - turret: Static Gatling Turret delivery
 - mines/cover: Defensive equipment drops
-- orbital: Orbital Gatling Cannon barrage
+- orbital: Orbital Gatling Barrage
+- energyShield: Bubble field that destroys hostile projectiles
 
 ## Gotchas
 - Bomb entities must be created as pixel entities (CreateMOPixel), not TDExplosive objects, to avoid immediate detonation
