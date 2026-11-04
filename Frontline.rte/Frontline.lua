@@ -2526,7 +2526,7 @@ function Frontline:DrawWizard()
     local function button(x,y,w,label,action,reversible)
         self:UIDrawBoxFill(0,pos(x,y),pos(x+w,y+18),182)
         self:UIDrawBox(0,pos(x,y),pos(x+w,y+18),206)
-        self:UIDrawText(0,pos(x+4,y+3),label,#label*7>w-8,0)
+        self:UIDrawText(0,pos(x+4,y+2),label,#label*7>w-8,0)
         if self.cursorX>=x and self.cursorX<=x+w and self.cursorY>=y and self.cursorY<=y+18 then
             if click then action(1) elseif rightClick and reversible then action(-1) end
         end
@@ -2588,7 +2588,7 @@ function Frontline:DrawPanel()
         self:UIDrawBox(screen,pos(x,y),pos(x+w,y+15),border)
         -- The large font is roughly seven pixels per character in this UI.
         -- Keep long button labels in the small font rather than clipping them.
-        text(x+3,y+2,label,#label*7>w-6)
+        text(x+3,y+1,label,#label*7>w-6)
         if mouse.X>=x and mouse.X<=x+w and mouse.Y>=y and mouse.Y<=y+15 then
             if click then action(1) elseif rightClick and reversible then action(-1) end
         end
@@ -2620,16 +2620,16 @@ function Frontline:DrawPanel()
                 local y=96+((displayIndex-1)%4)*39
                 local unlocked=r.unlock<=t.tier and (not r.research or (t.levels[r.research] or 0)>0)
                 text(15,y,r.name.." ("..r.price.." oz)"..(unlocked and "" or " [LOCKED]"))
-                button(230,y-2,18,"-",unlocked and "available" or "locked",function(step)
-                    adjustUnitCount(i,-step,unlocked)
-                end,true)
+                button(230,y-2,18,"-",unlocked and "available" or "locked",function()
+                    adjustUnitCount(i,-1,unlocked)
+                end)
                 text(256,y,tostring(t.counts[i] or 0))
-                button(275,y-2,18,"+",unlocked and "available" or "locked",function(step)
-                    adjustUnitCount(i,step,unlocked)
-                end,true)
+                button(275,y-2,18,"+",unlocked and "available" or "locked",function()
+                    adjustUnitCount(i,1,unlocked)
+                end)
                 local weapon=CONFIG.weapons[t.weapons[i] or 6]
                 local special=r.vehicle or r.miner
-                button(15,y+14,special and 238 or 100,
+                button(15,y+15,special and 238 or 100,
                     r.vehicle and "Built-in gatling" or (r.miner and "FIXED: Pistol + Light Digger (+25/unit)" or (weapon.name.." +"..weapon.price)),
                     unlocked and weaponUnlocked(t,weapon) and "available" or "locked",function(step)
                         if unlocked and not special then
@@ -2642,7 +2642,7 @@ function Frontline:DrawPanel()
                     end,true)
                 if not special then
                     local side=t.sidearms[i] or 0
-                    button(117,y+14,60,side==0 and "SIDE: -" or (side==1 and "Pistol +10" or "RPG +95"),
+                    button(117,y+15,60,side==0 and "SIDE: -" or (side==1 and "Pistol +10" or "RPG +95"),
                         unlocked and (t.levels[19] or 0)>0 and "available" or "locked",function(step)
                             if unlocked and (t.levels[19] or 0)>0 then
                                 local nextSide=(side+step)%3
@@ -2650,14 +2650,14 @@ function Frontline:DrawPanel()
                                 t.sidearms[i]=nextSide
                             end
                         end,true)
-                    button(179,y+14,36,t.medkits[i] and "MED X" or "MED",
+                    button(179,y+15,36,t.medkits[i] and "MED X" or "MED",
                         unlocked and (t.levels[17] or 0)>0 and (t.medkits[i] and "selected" or "available") or "locked",
                         function() if unlocked and (t.levels[17] or 0)>0 then t.medkits[i]=not t.medkits[i] end end,true)
-                    button(217,y+14,36,t.grenades[i] and "GRN X" or "GRN",
+                    button(217,y+15,36,t.grenades[i] and "GRN X" or "GRN",
                         unlocked and (t.levels[18] or 0)>0 and (t.grenades[i] and "selected" or "available") or "locked",
                         function() if unlocked and (t.levels[18] or 0)>0 then t.grenades[i]=not t.grenades[i] end end,true)
                 end
-                button(255,y+14,40,t.armor[i] and "ARM X" or "ARM",
+                button(255,y+15,40,t.armor[i] and "ARM X" or "ARM",
                     unlocked and (t.levels[20] or 0)>0 and (t.armor[i] and "selected" or "available") or "locked",
                     function() if unlocked and (t.levels[20] or 0)>0 then t.armor[i]=not t.armor[i] end end,true)
             end
@@ -2665,7 +2665,7 @@ function Frontline:DrawPanel()
         button(310,238,140,"UNITS PAGE "..self.rosterPage.." / 2","available",function(step)
             self.rosterPage=cycleOption({1,2},self.rosterPage,step)
         end,true)
-        text(310,83,"ORDERS: all troops")
+        text(310,80,"ORDERS: all troops")
         for i,order in ipairs({"Rush","Advance","Defend"}) do
             button(310+(i-1)*47,96,45,order,t.order==order and "selected" or "available",function()
                 t.order=order; self:ApplyTeamOrder(0)
@@ -2676,14 +2676,14 @@ function Frontline:DrawPanel()
             t.forward=(t.forward+step)%(#self.outposts+1)
         end,true)
         text(310,143,t.order=="Rush" and "RUSH: enemy brain" or ("TARGET: "..self.outposts[t.orderTarget].name))
-        button(310,158,64,"< PREV","available",function(step)
-            t.orderTarget=((t.orderTarget-1-step)%#self.outposts)+1
+        button(310,158,64,"< PREV","available",function()
+            t.orderTarget=((t.orderTarget-2)%#self.outposts)+1
             if t.order~="Rush" then self:ApplyTeamOrder(0) end
-        end,true)
-        button(381,158,69,"NEXT >","available",function(step)
-            t.orderTarget=((t.orderTarget-1+step)%#self.outposts)+1
+        end)
+        button(381,158,69,"NEXT >","available",function()
+            t.orderTarget=(t.orderTarget%#self.outposts)+1
             if t.order~="Rush" then self:ApplyTeamOrder(0) end
-        end,true)
+        end)
         text(310,181,"Advance: capture, then attack",true)
         text(310,193,"Defend: capture and hold",true)
         text(310,205,"Forward: +25/unit, "..(CONFIG.FORWARD_DEPLOY_COOLDOWN_MS/1000).."s cooldown",true)
@@ -2776,10 +2776,10 @@ function Frontline:DrawPanel()
         supportOption("strike","ORBITAL PRECISION STRIKE",CONFIG.CALLIN_STRIKE_COST,t.strikeTimer,CONFIG.CALLIN_STRIKE_COOLDOWN_MS,15,174)
         supportOption("bomb","CARPET BOMB",CONFIG.CALLIN_BOMB_COST,t.bombTimer,CONFIG.CALLIN_BOMB_COOLDOWN_MS,15,220)
         supportOption("cover","COVER",CONFIG.CALLIN_COVER_COST,t.coverTimer,CONFIG.CALLIN_COVER_COOLDOWN_MS,165,128)
-        supportOption("mines","MINES",CONFIG.CALLIN_MINES_COST,t.minesTimer,CONFIG.CALLIN_MINES_COOLDOWN_MS,165,174)
-        supportOption("turret","TURRET",CONFIG.CALLIN_TURRET_COST,t.turretTimer,CONFIG.CALLIN_TURRET_COOLDOWN_MS,165,220)
-        supportOption("shield","JAMMER",CONFIG.CALLIN_SHIELD_COST,t.shieldTimer,CONFIG.CALLIN_SHIELD_COOLDOWN_MS,165,266)
-        supportOption("bubble","ENERGY SHIELD",CONFIG.CALLIN_BUBBLE_COST,t.bubbleTimer,CONFIG.CALLIN_BUBBLE_COOLDOWN_MS,165,312)
+        supportOption("mines","MINES",CONFIG.CALLIN_MINES_COST,t.minesTimer,CONFIG.CALLIN_MINES_COOLDOWN_MS,165,168)
+        supportOption("turret","TURRET",CONFIG.CALLIN_TURRET_COST,t.turretTimer,CONFIG.CALLIN_TURRET_COOLDOWN_MS,165,208)
+        supportOption("shield","JAMMER",CONFIG.CALLIN_SHIELD_COST,t.shieldTimer,CONFIG.CALLIN_SHIELD_COOLDOWN_MS,165,248)
+        supportOption("bubble","ENERGY SHIELD",CONFIG.CALLIN_BUBBLE_COST,t.bubbleTimer,CONFIG.CALLIN_BUBBLE_COOLDOWN_MS,165,288)
         supportOption("medic","MEDIC DRONE",CONFIG.CALLIN_MEDIC_COST,t.medicTimer,CONFIG.CALLIN_MEDIC_COOLDOWN_MS,315,128)
         supportOption("mining","MINING",CONFIG.supportEffects.miningCost,t.minesTimer,CONFIG.CALLIN_MINES_COOLDOWN_MS,315,174)
         supportOption("weaponPod","WEAPON CACHE POD",CONFIG.CALLIN_WEAPON_POD_COST,t.weaponPodTimer,CONFIG.CALLIN_WEAPON_POD_COOLDOWN_MS,315,220)
@@ -2837,7 +2837,7 @@ function Frontline:DrawPanel()
     button(150,348,100,"AUTO: "..(t.auto and "ON" or "OFF"),t.auto and "selected" or "available",function() t.auto=not t.auto end,true)
     text(260,352,self:AutoReason(0))
     text(15,375,self.message)
-    text(15,393,"L/R: next/previous; blue = selected; red = locked",true)
+    text(15,393,"Cycles: L next / R previous; +/- or arrows: L only.",true)
     text(15,407,"The battle continues while this panel is open.")
     self:UIDrawBoxFill(screen,pos(mouse.X-2,mouse.Y-2),pos(mouse.X+2,mouse.Y+2),120)
 end

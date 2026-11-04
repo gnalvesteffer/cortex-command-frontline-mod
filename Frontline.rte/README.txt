@@ -70,3 +70,7 @@ the goal clears below strength 2.
 Urgent base or owned-post threats are checked every 250 ms and interrupt the
 normal decision cadence without running the full AI every frame. Deployment
 capacity includes dropship passengers whose unit slots are reserved in transit.
+
+Single-button value cycles use left click for next and right click for previous;
+paired plus/minus and previous/next controls act only in their labeled direction
+on left click.

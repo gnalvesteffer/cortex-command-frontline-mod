@@ -89,7 +89,7 @@ activity.UIDrawText=function(_,_,position,label,small)
         or label:find('Jammer blocks enemy',1,true) or label:find('strikes, bombs, orbital fire.',1,true) then
         supportDescriptionLines[#supportDescriptionLines+1]={x=position.X,y=position.Y,label=label,small=small}
     end
-    if position.Y==58 and ({Squad=true,Research=true,Support=true,Base=true,Battle=true,Setup=true})[label] then
+    if position.Y==57 and ({Squad=true,Research=true,Support=true,Base=true,Battle=true,Setup=true})[label] then
         tabOrder[#tabOrder+1]=label
     end
 end
@@ -410,9 +410,9 @@ for _,entry in ipairs(pageThreeText) do
     if entry.label:find("and ",1,true) then lowestRequirementY=math.max(lowestRequirementY or 0,entry.y) end
     if entry.label:find("Connectors show prerequisites",1,true) then pageThreeHint=true end
 end
-assert(energyShieldY==299 and turretRequirementY==314 and jammerRequirementY==326
+assert(energyShieldY==298 and turretRequirementY==314 and jammerRequirementY==326
     and lowestRequirementY==326 and not pageThreeHint,
-    'both Energy Shield prerequisites must fit below their node and above the persistent footer')
+    'both Energy Shield prerequisites must fit below their node and above the persistent footer: node='..tostring(energyShieldY)..', turret='..tostring(turretRequirementY)..', jammer='..tostring(jammerRequirementY)..', lowest='..tostring(lowestRequirementY)..', hint='..tostring(pageThreeHint))
 local connectorStarts={}
 assert(#pageThreeConnectors==2,'Energy Shield must have a connector for both Turret and Support Jammer Lv.2')
 for _,connector in ipairs(pageThreeConnectors) do
@@ -435,22 +435,22 @@ activity.tab='Squad'
 local squad=activity.teams[0]
 squad.orderTarget=1
 clickPanel(400,165,MouseButtons.MOUSE_RIGHT)
-assert(squad.orderTarget==#activity.outposts, 'right-clicking NEXT must select the previous target and wrap')
+assert(squad.orderTarget==1, 'right-clicking NEXT must not reverse its indicated direction')
 clickPanel(400,165,MouseButtons.MOUSE_LEFT)
-assert(squad.orderTarget==1, 'left-clicking NEXT must select the next target and wrap')
+assert(squad.orderTarget==2, 'left-clicking NEXT must select the next target')
 clickPanel(320,158,MouseButtons.MOUSE_LEFT)
-assert(squad.orderTarget==#activity.outposts, 'left-clicking PREV must move backward and wrap')
+assert(squad.orderTarget==1, 'left-clicking PREV must select the previous target')
 clickPanel(320,158,MouseButtons.MOUSE_RIGHT)
-assert(squad.orderTarget==1, 'right-clicking PREV must reverse direction and move forward')
+assert(squad.orderTarget==1, 'right-clicking PREV must not reverse its indicated direction')
 squad.counts[6]=0
 clickPanel(280,100,MouseButtons.MOUSE_RIGHT)
-assert(squad.counts[6]==0, 'right-clicking + at zero must not decrement below zero')
+assert(squad.counts[6]==0, 'right-clicking + must not decrease the count')
 clickPanel(280,100,MouseButtons.MOUSE_LEFT)
 assert(squad.counts[6]==1, 'left-clicking + must increment the count')
 clickPanel(235,100,MouseButtons.MOUSE_RIGHT)
-assert(squad.counts[6]==2, 'right-clicking - must increment the count')
+assert(squad.counts[6]==1, 'right-clicking - must not increment the count')
 clickPanel(235,100,MouseButtons.MOUSE_LEFT)
-assert(squad.counts[6]==1, 'left-clicking - must decrement the count')
+assert(squad.counts[6]==0, 'left-clicking - must decrement the count')
 activity.setupStep=1
 activity.settings.startFunds=450
 activity.cursorX=100; activity.cursorY=95; buttonDown=MouseButtons.MOUSE_LEFT; activity:DrawWizard()
@@ -485,21 +485,21 @@ activity.rosterPage=1
 clickPanel(320,245,MouseButtons.MOUSE_RIGHT); assert(activity.rosterPage==2)
 clickPanel(320,245,MouseButtons.MOUSE_LEFT); assert(activity.rosterPage==1)
 squad.weapons[6]=1
-clickPanel(20,110,MouseButtons.MOUSE_LEFT); assert(squad.weapons[6]==7)
-clickPanel(20,110,MouseButtons.MOUSE_RIGHT); assert(squad.weapons[6]==1)
+clickPanel(20,111,MouseButtons.MOUSE_LEFT); assert(squad.weapons[6]==7)
+clickPanel(20,111,MouseButtons.MOUSE_RIGHT); assert(squad.weapons[6]==1)
 local savedSidearm,savedSidearmUnlock,savedRpgUnlock=squad.sidearms[6],squad.levels[19],squad.levels[10]
 squad.sidearms[6]=0; squad.levels[19]=1; squad.levels[10]=1
-clickPanel(130,110,MouseButtons.MOUSE_LEFT); assert(squad.sidearms[6]==1)
-clickPanel(130,110,MouseButtons.MOUSE_LEFT); assert(squad.sidearms[6]==2)
-clickPanel(130,110,MouseButtons.MOUSE_RIGHT); assert(squad.sidearms[6]==1)
-clickPanel(130,110,MouseButtons.MOUSE_RIGHT); assert(squad.sidearms[6]==0)
+clickPanel(130,111,MouseButtons.MOUSE_LEFT); assert(squad.sidearms[6]==1)
+clickPanel(130,111,MouseButtons.MOUSE_LEFT); assert(squad.sidearms[6]==2)
+clickPanel(130,111,MouseButtons.MOUSE_RIGHT); assert(squad.sidearms[6]==1)
+clickPanel(130,111,MouseButtons.MOUSE_RIGHT); assert(squad.sidearms[6]==0)
 squad.sidearms[6]=savedSidearm; squad.levels[19]=savedSidearmUnlock; squad.levels[10]=savedRpgUnlock
 local equipmentUnlocks={medkits={17,179},grenades={18,217},armor={20,255}}
 for key,equipment in pairs(equipmentUnlocks) do
     local index=equipment[1]; local savedLevel=squad.levels[index]
     squad.levels[index]=1; squad[key][6]=false
-    clickPanel(equipment[2]+5,110,MouseButtons.MOUSE_LEFT); assert(squad[key][6])
-    clickPanel(equipment[2]+5,110,MouseButtons.MOUSE_RIGHT); assert(not squad[key][6])
+    clickPanel(equipment[2]+5,111,MouseButtons.MOUSE_LEFT); assert(squad[key][6])
+    clickPanel(equipment[2]+5,111,MouseButtons.MOUSE_RIGHT); assert(not squad[key][6])
     squad.levels[index]=savedLevel
 end
 buttonDown=nil
