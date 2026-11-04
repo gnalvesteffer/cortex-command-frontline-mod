@@ -6,13 +6,17 @@ local nextId=0
 function CreateAHuman(n,m) nextId=nextId+1; return {Team=0,UniqueID=nextId,name=n,Health=100,MaxHealth=100,Height=70,AddInventoryItem=function(self,item) self.inventory=item end,ClearAIWaypoints=function(self) self.waypoint=nil end,AddAISceneWaypoint=function(self,v) self.waypoint=v end} end
 local turretMuzzles={["Gatling Turret"]={x=11,y=-8},["Frontline HE Turret"]={x=49,y=-1}}
 function CreateACrab(n,m) local a=CreateAHuman(n,m); a.vehicle=true; a.MuzzleOffset=turretMuzzles[n]; return a end
+-- Rows/offsets are measured from Base.rte's material bitmaps and bunker INI.
 local bunkerGeometry={
-    ["Tunnel A"]={width=96,height=96,openingTop=24,openingBottom=72},
-    ["Tunnel B"]={width=48,height=96,openingTop=24,openingBottom=72},
+    ["Tunnel A"]={width=96,height=96,bitmapOffsetY=-48,roofPixelY=0,walkablePixelY=72,openingTop=24,openingBottom=71},
+    ["Tunnel B"]={width=48,height=96,bitmapOffsetY=-48,roofPixelY=0,walkablePixelY=72,openingTop=24,openingBottom=71},
+    ["Brain Vault"]={bitmapOffsetY=-94,walkablePixelY=119},
+    ["Frontline Mirrored Brain Vault"]={bitmapOffsetY=-94,walkablePixelY=119},
 }
 function CreateTerrainObject(name)
     local geometry=bunkerGeometry[name] or {}
     return {name=name,width=geometry.width,height=geometry.height,
+        bitmapOffsetY=geometry.bitmapOffsetY,roofPixelY=geometry.roofPixelY,walkablePixelY=geometry.walkablePixelY,
         openingTop=geometry.openingTop,openingBottom=geometry.openingBottom}
 end
 function CreateACDropShip(n,m)
@@ -40,11 +44,7 @@ function CreateMOSParticle(n,m) return entity(n) end
 function ToTDExplosive(item) return item end
 function ToActor(item) return item end
 function CreateSoundContainer() return {Play=function(self) self.playCount=(self.playCount or 0)+1 end} end
-function CreateTerrainObject(name)
-    local geometry=bunkerGeometry[name] or {}
-    return {name=name,width=geometry.width,height=geometry.height,
-        openingTop=geometry.openingTop,openingBottom=geometry.openingBottom}
-end
+-- The test fixture above models the actual bitmap dimensions and surface rows.
 local actors={}
 MovableMan={
     Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(),
@@ -80,8 +80,8 @@ for index,expectedX in ipairs({1300,2600,3900}) do
 end
 assert(sceneObjects[4].name=="Frontline Mirrored Brain Vault" and sceneObjects[4].Team==0 and sceneObjects[4].Pos.X==180)
 assert(sceneObjects[5].name=="Brain Vault" and sceneObjects[5].Team==1 and sceneObjects[5].Pos.X==5020)
-local expectedLeft={{340,560,"Tunnel A"},{436,560,"Tunnel A"},{508,560,"Tunnel B"},{484,488,"Tunnel A"}}
-local expectedRight={{4860,560,"Tunnel A"},{4764,560,"Tunnel A"},{4692,560,"Tunnel B"},{4716,488,"Tunnel A"}}
+local expectedLeft={{340,570,"Tunnel A"},{436,570,"Tunnel A"},{508,570,"Tunnel B"},{484,498,"Tunnel A"}}
+local expectedRight={{4860,570,"Tunnel A"},{4764,570,"Tunnel A"},{4692,570,"Tunnel B"},{4716,498,"Tunnel A"}}
 for index,expected in ipairs(expectedLeft) do
     local left,right=sceneObjects[5+index],sceneObjects[9+index]
     assert(left.name==expected[3] and left.Pos.X==expected[1] and left.Pos.Y==expected[2] and left.Team==0 and left.HFlipped)
@@ -93,22 +93,27 @@ for index,expected in ipairs(expectedLeft) do
         assert(math.abs(right.Pos.X-sceneObjects[9+index-1].Pos.X)==span)
     end
 end
-local groundY=600
 local hallway=sceneObjects[6]
 local finalHall=sceneObjects[8]
 local enemyFinalHall=sceneObjects[12]
 local upperLeft,upperRight=sceneObjects[9],sceneObjects[13]
-local hallwayFloor=hallway.Pos.Y+40
-local mainRoomFloor=sceneObjects[4].Pos.Y+31
-local hallwayTop=hallway.Pos.Y-hallway.height/2
-local upperOpeningTop=upperLeft.Pos.Y-upperLeft.height/2+upperLeft.openingTop
-local upperOpeningBottom=upperLeft.Pos.Y-upperLeft.height/2+upperLeft.openingBottom
+local function materialFloorY(object)
+    return object.Pos.Y+object.bitmapOffsetY+object.walkablePixelY
+end
+local playerHallFloor=materialFloorY(hallway)
+local enemyHallFloor=materialFloorY(sceneObjects[10])
+local playerVaultFloor=materialFloorY(sceneObjects[4])
+local enemyVaultFloor=materialFloorY(sceneObjects[5])
+local hallwayRoof=hallway.Pos.Y+hallway.bitmapOffsetY+hallway.roofPixelY
+local upperOpeningTop=upperLeft.Pos.Y+upperLeft.bitmapOffsetY+upperLeft.openingTop
+local upperOpeningBottom=upperLeft.Pos.Y+upperLeft.bitmapOffsetY+upperLeft.openingBottom
 local playerExit=finalHall.Pos.X+finalHall.width/2
 local enemyExit=enemyFinalHall.Pos.X-enemyFinalHall.width/2
 local playerOuterRoomEdge=upperLeft.Pos.X+upperLeft.width/2
 local enemyOuterRoomEdge=upperRight.Pos.X-upperRight.width/2
-assert(hallwayFloor==mainRoomFloor and hallwayFloor==groundY,
-    'approach hallway and main vault floors must connect at ground level')
+assert(playerHallFloor==playerVaultFloor and enemyHallFloor==enemyVaultFloor
+    and playerHallFloor==enemyHallFloor and playerHallFloor==594,
+    'measured walkable material surfaces must align at ground-6 in both mirrored bunkers')
 assert(playerOuterRoomEdge==playerExit and enemyOuterRoomEdge==enemyExit
     and playerExit+enemyExit==SceneMan.SceneWidth,
     'the upper turret rooms must meet the outer exits using the actual Tunnel A/B asset widths')
@@ -122,7 +127,7 @@ for _,turret in ipairs({{object=CreateACrab("Gatling Turret"),team=0},{object=Cr
     object.Pos=turret.team==0 and upperLeft.Pos or upperRight.Pos
     object.HFlipped=turret.team==1
     local muzzleX,muzzleY=worldMuzzle(object)
-    assert(muzzleY>=upperOpeningTop and muzzleY<=upperOpeningBottom and muzzleY< hallwayTop,
+    assert(muzzleY>=upperOpeningTop and muzzleY<=upperOpeningBottom and muzzleY<hallwayRoof,
         'stock Gatling/HE preset muzzle must lie in the upper Tunnel A bore above the lower corridor roof')
     if object.name=="Frontline HE Turret" then
         local exit=turret.team==0 and playerExit or enemyExit
@@ -133,7 +138,8 @@ for _,turret in ipairs({{object=CreateACrab("Gatling Turret"),team=0},{object=Cr
             'mirrored Gatling muzzle must face outward through the upper bore')
     end
 end
-assert(sceneObjects[6].Pos.Y-sceneObjects[9].Pos.Y==72 and sceneObjects[10].Pos.Y-sceneObjects[13].Pos.Y==72)
+assert(sceneObjects[6].Pos.Y-sceneObjects[9].Pos.Y==72 and sceneObjects[10].Pos.Y-sceneObjects[13].Pos.Y==72,
+    'moving the hallway down must preserve upper room and turret vertical alignment')
 assert(508+24<1300-48 and 4692-24>3900+48,'base tunnel segments must remain separate from outpost bunkers')
 for _,object in ipairs(sceneObjects) do assert(object.name~="Tut Roof Attachment","bunker must not add floating roof attachments") end
 a.panel=false
@@ -500,7 +506,7 @@ assert(base.commanders[0]:BaseUpgrade('repair')); assert(base.brains[0].Health==
 assert(base.commanders[0]:BaseUpgrade('turret'))
 local playerMuzzleX,playerMuzzleY=worldMuzzle(bt.turret)
 assert(bt.turret.name=='Gatling Turret' and bt.turret.AIMode==Actor.AIMODE_SENTRY
-    and bt.turret.AimDistance==30 and bt.turret.Pos.X==484 and bt.turret.Pos.Y==488
+    and bt.turret.AimDistance==30 and bt.turret.Pos.X==484 and bt.turret.Pos.Y==498
     and not bt.turret.HFlipped and playerMuzzleX<playerExit
     and playerMuzzleY>=upperOpeningTop and playerMuzzleY<=upperOpeningBottom and bt.funds==1330)
 local gatling=bt.turret
@@ -518,7 +524,7 @@ for index=1,29 do bi.levels[index]=10 end
 bi.baseArmor=3; bi.auto=false; bi.funds=3000; bi.timer.ElapsedSimTimeMS=0
 base:UpdateAI()
 assert(bi.turret and bi.turret.name=='Gatling Turret' and bi.turret.AimDistance==30
-    and bi.turret.Team==1 and bi.turret.Pos.X==4716 and bi.turret.Pos.Y==488 and bi.turret.HFlipped)
+    and bi.turret.Team==1 and bi.turret.Pos.X==4716 and bi.turret.Pos.Y==498 and bi.turret.HFlipped)
 local enemyMuzzleX,enemyMuzzleY=worldMuzzle(bi.turret)
 assert(enemyMuzzleX>enemyExit and enemyMuzzleY>=upperOpeningTop and enemyMuzzleY<=upperOpeningBottom)
 bi.funds=2000
@@ -611,7 +617,7 @@ assert(tall.brains[0].Pos.Y==1070 and tall.brains[1].Pos.Y==1070)
 tall:StartBattle(); tall.matchTimer.ElapsedSimTimeMS=15001; tall.teams[0].funds=5000
 tall.teams[0].timer.ElapsedSimTimeMS=10001
 assert(tall.commanders[0]:Deploy()); assert(actors[#actors].Pos.Y==1065)
-assert(tall.commanders[0]:BaseUpgrade('turret')); assert(tall.teams[0].turret.Pos.Y==988)
+assert(tall.commanders[0]:BaseUpgrade('turret')); assert(tall.teams[0].turret.Pos.Y==998)
 SceneMan.MovePointToGround=originalGround; SceneMan.SceneWidth=5200
 print('Elevated battlefield spawns bases, squads and turrets at ground-relative heights')
 

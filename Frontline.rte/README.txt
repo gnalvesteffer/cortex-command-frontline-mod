@@ -32,9 +32,9 @@ random firearms from loaded-game HDFirearm presets, including exotic weapons.
 The upgradeable base turret progresses from a Gatling Turret at level 1 to the
 custom Frontline HE Turret at level 2; its upgrade has 1.5x base range.
 
-The approach hallway floor meets the main vault floor. Mirrored upper turret
-rooms align with the outermost hallway exits at the battlefield-facing base
-edges, with Gatling and HE muzzles clear of the corridor roof and facing outward.
+The approach hallway's walkable floor is aligned to the main vault exit on both
+teams. Mirrored upper turret rooms align with the battlefield-facing outer exits,
+with Gatling and HE muzzles clear of the corridor roof and facing outward.
 
 
 The Support tab orders the offense as Orbital Gatling Barrage, Orbital Precision

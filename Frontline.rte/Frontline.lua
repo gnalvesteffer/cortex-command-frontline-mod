@@ -33,7 +33,7 @@ local CONFIG = {
     BASE_ARMOR_COST = 200, BASE_ARMOR_HEALTH = 50, BASE_ARMOR_LEVELS = 3,
     BASE_REPAIR_COST = 120, BASE_REPAIR_HEALTH = 50, BASE_TURRET_COST = 350, BASE_TURRET_UPGRADE_COST=650,
     BASE_TURRET_RANGE_MULTIPLIER=1.5, BASE_TURRET_AIM_DISTANCE=30,
-    BASE_TOWER_DISTANCE=484, BASE_TOWER_HEIGHT=112, BASE_TURRET_PIN_STRENGTH=100000,
+    BASE_TOWER_DISTANCE=484, BASE_TOWER_HEIGHT=102, BASE_TURRET_PIN_STRENGTH=100000,
     -- Unit and equipment catalogs
     roster = {
         {name="Coalition Light", actor="Soldier Light", mod="Coalition.rte", price=75, unlock=0, research=1},
@@ -222,8 +222,10 @@ CONFIG.map={
     },
     mining={scanMargin=12,depositMergeVertical=80,verticalDistanceWeight=0.2,verticalDigRange=120},
     baseApproach={
-        -- Keep the tunnel floor at ground level alongside the vault opening.
-        corridorYOffset=40,
+        -- Tunnel material walkable surface is row 72 at local Y +24.
+        -- Brain Vault exit floor is row 119 at local Y +25 (BitmapOffset Y=-94).
+        -- Match both measured material surfaces, not their bitmap bounds.
+        corridorYOffset=30,
         -- Tunnel A/B footprints are 96/48px wide; centers meet edge-to-edge.
         sections={{distance=340,preset="Tunnel A"},{distance=436,preset="Tunnel A"},{distance=508,preset="Tunnel B"}},
     },
