@@ -15,21 +15,12 @@ This is a Cortex Command mod called "Frontline" that adds squad-based tactical g
 - `Frontline.rte/BombRunBomb.lua` - Bomb run bomb entity (falls and explodes on impact)
 
 ## Research System
-Research is 1-indexed in `CONFIG.research`:
-- 1: Coalition Light
-- 2: Income +2/s; 3: Bounty +15
-- 4: Coalition Heavy; 5: Dummy / Gatling Drone; 6: Browncoat Light
-- 7–10: SMG, Shotgun, Sniper Rifle, Missile Launcher
-- 11–14: Medic Drone levels and Shield levels
-- 15: Mining call-in; 16: Perception training
-- 17–21: Assault Rifle, Medikit Packs, Grenade Packs, Sidearms, Unit Armor
-- 22: Orbital Gatling Barrage; 23: Cover; 24: Mines
-- 25: Orbital Precision Strike; 26: Carpet Bomb; 27: Static Turret; 28: Energy Shield
+`CONFIG.research` is an ordered Lua array: its research indices are one-based, matching Lua array positions and the `requires`, `requiresAll`, `supportResearch`, and UI label references. The research tree runs from 1 through 29. Support Jammer is one node at index 13 with levels 1 and 2; Energy Shield is index 27 and requires both Turret (index 26) and Support Jammer level 2 (index 13). Weapon Cache Pod is index 28 and requires Mining Call-In (index 14). Squad Size +1 is index 29, repeatable up to six times.
 
-Unit unlocks follow the tier chain (1 → 4 → 5 → 6). Support availability is controlled by `CONFIG.supportResearch`.
+The research UI has categorized pages, including Support Network. Support Jammer upgrades extend duration. Medic Drone research provides delivery, with its second level increasing the delivery to two drones. Mining Call-In drops a mining unit.
 
 ## Call-In System
-Call-ins use the CreateSupportShip function to spawn dropships that deliver payloads. Bomb runs are handled separately with scripted flight paths in UpdateCallIns.
+Weapon Cache Pod is delivered by a landing pod, which opens and dispenses three random firearms from loaded-game HDFirearm presets, including exotic weapons. It is distinct from dropship-delivered payloads.
 
 Key call-in types:
 - strike: Orbital Precision Strike
@@ -38,6 +29,14 @@ Key call-in types:
 - mines/cover: Defensive equipment drops
 - orbital: Orbital Gatling Barrage
 - energyShield: Bubble field that destroys hostile projectiles
+- weapon cache: Weapon Cache Pod, unlocked by Mining Call-In (index 14)
+
+Bomb runs release three bombs along their flight path; released bombs are not intercepted by the Support Jammer. Orbital Gatling Barrage fires 72 rounds, with a 36-round research bonus and 16 fragments per round.
+
+## Base Upgrades
+The upgradeable base turret progresses from a Gatling Turret at level 1 to the custom Frontline HE Turret at level 2. The turret upgrade has 1.5× its base range.
+
+The tabs are ordered Squad, Research, Support, Base, Battle, Setup. Squad selection uses manual unit configuration without presets. Squad size starts at 3 and can reach 9 through six Squad Size upgrades.
 
 ## Gotchas
 - Bomb entities must be created as pixel entities (CreateMOPixel), not TDExplosive objects, to avoid immediate detonation

@@ -22,7 +22,6 @@ local CONFIG = {
         {name="Dummy", actor="Dummy", mod="Dummy.rte", price=30, unlock=1},
         {name="Browncoat Light", actor="Browncoat", mod="Browncoats.rte", price=145, unlock=3},
         {name="Gatling Drone", actor="Gatling Drone", mod="Coalition.rte", price=260, unlock=2, vehicle=true},
-        {name="Miner", actor="Soldier Light", mod="Coalition.rte", price=100, unlock=0, research=11, miner=true},
         {name="Ronin Bandit", actor="Bandit", mod="Ronin.rte", price=50, unlock=0},
     },
     research = {
@@ -75,19 +74,19 @@ function test_starting_units_are_ronin()
     print("\n=== Starting Units Are Ronin Bandits ===")
     
     -- Simulate fresh team state
-    local team = {funds=450, levels={0,0,0,0,0}, tier=0, counts={0,0,0,0,0,0,2}}
+    local team = {funds=450, levels={0,0,0,0,0}, tier=0, counts={0,0,0,0,0,3}}
     
-    -- Verify the counts array has 2 Ronin Bandits (index 7)
-    assert(team.counts[7] == 2, "Starting deployment has 2 Ronin Bandits")
+    -- The fresh squad has three Ronin Bandits at roster index 6.
+    assert(team.counts[6] == 3, "Starting deployment has 3 Ronin Bandits at roster index 6")
     assert(team.counts[1] == 0, "Starting deployment has 0 Coalition Light units")
     
-    -- Verify Ronin Bandit is unlocked at start (tier 0, no research)
-    local ronin = CONFIG.roster[7]
+    -- Verify Ronin Bandit is unlocked at start (tier 0, no research).
+    local ronin = CONFIG.roster[6]
     local unlocked = ronin.unlock <= team.tier and (not ronin.research or team.levels[ronin.research] > 0)
     assert(unlocked, "Ronin Bandit is unlocked at match start")
     
-    -- Verify the batch cost is affordable with starting funds
-    local totalCost = team.counts[7] * ronin.price
+    -- Verify the three-unit batch cost is affordable with starting funds.
+    local totalCost = team.counts[6] * ronin.price
     assert(totalCost <= team.funds, "Starting Ronin deployment (" .. totalCost .. " oz) is affordable with " .. team.funds .. " oz")
 end
 
@@ -97,31 +96,19 @@ function test_ai_deploys_early()
     -- Simulate AI decision at match start with limited funds
     local ai = {funds=450, tier=0, levels={0,0,0,0,0}}
     
-    -- AI should be able to deploy something immediately
-    -- Ronin Bandits cost 50 each, so AI can afford at least one
-    local ronin = CONFIG.roster[7]
-    assert(ai.funds >= ronin.price, "AI has enough funds for at least one Ronin Bandit at match start")
+    -- The AI starts with three Ronin Bandits at roster index 6.
+    local ronin = CONFIG.roster[6]
+    local firstSquadSize = 3
+    local firstSquadCost = ronin.price * firstSquadSize
+    assert(ai.funds >= firstSquadCost, "AI has enough funds for its three-Ronin starting squad")
     
-    -- Simulate multiple AI deployment attempts with increasing funds
-    local ai_funds = 450
-    for i = 1, 5 do
-        if ai_funds >= 200 then
-            -- AI should deploy as soon as it has 200+ oz (can afford 4 Ronin)
-            local can_deploy = ai_funds >= ronin.price * 2
-            assert(can_deploy or i > 1, "AI can deploy units when funds reach threshold")
-            break
-        end
-        ai_funds = ai_funds + 50 -- Simulate income
-    end
-    
-    -- Verify AI doesn't wait too long (should deploy within first few decisions)
+    local ai_funds = 100
     local decisions_before_deploy = 0
-    ai_funds = 450
-    while ai_funds < 200 do
+    while ai_funds < firstSquadCost do
         ai_funds = ai_funds + 50
         decisions_before_deploy = decisions_before_deploy + 1
     end
-    assert(decisions_before_deploy <= 3, "AI deploys within 3 decision cycles (not waiting too long)")
+    assert(decisions_before_deploy == 1, "AI reaches the three-Ronin deployment cost in one income decision")
 end
 
 function test_unit_unlock_chain()

@@ -11,22 +11,56 @@ function CreateACDropShip(n,m)
         SetControllerMode=function(self,mode) self.controller=mode end,
         SetGoldValue=function(self,value) self.goldValue=value end,
         GetTotalValue=function(self) return self.returnValue or 0 end,
-        OpenHatch=function(self) self.hatchOpen=true end,
+        OpenHatch=function(self) self.hatchOpen=true; self.openedWithCargo=#self.cargo; self.cargo={}; self.InventorySize=0 end,
         RemoveInventoryItemAtIndex=function(self,index) local item=table.remove(self.cargo,index+1); self.InventorySize=#self.cargo; return item end,
         AddInventoryItem=function(self,item) table.insert(self.cargo,item); self.InventorySize=#self.cargo end}
 end
-function CreateHDFirearm(n,m) return {name=n} end
+local function entity(name)
+    local item={name=name,numberValues={}}
+    function item:SetNumberValue(key,value) self.numberValues[key]=value end
+    function item:GetNumberValue(key) return self.numberValues[key] or 0 end
+    return item
+end
+local firearmCreates={}
+function CreateHDFirearm(n,m)
+    table.insert(firearmCreates,{name=n,module=m})
+    if n=="Broken Firearm" then return nil end
+    return {name=n,module=m}
+end
 function CreateTDExplosive(n,m) return {name=n,GibThis=function(self) self.gibbed=true end,Activate=function(self) self.activated=true end} end
-function CreateMOSRotating(n,m) return {name=n} end
+function CreateMOSRotating(n,m) local item=entity(n); function item:GibThis() self.gibbed=true; self.ToDelete=true end; return item end
+function CreateMOPixel(n,m) return entity(n) end
+function CreateMOSParticle(n,m) return entity(n) end
 function ToTDExplosive(item) return item end
-function CreateMOPixel(n,m) return {name=n} end
+function ToActor(item) return item end
 function CreateSoundContainer() return {Play=function(self) self.playCount=(self.playCount or 0)+1 end} end
 function CreateTerrainObject(name) return {name=name} end
-local actors={}; MovableMan={Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(), AddActor=function(s,a) table.insert(actors,a) end, AddParticle=function(s,p) s.lastParticle=p; s.particleCount=(s.particleCount or 0)+1; s.particles=s.particles or {}; table.insert(s.particles,p) end, IsActor=function(s,a) return a~=nil and not a.deleted end}
+local function iterator(items)
+    local index=0
+    return function() index=index+1; return items[index] end
+end
+local presets={
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Rifle A","Mod A.rte" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Pistol","Base.rte" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Broken Firearm","Mod B.rte" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Shotgun","Coalition.rte" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Rifle B","Mod C.rte" end},
+    {ClassName="MOSRotating",GetModuleAndPresetName=function() return "Not a firearm","Base.rte" end},
+}
+PresetMan={Modules=iterator({{Presets=iterator(presets)}})}
+local actors={}
+MovableMan={
+    Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(),
+    AddActor=function(s,a) table.insert(actors,a) end,
+    AddParticle=function(s,p) s.lastParticle=p; s.particleCount=(s.particleCount or 0)+1; s.particles=s.particles or {}; table.insert(s.particles,p) end,
+    AddItem=function(s,item) s.items=s.items or {}; table.insert(s.items,item) end,
+    IsActor=function(s,a) return a~=nil and not a.deleted end,
+    IsParticle=function(s,p) for _,item in ipairs(s.particles or {}) do if item==p then return not p.ToDelete end end; return false end,
+}
 MovableMan.Particles=(function() local i=0; return function() i=i+1; local items=MovableMan.particles or {}; if not items[i] then i=0; return nil end; return items[i] end end)()
 function IsAHuman(a) return not a.vehicle and not a.ship end; function IsACrab(a) return a.vehicle==true end
 local sceneObjects={}
-SceneMan={SceneWidth=5200, SceneHeight=800, CastMaterialRay=function() return false end, AddSceneObject=function(_,o) table.insert(sceneObjects,o) end, MovePointToGround=function(_,p) return Vector(p.X,600) end, Add=function(_,name,pos,team) local actor=CreateAHuman(name,"Dummy.rte"); actor.Team=team; actor.Pos=pos; table.insert(actors,actor); return actor end}; MusicMan={PlayDynamicSong=function() end}
+SceneMan={SceneWidth=5200, SceneHeight=800, CastMaterialRay=function() return false end, AddSceneObject=function(_,o) table.insert(sceneObjects,o) end, MovePointToGround=function(_,p) return Vector(p.X,600) end}; MusicMan={PlayDynamicSong=function() end}
 FrameMan={IsHudDisabled=function() return false end,SetHudDisabled=function() end}; PrimitiveMan={DrawLinePrimitive=function() end,DrawTextPrimitive=function() end}
 TimerMan={DeltaTimeSecs=1}; UInputMan={KeyPressed=function()return false end}; ActivityMan={EndActivity=function() end}
 function Frontline:SetPlayerBrain() end; function Frontline:SetViewState() end; function Frontline:SetObservationTarget() end
@@ -34,18 +68,51 @@ function Frontline:GetTeamDeathCount(team) return self.deathCounts[team] end
 assert(loadfile('Frontline.rte/Frontline.lua'))()
 local activity=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 activity:StartActivity(); activity:StartBattle(); activity.matchTimer.ElapsedSimTimeMS=15000
-assert(activity.teams[0].counts[6]==2 and activity.teams[1].counts[6]==2, 'both teams must start with two Ronin Bandits selected')
+assert(activity.teams[0].counts[6]==3 and activity.teams[1].counts[6]==3, 'both teams must start with three Ronin Bandits selected')
 activity:UpdateAI()
-assert(activity:UnitCount(1)==2, 'AI first deployment must be exactly two Ronin Bandits')
-local panelText={}
+assert(activity:UnitCount(1)==3, 'AI first deployment must be exactly three Ronin Bandits')
+local aiTeam=activity.teams[1]
+assert(activity:MaxSquadSize(1)==3)
+aiTeam.counts={0,0,0,0,0,4}
+local _,_,aiSizeError=activity:Batch(1)
+assert(aiSizeError=='Squad size limit')
+local aiDeployed,aiDeployError=activity:Deploy(1)
+assert(not aiDeployed and aiDeployError=='Squad size limit','AI deployments must obey the unresearched three-unit cap')
+aiTeam.counts={0,0,0,0,0,3}
+local panelText,panelEntries,tabOrder,supportDescriptionLines={},{},{},{}
 activity.UIDrawBoxFill=function() end
 activity.UIDrawBox=function() end
-activity.UIDrawText=function(_,_,_,label) panelText[#panelText+1]=label end
+activity.UIDrawText=function(_,_,position,label,small)
+    panelText[#panelText+1]=label
+    panelEntries[#panelEntries+1]={x=position.X,y=position.Y,label=label,small=small}
+    if label:find('Shield destroys',1,true) or label:find('projectiles in its bubble.',1,true)
+        or label:find('Jammer blocks enemy',1,true) or label:find('strikes, bombs, orbital fire.',1,true) then
+        supportDescriptionLines[#supportDescriptionLines+1]={x=position.X,y=position.Y,label=label,small=small}
+    end
+    if position.Y==58 and ({Squad=true,Research=true,Support=true,Base=true,Battle=true,Setup=true})[label] then
+        tabOrder[#tabOrder+1]=label
+    end
+end
 CameraMan={GetOffset=function() return Vector(0,0) end}
 UInputMan.GetMouseMovement=function() return Vector(0,0) end
 UInputMan.MouseButtonPressed=function() return false end
 activity.tab='Support'; activity:DrawPanel()
 local supportLabels=table.concat(panelText,' ')
+local function smallFontWidthEstimate(label) return #label*5 end
+assert(#supportDescriptionLines==4 and supportLabels:find('WEAPON CACHE POD',1,true),
+    'personnel column must expose the weapon pod and capture all Energy Shield/Jammer description lines')
+for _,line in ipairs(supportDescriptionLines) do
+    assert(line.small and line.x==315 and line.y>=274 and line.y<=326
+        and line.x+smallFontWidthEstimate(line.label)<=465,
+        'Support description must remain in-column: '..line.label)
+end
+print('Support Energy Shield/Jammer description lines fit the column width (x + estimated small-font width <= 465)')
+assert(table.concat(tabOrder,',')=='Squad,Research,Support,Base,Battle,Setup','Battle must be the penultimate tab, immediately before Setup')
+local panelTextStart=#panelText
+activity.tab='Squad'; activity:DrawPanel()
+local squadPanelText=table.concat(panelText,' ',panelTextStart+1)
+assert(squadPanelText:find('Squad 3/3 (six +1 upgrades to 9)',1,true),'squad panel must show the starting size and six +1 capacity upgrades')
+activity.tab='Support'
 local barrage=supportLabels:find('ORBITAL GATLING BARRAGE',1,true)
 local strategicChoices={
     {kind='advance',neutral=true,enemies=0,target=1},
@@ -68,11 +135,11 @@ assert(barrage and precision and carpetBomb and barrage<precision and precision<
 assert(bubbleShield and supportLabels:find('LOCKED',1,true), 'unresearched supports, including energy shield, must display locked states')
 local team=activity.teams[0]; team.funds=25000
 local target=activity.outposts[2]
-local expectedCosts={[1]=300,[2]=360,[3]=320,[4]=500,[5]=700,[6]=1000,[7]=300,[8]=340,[9]=400,[10]=600,[11]=400,[12]=700,[13]=500,[14]=800,[15]=400,[16]=500,[17]=700,[18]=400,[19]=440,[20]=480,[21]=600,[22]=600,[23]=280,[24]=360,[25]=800,[26]=1000,[27]=520,[28]=1200}
+local expectedCosts={[1]=300,[2]=360,[3]=320,[4]=500,[5]=700,[6]=1000,[7]=300,[8]=340,[9]=400,[10]=600,[11]=400,[12]=700,[13]=500,[14]=400,[15]=500,[16]=700,[17]=400,[18]=440,[19]=480,[20]=600,[21]=600,[22]=280,[23]=360,[24]=800,[25]=1000,[26]=520,[27]=1200,[28]=700,[29]=500}
 for index,price in pairs(expectedCosts) do
     assert(activity:ResearchCost(0,index)==price, 'research index '..index..' should cost '..price..' oz before outpost discount')
 end
-for _,kind in ipairs({'strike','medic','cover','mines','bomb','turret','orbital','shield','bubble','mining'}) do
+for _,kind in ipairs({'strike','medic','cover','mines','bomb','turret','orbital','shield','bubble','mining','weaponPod'}) do
     local ok,message=activity:CallIn(0,kind,2)
     assert(not ok and message:find('Research',1,true), kind..' must be gated by its research node')
 end
@@ -83,16 +150,140 @@ assert(not activity:Research(0,6), 'Browncoat must require Dummy / Gatling resea
 assert(activity:Research(0,5) and team.tier==2)
 assert(activity:Research(0,6) and team.tier==3)
 assert(not activity:Research(0,12), 'medic level 2 must require level 1')
-assert(not activity:Research(0,14), 'shield level 2 must require level 1')
-assert(activity:Research(0,11)); assert(not activity:Research(0,13), 'Shield Lv.1 must require Cover'); assert(activity:Research(0,15))
-assert(not activity:Research(0,25), 'precision strike must require orbital barrage research')
-assert(not activity:Research(0,26), 'Carpet Bomb must require precision-strike research')
-assert(activity:Research(0,22))
+assert(activity:Research(0,11)); assert(not activity:Research(0,13), 'Support Jammer must require Cover'); assert(activity:Research(0,14))
+assert(activity:Research(0,28) and team.levels[28]==1)
+assert(activity:CallIn(0,'weaponPod',2))
+local podDelivery=activity.pendingDrops[#activity.pendingDrops]
+assert(podDelivery.kind=='weaponPod' and #podDelivery.weapons==3)
+local selectedPresets={}
+for _,weapon in ipairs(podDelivery.weapons) do
+    local key=weapon.module..'/'..weapon.name
+    assert(weapon.name~='Broken Firearm' and weapon.module and not selectedPresets[key])
+    selectedPresets[key]=true
+end
+podDelivery.timer.ElapsedSimTimeMS=3000; activity:UpdateCallIns()
+local pod=podDelivery.pod
+assert(pod and pod.name=='Frontline Weapon Pod' and pod.Team==0 and pod.Vel.Y>0
+    and pod:GetNumberValue('WeaponPodOpenDelayMs')==1000,'weapon call-in must spawn a falling physical pod')
+assert(loadfile('Frontline.rte/WeaponPod.lua'))()
+local freshPod={Vel=Vector(0,5)}
+function freshPod:GetNumberValue() return nil end
+function freshPod:SetNumberValue(key,value) self.landed=value end
+OnCollideWithTerrain(freshPod,0)
+assert(freshPod.landed==1 and freshPod.Vel.Y==0,'fresh pods without the landing number must still stop safely')
+OnCollideWithTerrain(pod,0)
+assert(pod:GetNumberValue('WeaponPodLanded')==1 and pod.Vel.Y==0,'terrain collision must notify the activity of the pod landing')
+activity:UpdateCallIns()
+assert(podDelivery.landedTimer,'landed pod must enter its opening delay')
+podDelivery.landedTimer.ElapsedSimTimeMS=1000
+local itemsBefore=#(MovableMan.items or {})
+activity:UpdateCallIns()
+assert(pod.gibbed and #(MovableMan.items or {})-itemsBefore==3,'opened pod must release exactly three firearms through MovableMan:AddItem')
+for index=itemsBefore+1,#MovableMan.items do
+    local weapon=MovableMan.items[index]
+    assert(weapon.Team==0 and weapon.ToSettle and weapon.Pos.Y==588 and weapon.module and weapon.name~='Broken Firearm')
+end
+local ai=activity.teams[1]
+local oldFunds,oldAuto,oldTurretLevel,oldBaseArmor,oldTurret=ai.funds,ai.auto,ai.turretLevel,ai.baseArmor,ai.turret
+local oldStatsDeployed,oldPersonality=ai.stats.deployed,activity.aiPersonality
+local oldPlayerBehavior
+if activity.playerBehavior then
+    oldPlayerBehavior={}
+    for key,value in pairs(activity.playerBehavior) do oldPlayerBehavior[key]=value end
+end
+local oldAIFields={}
+for _,key in ipairs({"autoDeploy","forward","orderPhase","attackTarget","rallyTarget","order","orderTarget",
+    "counts","weapons","sidearms","medkits","grenades","armor","offenseChoice","fortifyChoice"}) do
+    oldAIFields[key]=ai[key]
+end
+local oldLevels,oldTimerValues={},{}
+for index=1,29 do oldLevels[index]=ai.levels[index]; ai.levels[index]=10 end
+ai.levels[13]=2; ai.levels[29]=6; ai.levels[28]=1
+local callinTimers={ai.strikeTimer,ai.medicTimer,ai.coverTimer,ai.minesTimer,ai.bombTimer,
+    ai.turretTimer,ai.orbitalTimer,ai.shieldTimer,ai.bubbleTimer,ai.weaponPodTimer}
+for index,timer in ipairs(callinTimers) do oldTimerValues[index]=timer.ElapsedSimTimeMS; timer.ElapsedSimTimeMS=0 end
+ai.weaponPodTimer.ElapsedSimTimeMS=1000000
+ai.auto=false; ai.turretLevel=2; ai.baseArmor=3; ai.turret={Health=100}; ai.funds=5000
+local supplyPost=activity.outposts[3]; local oldOwner=supplyPost.owner; supplyPost.owner=1
+local existingAIActors={}
+for _,actor in ipairs(actors) do if actor.Team==1 then existingAIActors[actor]=true end end
+local supplyActor=CreateAHuman('Soldier Light','Coalition.rte'); supplyActor.Team=1
+supplyActor.Pos=Vector(supplyPost.x,565); MovableMan:AddActor(supplyActor)
+activity.aiPersonality='balanced'
+local dropsBeforeAI=#activity.pendingDrops
+activity:UpdateAI()
+local aiPod
+for index=dropsBeforeAI+1,#activity.pendingDrops do
+    local order=activity.pendingDrops[index]
+    if order.kind=='weaponPod' and order.team==1 then aiPod=order end
+end
+assert(aiPod and aiPod.target==supplyPost and #aiPod.weapons==3 and aiPod.cost>0
+    and ai.funds<=5000-aiPod.cost,
+    'AI should pay the configured pod cost and target a three-firearm cache at an occupied friendly post')
+for _,actor in ipairs(actors) do
+    if actor.Team==1 and not existingAIActors[actor] then actor.deleted=true end
+end
+supplyActor.deleted=true; supplyPost.owner=oldOwner
+for index=1,29 do ai.levels[index]=oldLevels[index] end
+for index,timer in ipairs(callinTimers) do timer.ElapsedSimTimeMS=oldTimerValues[index] end
+ai.funds=oldFunds; ai.auto=oldAuto; ai.turretLevel=oldTurretLevel; ai.baseArmor=oldBaseArmor
+ai.turret=oldTurret; ai.stats.deployed=oldStatsDeployed; activity.aiPersonality=oldPersonality
+for key,value in pairs(oldAIFields) do ai[key]=value end
+activity.playerBehavior=oldPlayerBehavior
+for index=#activity.pendingDrops,1,-1 do
+    if activity.pendingDrops[index]==aiPod then table.remove(activity.pendingDrops,index) end
+end
+print('AI weapon cache pod uses the researched, affordable, off-cooldown call-in at an occupied friendly post')
+assert(not activity:Research(0,24), 'precision strike must require orbital barrage research')
+assert(not activity:Research(0,25), 'Carpet Bomb must require precision-strike research')
+assert(activity:Research(0,21))
+assert(activity:CallIn(0,'orbital',2))
+local barrage=activity.pendingOrbitals[#activity.pendingOrbitals]
+barrage.timer.ElapsedSimTimeMS=3000; activity:UpdateCallIns()
+assert(barrage.shots==1)
+local round
+for index=#MovableMan.particles,1,-1 do
+    if MovableMan.particles[index].name=='Frontline Orbital Round' then round=MovableMan.particles[index]; break end
+end
+assert(round and round:GetNumberValue('FragmentCount')==16,'orbital rounds must receive the configured fragment count')
+assert(loadfile('Frontline.rte/OrbitalRound.lua'))()
+local particleStart=#MovableMan.particles
+OnCollideWithTerrain(round,0)
+assert(#MovableMan.particles-particleStart==17,'orbital impact must emit one smoke particle and sixteen fragments')
+local minX,maxX,minY,maxY=math.huge,-math.huge,math.huge,-math.huge
+for index=particleStart+2,#MovableMan.particles do
+    local shard=MovableMan.particles[index]
+    assert(shard.name=='Frontline Orbital Fragment' and shard.Team==0)
+    minX=math.min(minX,shard.Vel.X); maxX=math.max(maxX,shard.Vel.X)
+    minY=math.min(minY,shard.Vel.Y); maxY=math.max(maxY,shard.Vel.Y)
+end
+assert(minX<0 and maxX>0 and minY<0 and maxY>0,'fragments must travel in multiple directions')
+local particlesAfterImpact=#MovableMan.particles
+OnCollideWithTerrain(round,0)
+assert(#MovableMan.particles==particlesAfterImpact,'a round must fragment only once')
+local function assertFragmentFallback(value,present)
+    local fallback=CreateMOPixel('Frontline Orbital Round','Frontline.rte')
+    fallback.Pos=Vector(20,20); fallback.Team=1
+    if present then fallback:SetNumberValue('FragmentCount',value) end
+    local before=#MovableMan.particles
+    OnCollideWithTerrain(fallback,0)
+    local count=0
+    for index=before+1,#MovableMan.particles do
+        if MovableMan.particles[index].name=='Frontline Orbital Fragment' then count=count+1 end
+    end
+    assert(count==16,'missing, invalid, or zero fragment counts must use the safe fallback')
+end
+assertFragmentFallback(nil,false)
+assertFragmentFallback(0,true)
+assertFragmentFallback('invalid',true)
+assert(activity:Research(0,24))
 assert(activity:Research(0,25))
-assert(activity:Research(0,26))
-assert(activity:Research(0,23)); assert(activity:Research(0,13))
-assert(not activity:Research(0,27), 'turret must require minefield research')
-assert(activity:Research(0,24)); assert(activity:Research(0,27))
+assert(activity:Research(0,22)); assert(activity:Research(0,13))
+assert(team.levels[13]==1 and activity:ResearchCost(0,13)==800, 'the second Support Jammer upgrade must retain its 800 oz price')
+assert(not activity:Research(0,27), 'Energy Shield must require Support Jammer Lv.2')
+assert(not activity:CallIn(0,'bubble',2), 'Energy Shield must stay unavailable after only one Jammer upgrade')
+assert(not activity:Research(0,26), 'turret must require minefield research')
+assert(activity:Research(0,23)); assert(activity:Research(0,26))
 local actorsBeforeTurret=#actors
 assert(activity:CallIn(0,'turret',2))
 local turret=activity.pendingDrops[#activity.pendingDrops]
@@ -110,13 +301,20 @@ assert(medic.kind=='medic' and medic.count==1)
 medic.timer.ElapsedSimTimeMS=4000; activity:UpdateCallIns()
 assert(medic.ship and medic.ship.cargo[1].name=='Medic Drone')
 medic.arrivalTimer.ElapsedSimTimeMS=2000; activity:UpdateCallIns()
-assert(#actors==actorsBeforeMedic+2 and actors[#actors].name=='Medic Drone' and actors[#actors].Team==0)
+assert(#actors==actorsBeforeMedic+2 and actors[#actors].name=='Medic Drone' and actors[#actors].Team==0,
+    'medic delivery must add the support ship and actor; before='..actorsBeforeMedic..' after='..#actors..' last='..tostring(actors[#actors].name))
+assert(medic.ship.openedWithCargo==0, 'medic cargo must be removed before opening the hatch auto-ejects it')
 local shieldOK,shieldMessage=activity:CallIn(0,'shield',2); assert(shieldOK,shieldMessage); assert(activity.jamFields[#activity.jamFields].duration==60000)
 assert(activity:CallIn(0,'mining',2)); local mining=activity.pendingDrops[#activity.pendingDrops]; assert(mining.kind=='mining' and mining.miner)
 local medicUpgrade,medicUpgradeError=activity:Research(0,12); assert(medicUpgrade,medicUpgradeError)
-assert(not activity:Research(0,28), 'energy shield must require Shield Lv.2')
-local shieldUpgrade,shieldUpgradeError=activity:Research(0,14); assert(shieldUpgrade,shieldUpgradeError)
-local bubbleUnlock,bubbleUnlockError=activity:Research(0,28); assert(bubbleUnlock,bubbleUnlockError)
+assert(not activity:Research(0,27), 'Energy Shield must require Support Jammer Lv.2')
+local shieldUpgrade,shieldUpgradeError=activity:Research(0,13); assert(shieldUpgrade,shieldUpgradeError)
+assert(team.levels[13]==2)
+local savedTurretResearch=team.levels[26]
+team.levels[26]=0
+assert(not activity:Research(0,27),'Energy Shield must still require Turret after Jammer Lv.2 is complete')
+team.levels[26]=savedTurretResearch
+local bubbleUnlock,bubbleUnlockError=activity:Research(0,27); assert(bubbleUnlock,bubbleUnlockError)
 assert(activity:CallIn(0,'bubble',2))
 local bubble=activity.energyShields[#activity.energyShields]
 local hostile={Team=1,HitsMOs=true,Pos=Vector(bubble.x,bubble.centerY)}
@@ -139,22 +337,55 @@ mining.timer.ElapsedSimTimeMS=4000; activity:UpdateCallIns(); assert(mining.arri
 assert(mining.ship.cargo[1]==mining.miner, 'dropship inventory must carry the researched Dummy miner')
 mining.arrivalTimer.ElapsedSimTimeMS=2000; activity:UpdateCallIns()
 assert(mining.miner.Pos.X==target.x and mining.miner.Pos.Y==592 and mining.miner.PinStrength==0)
-team.minesTimer.ElapsedSimTimeMS=45000
 assert(activity:CallIn(0,'bomb',2)); local bomb=activity.pendingDrops[#activity.pendingDrops]
-assert(bomb.startX==target.x-120 and bomb.flightDistance==360)
+assert(bomb.startX==target.x-192 and bomb.flightDistance==360)
 bomb.timer.ElapsedSimTimeMS=800; activity:UpdateCallIns()
 local dropped=MovableMan.lastParticle
-assert(dropped.name=='Bomb Run Bomb' and math.abs(dropped.Pos.X-target.x)<=24, 'first scripted bomb must land near the selected target')
+assert(dropped.name=='Bomb Run Bomb' and dropped.Pos.X==target.x-96,'first bomb must drop as the ship crosses into the target area')
 assert(dropped.Team==0 and bomb.bombsDropped==1)
-assert(dropped.Pos.Y>bomb.ship.Pos.Y+(bomb.ship.Radius or 50), 'bomb must clear the dropship collision envelope before falling')
-print('Support research gates, medical robot deliveries, shield upgrades, mining dispatch, and bomb targeting passed')
+assert(dropped.Pos.Y>bomb.ship.Pos.Y+(bomb.ship.Radius or 50),'bomb must clear the dropship collision envelope before falling')
+bomb.timer.ElapsedSimTimeMS=1600; activity:UpdateCallIns()
+assert(MovableMan.lastParticle.Pos.X==target.x and bomb.bombsDropped==2,'second bomb must pass directly over the target')
+bomb.timer.ElapsedSimTimeMS=2400; activity:UpdateCallIns()
+assert(MovableMan.lastParticle.Pos.X==target.x+96 and bomb.bombsDropped==3,'third bomb must continue across the target before the ship exits')
+for _,field in ipairs(activity.jamFields) do field.timer.ElapsedSimTimeMS=field.duration end
+activity:UpdateCallIns()
+local enemyTeam=activity.teams[1]; enemyTeam.levels[25]=1; enemyTeam.funds=5000; enemyTeam.bombTimer.ElapsedSimTimeMS=55000
+assert(activity:CallIn(1,'bomb',2)); local enemyBomb=activity.pendingDrops[#activity.pendingDrops]
+assert(enemyBomb.startX==target.x+192 and enemyBomb.direction==-1)
+enemyBomb.timer.ElapsedSimTimeMS=800; activity:UpdateCallIns()
+assert(MovableMan.lastParticle.Pos.X==target.x+96 and MovableMan.lastParticle.Team==1,
+    'enemy bomb run must sweep in the mirrored direction')
+assert(loadfile('Frontline.rte/BombRunBomb.lua'))()
+local bombImpact=CreateMOPixel('Bomb Run Bomb','Frontline.rte')
+bombImpact.Pos=Vector(target.x,600); bombImpact.Team=0
+local blastParticlesBefore=#MovableMan.particles
+OnCollideWithTerrain(bombImpact,0)
+local heavyBomb=MovableMan.lastParticle
+assert(bombImpact.exploded and bombImpact.ToDelete and #MovableMan.particles-blastParticlesBefore==2)
+assert(heavyBomb.name=='Frontline Heavy Bomb' and heavyBomb.Team==0 and heavyBomb.activated,
+    'dropped carpet bombs must activate the custom heavy explosive on impact')
+local blastParticlesAfter=#MovableMan.particles
+OnCollideWithMO(bombImpact,nil,nil)
+assert(#MovableMan.particles==blastParticlesAfter,'a carpet bomb must explode only once')
+print('Support research gates, physical deliveries, orbital fragments, and bidirectional carpet bombing passed')
 activity.UIDrawBoxFill=function() end
 activity.UIDrawBox=function() end
-local treeText={}
-activity.UIDrawText=function(_,_,_,label) treeText[#treeText+1]=label end
+local treeText,pageThreeText,pageThreeConnectors={},{},{}
+PrimitiveMan.DrawLinePrimitive=function(_,from,to)
+    if to.Y==297 then pageThreeConnectors[#pageThreeConnectors+1]={from=from,to=to} end
+end
+activity.UIDrawText=function(_,_,position,label)
+    treeText[#treeText+1]=label
+    if activity.tab=="Research" and activity.researchPage==3 then
+        pageThreeText[#pageThreeText+1]={label=label,x=position.X,y=position.Y}
+    end
+end
 CameraMan={GetOffset=function() return Vector(0,0) end}
 UInputMan.GetMouseMovement=function() return Vector(0,0) end
 UInputMan.MouseButtonPressed=function() return false end
+local savedJammerLevel,savedEnergyShieldLevel=team.levels[13],team.levels[27]
+team.levels[13],team.levels[27]=1,0
 activity.tab='Squad'; activity:DrawPanel()
 for page=1,3 do activity.researchPage=page; activity.tab='Research'; activity:DrawPanel() end
 local treeLabels=table.concat(treeText,' ')
@@ -163,11 +394,33 @@ local treePrecision=treeLabels:find('Orbital Precision Strike',1,true)
 local treeCarpetBomb=treeLabels:find('Carpet Bomb',1,true)
 local treeEnergyShield=treeLabels:find('Energy Shield',1,true)
 local treeCover=treeLabels:find('Cover',1,true)
-local treeShield=treeLabels:find('SHIELD I 60s',1,true)
-assert(treeBarrage and treePrecision and treeCarpetBomb and treeBarrage<treePrecision and treePrecision<treeCarpetBomb,
-    'tech tree must display the requested offensive progression')
-assert(treeCover and treeShield and treeCover<treeShield and treeEnergyShield and treeEnergyShield>treeShield,
-    'Cover must precede Shield Lv.1 and Energy Shield must appear after Shield Lv.2')
+local treeJammer=treeLabels:find('Support Jammer',1,true)
+local treeSquadSize=treeLabels:find('Squad Size +1',1,true)
+assert(treeBarrage and treePrecision and treeCarpetBomb and treeSquadSize
+    and treeBarrage<treePrecision and treePrecision<treeCarpetBomb,
+    'tech tree must show squad-size research and the requested offensive progression')
+assert(treeCover and treeJammer and treeCover<treeJammer and treeEnergyShield and treeEnergyShield>treeJammer,
+    'research order mismatch: Cover='..tostring(treeCover)..' Jammer='..tostring(treeJammer)..' Energy Shield='..tostring(treeEnergyShield))
+local energyShieldY,turretRequirementY,jammerRequirementY,lowestRequirementY,pageThreeHint
+for _,entry in ipairs(pageThreeText) do
+    if entry.label:find("Energy Shield",1,true) then energyShieldY=entry.y end
+    if entry.label:find("Requires:",1,true) then lowestRequirementY=math.max(lowestRequirementY or 0,entry.y) end
+    if entry.label:find("Requires: Turret",1,true) then turretRequirementY=entry.y end
+    if entry.label:find("and Support Jammer Lv.2",1,true) then jammerRequirementY=entry.y end
+    if entry.label:find("and ",1,true) then lowestRequirementY=math.max(lowestRequirementY or 0,entry.y) end
+    if entry.label:find("Connectors show prerequisites",1,true) then pageThreeHint=true end
+end
+assert(energyShieldY==299 and turretRequirementY==314 and jammerRequirementY==326
+    and lowestRequirementY==326 and not pageThreeHint,
+    'both Energy Shield prerequisites must fit below their node and above the persistent footer')
+local connectorStarts={}
+assert(#pageThreeConnectors==2,'Energy Shield must have a connector for both Turret and Support Jammer Lv.2')
+for _,connector in ipairs(pageThreeConnectors) do
+    assert(connector.to.X==235 and connector.to.Y==297 and connector.from.X==235)
+    connectorStarts[connector.from.Y]=true
+end
+assert(connectorStarts[184] and connectorStarts[270],'Energy Shield connectors must originate at Jammer and Turret nodes')
+team.levels[13],team.levels[27]=savedJammerLevel,savedEnergyShieldLevel
 local buttonDown
 UInputMan.MouseButtonPressed=function(_,which) return buttonDown==which end
 local function clickPanel(x,y,which)
@@ -201,9 +454,54 @@ assert(squad.counts[6]==1, 'left-clicking - must decrement the count')
 activity.setupStep=1
 activity.settings.startFunds=450
 activity.cursorX=100; activity.cursorY=95; buttonDown=MouseButtons.MOUSE_LEFT; activity:DrawWizard()
-assert(activity.settings.startFunds==750, 'wizard left-click must advance the funds value')
+assert(activity.settings.startFunds==750,'wizard left-click must advance the funds value')
 buttonDown=MouseButtons.MOUSE_RIGHT; activity:DrawWizard()
-assert(activity.settings.startFunds==450, 'wizard right-click must return to the previous funds value')
+assert(activity.settings.startFunds==450,'wizard right-click must reverse the funds value')
+local wizardCycles={{y=124,key='income',left=8,right=5},{y=153,key='unitCap',left=8,right=50},
+    {y=182,key='outpostBonuses',left=false,right=true},{y=211,key='callins',left=false,right=true}}
+for _,cycle in ipairs(wizardCycles) do
+    activity.cursorY=cycle.y; buttonDown=MouseButtons.MOUSE_LEFT; activity:DrawWizard()
+    assert(activity.settings[cycle.key]==cycle.left,'wizard left-click must advance '..cycle.key)
+    buttonDown=MouseButtons.MOUSE_RIGHT; activity:DrawWizard()
+    assert(activity.settings[cycle.key]==cycle.right,'wizard right-click must reverse '..cycle.key)
+end
+activity.battleStarted=false; activity.tab='Setup'
+activity.teams[0].funds=5000; activity.teams[1].funds=5000
+local panelCycles={{y=116,key='startFunds',left=750,right=450},{y=143,key='income',left=8,right=5},
+    {y=170,key='unitCap',left=8,right=50},{y=197,key='outpostBonuses',left=false,right=true},
+    {y=224,key='callins',left=false,right=true}}
+for _,cycle in ipairs(panelCycles) do
+    clickPanel(100,cycle.y,MouseButtons.MOUSE_LEFT)
+    assert(activity.settings[cycle.key]==cycle.left,'panel left-click failed for '..cycle.key..': actual='..tostring(activity.settings[cycle.key])..' battleStarted='..tostring(activity.battleStarted))
+    clickPanel(100,cycle.y,MouseButtons.MOUSE_RIGHT)
+    assert(activity.settings[cycle.key]==cycle.right,'panel right-click must reverse '..cycle.key)
+end
+activity.battleStarted=true; activity.tab='Squad'
+local squad=activity.teams[0]
+squad.forward=1
+clickPanel(320,125,MouseButtons.MOUSE_LEFT); assert(squad.forward==2)
+clickPanel(320,125,MouseButtons.MOUSE_RIGHT); assert(squad.forward==1)
+activity.rosterPage=1
+clickPanel(320,245,MouseButtons.MOUSE_RIGHT); assert(activity.rosterPage==2)
+clickPanel(320,245,MouseButtons.MOUSE_LEFT); assert(activity.rosterPage==1)
+squad.weapons[6]=1
+clickPanel(20,110,MouseButtons.MOUSE_LEFT); assert(squad.weapons[6]==7)
+clickPanel(20,110,MouseButtons.MOUSE_RIGHT); assert(squad.weapons[6]==1)
+local savedSidearm,savedSidearmUnlock,savedRpgUnlock=squad.sidearms[6],squad.levels[19],squad.levels[10]
+squad.sidearms[6]=0; squad.levels[19]=1; squad.levels[10]=1
+clickPanel(130,110,MouseButtons.MOUSE_LEFT); assert(squad.sidearms[6]==1)
+clickPanel(130,110,MouseButtons.MOUSE_LEFT); assert(squad.sidearms[6]==2)
+clickPanel(130,110,MouseButtons.MOUSE_RIGHT); assert(squad.sidearms[6]==1)
+clickPanel(130,110,MouseButtons.MOUSE_RIGHT); assert(squad.sidearms[6]==0)
+squad.sidearms[6]=savedSidearm; squad.levels[19]=savedSidearmUnlock; squad.levels[10]=savedRpgUnlock
+local equipmentUnlocks={medkits={17,179},grenades={18,217},armor={20,255}}
+for key,equipment in pairs(equipmentUnlocks) do
+    local index=equipment[1]; local savedLevel=squad.levels[index]
+    squad.levels[index]=1; squad[key][6]=false
+    clickPanel(equipment[2]+5,110,MouseButtons.MOUSE_LEFT); assert(squad[key][6])
+    clickPanel(equipment[2]+5,110,MouseButtons.MOUSE_RIGHT); assert(not squad[key][6])
+    squad.levels[index]=savedLevel
+end
 buttonDown=nil
 activity.tab='Support'; activity:DrawPanel()
 activity.tab='Squad'; activity:DrawPanel()
@@ -218,16 +516,16 @@ ai.funds=0
 ai.orderPhase=nil; ai.attackTarget=nil; ai.rallyTarget=nil
 local staged=0
 for _,actor in ipairs(actors) do
-    if actor.Team==1 and activity:IsFieldUnit(actor) then
+    if actor.Team==1 and actor.name=="Bandit" and activity:IsFieldUnit(actor) then
         actor.Pos=Vector(rally.x,rally.groundY)
         staged=staged+1
     end
 end
-assert(staged==2, 'AI begins with its two starting Ronin Bandits')
+assert(staged==3, 'AI begins with its three starting Ronin Bandits; staged='..staged)
 activity:UpdateAI()
 assert(ai.orderPhase=='assembling' and ai.order=='Defend' and ai.orderTarget==1,
     'AI should hold a captured outpost and assemble before attacking')
-for i=1,4 do
+for i=1,3 do
     local actor=CreateAHuman('Ronin Bandit','Ronin.rte')
     actor.Team=1; actor.Pos=Vector(rally.x,rally.groundY)
     MovableMan:AddActor(actor)
@@ -271,8 +569,8 @@ activity:UpdateActivity()
 assert(ai.stats.deployed==deploymentsBeforeSaving,
     'the regular activity update must not bypass the AI research-saving gate')
 assert(ai.forward>0 and activity.outposts[ai.forward].owner==1,
-    'AI should choose a safe outpost it owns for a forward deployment')
-ai.levels[28]=1
+    'AI forward choice: index='..tostring(ai.forward)..' funds='..ai.funds..' owner='..tostring(ai.forward>0 and activity.outposts[ai.forward].owner))
+ai.funds=2000; ai.levels[28]=1
 activity:UpdateAI()
 assert(ai.stats.deployed>deploymentsBeforeSaving and ai.forward>0 and activity.outposts[ai.forward].owner==1,
     'AI should resume deployment at an owned forward post after its savings goal is met')
