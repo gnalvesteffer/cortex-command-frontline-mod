@@ -127,6 +127,13 @@ local function run(label,activity,draw,width,height)
      'Battle view must render the long owned, fully captured outpost state')
    end
   end
+ elseif draw=='DrawPanel' and activity.tab=='Squad' then
+  local forward=activity.teams[0].forward
+  local expected=forward==0 and 'SPAWN: BASE'
+   or ('SPAWN: '..activity.outposts[forward].name..' (+'..activity:ForwardDeploymentCost(0)..'/unit)')
+  local found=false
+  for _,item in ipairs(items) do if item.label==expected then found=true end end
+  assert(found,'Squad SPAWN must show the selected destination and its actual surcharge')
  elseif draw=='DrawPanel' and activity.tab=='Support' then
   local shield,jammer,projectiles,strikes=false,false,false,false
   for _,item in ipairs(items) do
@@ -193,6 +200,13 @@ for _,scene in ipairs({{5200,3},{10400,5},{15600,9}}) do
  local a=setmetatable({deathCounts={[0]=0,[1]=0}},{__index=Frontline})
  a:StartActivity(); a:StartBattle(); a.matchTimer.ElapsedSimTimeMS=15000; a.screenUI=true
  assert(#a.outposts==scene[2],'scenario must exercise its intended outpost count')
+ a.tab='Squad'
+ for _,post in ipairs(a.outposts) do post.owner=0 end
+ for destination=0,#a.outposts do
+  a.teams[0].forward=destination
+  run(sceneWidth..' spawn '..destination,a,'DrawPanel',640,480)
+ end
+ for _,post in ipairs(a.outposts) do post.owner=-1 end
  for _,state in ipairs({'locked','unlocked','long'}) do
   local t=a.teams[0]
   for i=1,29 do t.levels[i]=state=='locked' and 0 or 1 end
@@ -204,6 +218,7 @@ for _,scene in ipairs({{5200,3},{10400,5},{15600,9}}) do
    t.levels[2]=10; t.levels[3]=10; t.levels[15]=10; t.levels[29]=6
   end
   t.funds=state=='long' and 99999999 or 450
+  t.forward=state=='long' and #a.outposts or 0
   a.message=state=='long' and 'Jammer intercepted precision strike; cost refunded' or 'Build a batch and click DEPLOY.'
   for _,viewport in ipairs({{640,480},{960,540}}) do
    for _,tab in ipairs(tabs) do

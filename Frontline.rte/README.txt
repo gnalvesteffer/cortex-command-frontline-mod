@@ -48,6 +48,13 @@ Jammer level 2; it destroys hostile projectiles inside its 180-pixel bubble for
 research, with 16 fragments per round. Carpet Bomb releases three bombs across
 its flight path.
 
+Forward drops to captured posts cost an extra 25 oz per unit for each interval
+of progress toward the enemy base, rounded up. The distance between bases is
+divided into one interval per outpost; both teams use the same rule.
+The Squad SPAWN selector shows the selected destination's per-unit surcharge.
+Base deployments have no surcharge. Configure the 25 oz tier using
+unitSurcharges.forwardDeployment in Frontline.lua.
+
 Both manual and automatic deployment cost funds and share a cooldown. Both brains have Gatling Guns. Buy brain armor,
 repairs and a rebuildable upper-room turret on the Base tab. Destroy
 the enemy brain to win. The match report tracks deployments, losses, captures,

@@ -193,6 +193,30 @@ do
         'the AI must pay the actual batch cost without borrowing for an unavailable investment')
 end
 
+-- Forward prices participate in AI budgeting and the committed charge.
+do
+    local activity=newBattle()
+    local ai=activity.teams[1]
+    activity.outposts[1].owner=1
+    ai.funds=580
+    activity:UpdateAI()
+    assert(ai.forward==1 and activity:ForwardDeploymentCost(1)==75)
+    assert(not ai.autoDeploy and ai.stats.deployed==0,
+        'AI must reserve funds after the full position-based forward charge')
+    ai.funds=590
+    local choose=activity.ChooseAIAction
+    activity.ChooseAIAction=function(self,actions,pressured)
+        for _,action in ipairs(actions) do
+            if action.kind=='deployment' then return action end
+        end
+        return choose(self,actions,pressured)
+    end
+    activity:UpdateAI()
+    local cost,count=activity:Batch(1)
+    assert(cost==390 and count==3 and ai.stats.deployed==3 and ai.funds==590-cost,
+        'AI forward deployment must pay the same per-unit charge as the player')
+end
+
 -- An identical world and personality must not make a different strategic
 -- decision merely because unrelated engine randomness has advanced.
 do

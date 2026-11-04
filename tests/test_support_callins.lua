@@ -610,7 +610,7 @@ activity.DrawHUD=function() end
 activity:UpdateActivity()
 assert(ai.stats.deployed==deploymentsAfterBudgetChoice,
     'the regular activity update must not bypass the AI deployment cooldown')
-ai.funds=500; ai.levels[28]=1
+ai.funds=750; ai.levels[28]=1
 ai.timer.ElapsedSimTimeMS=100000
 activity:UpdateAI()
 assert(ai.stats.deployed>deploymentsAfterBudgetChoice and ai.forward>0 and activity.outposts[ai.forward].owner==1,

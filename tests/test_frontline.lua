@@ -312,7 +312,7 @@ d.outposts[1].owner=0; d.outposts[2].owner=0; d.outposts[3].owner=0
 assert(d:TeamIncome(0)==7 and d:ResearchCost(0,3)==256 and d:CallinCooldown(0,45000)==36000)
 d.settings.outpostBonuses=false; assert(d:TeamIncome(0)==5 and d:ResearchCost(0,3)==320); d.settings.outpostBonuses=true
 dt.tier=2; dt.levels[5]=1; dt.counts={0,0,0,0,1}; dt.weapons={1,1,1,1,1}; d.commanders[0]:SetForward(2); d.commanders[0]:SetOrder('Advance',2)
-assert(d:Batch(0)==285); assert(d.commanders[0]:Deploy()); local ship=actors[#actors]
+assert(d:Batch(0)==310); assert(d.commanders[0]:Deploy()); local ship=actors[#actors]
 assert(ship.ship and ship.AIMode==Actor.AIMODE_DELIVER and ship.InventorySize==1 and d:UnitCount(0)==1)
 local vehicle=table.remove(ship.cargo); ship.InventorySize=#ship.cargo
 vehicle.Pos=Vector(d.outposts[2].x-150,565); MovableMan:AddActor(vehicle); d:UpdateDeliveries()
@@ -798,8 +798,8 @@ transport:StartActivity(); transport:StartBattle(); transport.matchTimer.Elapsed
 local tt=transport.teams[0]; tt.funds=5000; tt.timer.ElapsedSimTimeMS=20001; tt.levels[11]=1
 assert(transport.commanders[0]:Research(1))
 transport.outposts[2].owner=0; transport.settings.unitCap=6; transport.commanders[0]:SetForward(2); tt.levels[29]=3; tt.counts={5,0,0,0,0,1}
-local transportCost=transport:Batch(0); assert(transportCost==605)
-assert(transport.commanders[0]:Deploy()); assert(tt.funds==4095 and #transport.deliveries==2 and transport:UnitCount(0)==6)
+local transportCost=transport:Batch(0); assert(transportCost==755)
+assert(transport.commanders[0]:Deploy()); assert(tt.funds==3945 and #transport.deliveries==2 and transport:UnitCount(0)==6)
 local firstShip,secondShip=transport.deliveries[1].ship,transport.deliveries[2].ship
 assert(firstShip.InventorySize==3 and secondShip.InventorySize==3 and firstShip.Team==0 and secondShip.Team==0)
 assert(firstShip.AIMode==Actor.AIMODE_DELIVER and firstShip.Pos.X<transport.outposts[2].x)
@@ -959,3 +959,65 @@ podEnv.OnCollideWithTerrain(pod,1); podEnv.Update(pod)
 local crate=sceneObjects[#sceneObjects]
 assert(#sceneObjects==placedBefore+1 and crate.name=='Metal Crate Small A FG' and crate.Team==1 and crate.Pos.X==1188 and crate.Pos.Y==576 and pod.ToDelete)
 print('Cover pods become ground-aligned destructible crates')
+
+-- Forward pricing is symmetric, position based and rounded up in 25 oz tiers.
+;(function()
+    local originalWidth=SceneMan.SceneWidth
+    for _,scenario in ipairs({{5200,3},{11000,5},{15600,9}}) do
+        SceneMan.SceneWidth=scenario[1]
+        actors={}
+        local activity=setmetatable({deathCounts={[0]=0,[1]=0}},{__index=Frontline})
+        activity:StartActivity(); activity:StartBattle(); activity.matchTimer.ElapsedSimTimeMS=15001
+        assert(#activity.outposts==scenario[2])
+        local span=scenario[1]-360
+        for team=0,1 do
+            local t=activity.teams[team]
+            t.levels[29]=6; t.funds=10000; t.timer.ElapsedSimTimeMS=20001
+            t.counts={0,0,0,0,0,1}; t.forward=0
+            assert(activity:ForwardDeploymentCost(team)==0 and activity:Batch(team)==55)
+            local last=0
+            for step=1,scenario[2] do
+                local index=team==0 and step or scenario[2]+1-step
+                local post=activity.outposts[index]
+                t.forward=index
+                local expected=25*step
+                assert(activity:ForwardDeploymentCost(team)==expected and expected>=last)
+                last=expected
+                assert(activity:Batch(team)==55+expected)
+            end
+            t.forward=1
+            local post=activity.outposts[1]
+            local originalX=post.x
+            local function check(distance,expected)
+                post.x=team==0 and 180+distance or scenario[1]-180-distance
+                assert(activity:ForwardDeploymentCost(team)==expected)
+            end
+            check(-1,0); check(0,0); check(span+1,25*scenario[2])
+            for tier=1,scenario[2]-1 do
+                local boundary=span*tier/scenario[2]
+                check(boundary-0.01,25*tier)
+                check(boundary,25*tier)
+                check(boundary+0.01,25*(tier+1))
+            end
+            post.x=originalX
+            t.forward=team==0 and scenario[2] or 1
+            for _,size in ipairs({1,3,9}) do
+                t.counts={0,0,0,0,0,size}
+                assert(activity:Batch(team)==size*(55+activity:ForwardDeploymentCost(team)))
+            end
+            t.counts={0,0,0,0,0,3}
+            local cost=activity:Batch(team)
+            activity.outposts[t.forward].owner=1-team
+            assert(not activity.commanders[team]:Deploy() and t.funds==10000)
+            activity.outposts[t.forward].owner=team
+            t.funds=cost-1
+            assert(not activity.commanders[team]:Deploy() and t.funds==cost-1)
+            t.funds=cost
+            assert(activity.commanders[team]:Deploy() and t.funds==0)
+            t.funds=cost
+            assert(not activity.commanders[team]:Deploy() and t.funds==cost)
+        end
+    end
+    SceneMan.SceneWidth=originalWidth
+end)()
+print('Forward deployment pricing scales by position, squad size and team')

@@ -735,9 +735,27 @@ local function weaponUnlocked(t,weapon)
     return weapon.unlock<=t.tier and (not weapon.research or t.levels[weapon.research]>0)
 end
 
+-- Divide the distance between the two brains into one step per outpost.
+-- Clamp positions beyond the bases and round every partial step up.
+function Frontline:ForwardDeploymentCost(team)
+    local index=self.teams[team].forward
+    if index==0 then return 0 end
+    local span=SceneMan.SceneWidth-2*CONFIG.map.baseOffset
+    local x=self.outposts[index].x
+    local distance=team==0 and x-CONFIG.map.baseOffset or SceneMan.SceneWidth-CONFIG.map.baseOffset-x
+    local progress=math.max(0,math.min(1,distance/span))
+    local steps=progress*#self.outposts
+    local nearest=math.floor(steps+0.5)
+    -- Coordinate subtraction can put an exact boundary a few ulps above it.
+    local tolerance=8*2.220446049250313e-16*SceneMan.SceneWidth/span*#self.outposts
+    if nearest>0 and math.abs(steps-nearest)<=tolerance then steps=nearest end
+    return math.ceil(steps)*CONFIG.unitSurcharges.forwardDeployment
+end
+
 function Frontline:Batch(team)
     local t=self.teams[team]
     local cost, count=0,0
+    local forwardCost=self:ForwardDeploymentCost(team)
     for i,entry in ipairs(CONFIG.roster) do
         local n=t.counts[i] or 0
         local weapon=CONFIG.weapons[t.weapons[i] or 6]
@@ -755,7 +773,7 @@ function Frontline:Batch(team)
             extra=extra+(sidearm==1 and CONFIG.unitSurcharges.pistol or (sidearm==2 and CONFIG.unitSurcharges.rocket or 0))
                 +(t.medkits[i] and CONFIG.unitSurcharges.medikit or 0)+(t.grenades[i] and CONFIG.unitSurcharges.grenade or 0)
         end
-        cost=cost+n*(entry.price+(entry.vehicle and 0 or (entry.miner and CONFIG.unitSurcharges.minerWeapon or weapon.price))+extra+(t.forward>0 and CONFIG.unitSurcharges.forwardDeployment or 0))
+        cost=cost+n*(entry.price+(entry.vehicle and 0 or (entry.miner and CONFIG.unitSurcharges.minerWeapon or weapon.price))+extra+forwardCost)
     end
     if count>self:MaxSquadSize(team) then return nil,nil,"Squad size limit" end
     return cost,count
@@ -2650,7 +2668,7 @@ function Frontline:DrawPanel()
     local cost,count=self:Batch(0)
     local income=self:TeamIncome(0)
     text(15,28,"Funds "..math.floor(t.funds).." oz   +"..income.."/s   Bounty "..(CONFIG.BOUNTY+CONFIG.economy.bountyPerResearch*(t.levels[3] or 0)))
-    text(15,40,"Batch "..(count or 0).." / "..(cost or 0).." oz   Units "..self:UnitCount(0).."/"..self.settings.unitCap.."   "..self:AutoReason(0))
+    text(15,41,"Batch "..(count or 0).." / "..(cost or 0).." oz   Units "..self:UnitCount(0).."/"..self.settings.unitCap.."   "..self:AutoReason(0))
     local tabs={"Squad","Research","Support","Base","Battle","Setup"}
     for i,name in ipairs(tabs) do button(15+(i-1)*74,56,70,name,self.tab==name and "selected" or "available",function() self.tab=name end) end
     if self.tab=="Squad" then
@@ -2716,7 +2734,7 @@ function Frontline:DrawPanel()
             end)
         end
         local deployment=t.forward==0 and "BASE" or self.outposts[t.forward].name
-        button(310,119,140,"SPAWN: "..deployment..(t.forward>0 and " (+25/unit)" or ""),"available",function(step)
+        button(310,119,140,"SPAWN: "..deployment..(t.forward>0 and (" (+"..self:ForwardDeploymentCost(0).."/unit)") or ""),"available",function(step)
             self.commanders[0]:SetForward((t.forward+step)%(#self.outposts+1))
         end,true)
         text(310,143,t.order=="Rush" and "RUSH: enemy brain" or ("TARGET: "..(t.orderTarget==0 and "BASE" or self.outposts[t.orderTarget].name)))
