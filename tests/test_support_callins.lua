@@ -391,16 +391,22 @@ local blastParticlesAfter=#MovableMan.particles
 OnCollideWithMO(bombImpact,nil,nil)
 assert(#MovableMan.particles==blastParticlesAfter,'a carpet bomb must explode only once')
 print('Support research gates, physical deliveries, orbital fragments, and bidirectional carpet bombing passed')
-activity.UIDrawBoxFill=function() end
+local treeText,graphText,graphLines,nodes={},{},{},{}
+local lastBox
+activity.UIDrawBoxFill=function(_,_,a,b) lastBox={x=a.X,y=a.Y,r=b.X,b=b.Y} end
 activity.UIDrawBox=function() end
-local treeText,pageThreeText,pageThreeConnectors={},{},{}
 PrimitiveMan.DrawLinePrimitive=function(_,from,to)
-    if to.Y==297 then pageThreeConnectors[#pageThreeConnectors+1]={from=from,to=to} end
+    if activity.tab=='Research' and activity.researchPage==4 then
+        graphLines[#graphLines+1]={from=from,to=to}
+    end
 end
-activity.UIDrawText=function(_,_,position,label)
+activity.UIDrawText=function(_,_,position,label,small)
     treeText[#treeText+1]=label
-    if activity.tab=="Research" and activity.researchPage==3 then
-        pageThreeText[#pageThreeText+1]={label=label,x=position.X,y=position.Y}
+    if activity.tab=='Research' and activity.researchPage==4 then
+        graphText[#graphText+1]={x=position.X,y=position.Y,r=position.X+#label*(small and 5 or 7),b=position.Y+(small and 6 or 10),label=label}
+        for _,name in ipairs({'Cover','Support Jammer','Mines','Turret','Energy Shield'}) do
+            if label:find(name..'  ',1,true)==1 then nodes[name]=lastBox end
+        end
     end
 end
 CameraMan={GetOffset=function() return Vector(0,0) end}
@@ -409,7 +415,7 @@ UInputMan.MouseButtonPressed=function() return false end
 local savedJammerLevel,savedEnergyShieldLevel=team.levels[13],team.levels[27]
 team.levels[13],team.levels[27]=1,0
 activity.tab='Squad'; activity:DrawPanel()
-for page=1,3 do activity.researchPage=page; activity.tab='Research'; activity:DrawPanel() end
+for page=1,4 do activity.researchPage=page; activity.tab='Research'; activity:DrawPanel() end
 local treeLabels=table.concat(treeText,' ')
 local treeBarrage=treeLabels:find('Orbital Gatling Barrage',1,true)
 local treePrecision=treeLabels:find('Orbital Precision Strike',1,true)
@@ -423,25 +429,55 @@ assert(treeBarrage and treePrecision and treeCarpetBomb and treeSquadSize
     'tech tree must show squad-size research and the requested offensive progression')
 assert(treeCover and treeJammer and treeCover<treeJammer and treeEnergyShield and treeEnergyShield>treeJammer,
     'research order mismatch: Cover='..tostring(treeCover)..' Jammer='..tostring(treeJammer)..' Energy Shield='..tostring(treeEnergyShield))
-local energyShieldY,turretRequirementY,jammerRequirementY,lowestRequirementY,pageThreeHint
-for _,entry in ipairs(pageThreeText) do
-    if entry.label:find("Energy Shield",1,true) then energyShieldY=entry.y end
-    if entry.label:find("Requires:",1,true) then lowestRequirementY=math.max(lowestRequirementY or 0,entry.y) end
-    if entry.label:find("Requires: Turret",1,true) then turretRequirementY=entry.y end
-    if entry.label:find("and Support Jammer Lv.2",1,true) then jammerRequirementY=entry.y end
-    if entry.label:find("and ",1,true) then lowestRequirementY=math.max(lowestRequirementY or 0,entry.y) end
-    if entry.label:find("Connectors show prerequisites",1,true) then pageThreeHint=true end
+assert(#graphLines>0 and nodes.Cover and nodes['Support Jammer'] and nodes.Mines and nodes.Turret and nodes['Energy Shield'])
+local function crosses(rect,line)
+    local a,b=line.from,line.to
+    if a.X==b.X then
+        return a.X>rect.x and a.X<rect.r and math.max(a.Y,b.Y)>rect.y and math.min(a.Y,b.Y)<rect.b
+    end
+    assert(a.Y==b.Y,'dependency segments must be orthogonal')
+    return a.Y>rect.y and a.Y<rect.b and math.max(a.X,b.X)>rect.x and math.min(a.X,b.X)<rect.r
 end
-assert(energyShieldY==298 and turretRequirementY==314 and jammerRequirementY==326
-    and lowestRequirementY==326 and not pageThreeHint,
-    'both Energy Shield prerequisites must fit below their node and above the persistent footer: node='..tostring(energyShieldY)..', turret='..tostring(turretRequirementY)..', jammer='..tostring(jammerRequirementY)..', lowest='..tostring(lowestRequirementY)..', hint='..tostring(pageThreeHint))
-local connectorStarts={}
-assert(#pageThreeConnectors==2,'Energy Shield must have a connector for both Turret and Support Jammer Lv.2')
-for _,connector in ipairs(pageThreeConnectors) do
-    assert(connector.to.X==235 and connector.to.Y==297 and connector.from.X==235)
-    connectorStarts[connector.from.Y]=true
+for _,line in ipairs(graphLines) do
+    assert(line.from.X>=8 and line.to.X<=465 and line.from.Y>=8 and line.to.Y<=430)
+    for name,rect in pairs(nodes) do assert(not crosses(rect,line),'connector crosses '..name) end
+    for _,rect in ipairs(graphText) do assert(not crosses(rect,line),'connector crosses label '..rect.label) end
 end
-assert(connectorStarts[184] and connectorStarts[270],'Energy Shield connectors must originate at Jammer and Turret nodes')
+-- Trace each drawn polyline from its source border; stop on the first node.
+-- This verifies direct graph edges, including the fork and both shield inputs.
+local function onBorder(rect,p)
+    return p.X>=rect.x-1 and p.X<=rect.r+1 and p.Y>=rect.y-1 and p.Y<=rect.b+1
+        and (math.abs(p.X-rect.x)<=1 or math.abs(p.X-rect.r)<=1
+            or math.abs(p.Y-rect.y)<=1 or math.abs(p.Y-rect.b)<=1)
+end
+local actual={}
+for name,rect in pairs(nodes) do
+    local queue,visited={},{}
+    for _,line in ipairs(graphLines) do if onBorder(rect,line.from) then queue[#queue+1]=line.from end end
+    while #queue>0 do
+        local p=table.remove(queue)
+        local key=p.X..','..p.Y
+        if not visited[key] then
+            visited[key]=true
+            for _,line in ipairs(graphLines) do
+                if line.from.X==p.X and line.from.Y==p.Y then
+                    local destination
+                    for other,box in pairs(nodes) do
+                        if other~=name and onBorder(box,line.to) then destination=other; break end
+                    end
+                    if destination then actual[name..'>'..destination]=true
+                    else queue[#queue+1]=line.to end
+                end
+            end
+        end
+    end
+end
+local expected={['Cover>Support Jammer']=true,['Cover>Mines']=true,['Mines>Turret']=true,
+    ['Support Jammer>Energy Shield']=true,['Turret>Energy Shield']=true}
+for edge in pairs(expected) do assert(actual[edge],'missing dependency edge '..edge) end
+for edge in pairs(actual) do assert(expected[edge],'unexpected dependency edge '..edge) end
+assert(treeLabels:find('Requires: Turret',1,true) and treeLabels:find('and Support Jammer Lv.2',1,true),
+    'both Energy Shield requirements must remain visible')
 team.levels[13],team.levels[27]=savedJammerLevel,savedEnergyShieldLevel
 local buttonDown
 UInputMan.MouseButtonPressed=function(_,which) return buttonDown==which end
@@ -450,7 +486,7 @@ local function clickPanel(x,y,which)
 end
 activity.tab='Research'; activity.researchPage=1
 clickPanel(400,85,MouseButtons.MOUSE_RIGHT)
-assert(activity.researchPage==3, 'right-clicking the research page control must wrap backward')
+assert(activity.researchPage==4, 'right-clicking the research page control must wrap backward')
 clickPanel(400,85,MouseButtons.MOUSE_LEFT)
 assert(activity.researchPage==1, 'left-clicking the research page control must wrap forward')
 activity.tab='Squad'
@@ -681,3 +717,78 @@ do
         'missing miner equipment must reject the order without charging')
 end
 print('Mining, medic and turret cargo transfers preserve engine ownership')
+
+-- Cover and mines research affects actual drops for both teams. Existing
+-- prerequisite chains still unlock at level one, not at the new maximum.
+for teamId=0,1 do
+    actors={}
+    local a=setmetatable({deathCounts={[0]=0,[1]=0}},{__index=Frontline})
+    a:StartActivity(); a:StartBattle(); a.matchTimer.ElapsedSimTimeMS=15000
+    local team=a.teams[teamId]
+    team.funds=20000
+    local commander=a.commanders[teamId]
+    assert(not commander:Research(23) and not commander:Research(26),'minefield and turret need their level-one prerequisites')
+    assert(not commander:CallIn('cover',2) and not commander:CallIn('mines',2))
+    for level=1,3 do
+        for _,spec in ipairs({
+            {index=22,kind='cover',price=280*level,cost=140,timer=team.coverTimer,preset='Frontline Cover Pod'},
+            {index=23,kind='mines',price=360*level,cost=180,timer=team.minesTimer,preset='Anti Personnel Mine Active'},
+        }) do
+            local before=team.funds
+            assert(a:ResearchCost(teamId,spec.index)==spec.price)
+            assert(commander:Research(spec.index) and team.funds==before-spec.price)
+            if level==1 and spec.kind=='mines' then
+                assert(commander:Research(26),'turret remains unlocked by Mines Lv.1')
+            end
+            spec.timer.ElapsedSimTimeMS=100000
+            before=team.funds
+            assert(commander:CallIn(spec.kind,2) and team.funds==before-spec.cost)
+            local order=a.pendingDrops[#a.pendingDrops]
+            assert(not commander:CallIn(spec.kind,2) and team.funds==before-spec.cost,
+                'upgraded call-ins still enforce the normal cost and cooldown')
+            order.timer.ElapsedSimTimeMS=4000; a:UpdateCallIns()
+            assert(order.ship.InventorySize==level+2,'dropship cargo must match researched level')
+            for _,item in ipairs(order.ship.cargo) do
+                assert(item.name==spec.preset and item.Team==teamId,'every loaded payload has the correct type and team')
+            end
+            local oldCount=MovableMan.particleCount or 0
+            order.arrivalTimer.ElapsedSimTimeMS=2000; a:UpdateCallIns()
+            assert(MovableMan.particleCount==oldCount+level+2 and order.ship.openedWithCargo==0,
+                'every upgraded payload must actually leave the ship')
+            for i=oldCount+1,MovableMan.particleCount do
+                local item=MovableMan.particles[i]
+                assert(item.name==spec.preset and item.Team==teamId,'released payload must preserve its type and team')
+            end
+        end
+    end
+    local before=team.funds
+    assert(not commander:Research(22) and not commander:Research(23) and team.funds==before,
+        'both research tracks stop at level three without charging')
+    for _,spec in ipairs({{kind='cover',timer=team.coverTimer},{kind='mines',timer=team.minesTimer}}) do
+        spec.timer.ElapsedSimTimeMS=100000
+        local beforeFunds=team.funds
+        assert(commander:CallIn(spec.kind,2))
+        local order=a.pendingDrops[#a.pendingDrops]
+        local particles=MovableMan.particleCount or 0
+        a.ShieldBlocks=function() return true end
+        order.timer.ElapsedSimTimeMS=4000; a:UpdateCallIns()
+        a.ShieldBlocks=nil
+        assert(#a.pendingDrops==0 and team.funds==beforeFunds and (MovableMan.particleCount or 0)==particles,
+            'jammers must intercept and refund upgraded payloads for either team')
+    end
+    if teamId==0 then
+        local labels={}
+        a.UIDrawBoxFill=function() end; a.UIDrawBox=function() end
+        a.UIDrawText=function(_,_,_,label) labels[#labels+1]=label end
+        a.tab='Support'; a:DrawPanel()
+        local support=table.concat(labels,' ')
+        assert(support:find('140 oz | L3:5',1,true) and support:find('180 oz | L3:5',1,true),
+            'support panel must show actual levels and payload counts')
+        labels={}; a.tab='Research'; a.researchPage=4; a:DrawPanel()
+        local research=table.concat(labels,' ')
+        assert(research:find('Cover  3/3  MAX',1,true) and research:find('Mines  3/3  MAX',1,true)
+            and research:find('Lv1/2/3: Cover 3/4/5 | Mines 3/4/5',1,true),
+            'research panel must show max status and each level’s payload')
+    end
+end
+print('Both teams research and deliver cover and mines at 3/4/5 payloads')

@@ -87,8 +87,8 @@ local CONFIG = {
         -- Offense escalates from orbital barrage to precision strike to bomb;
         -- defense progresses from cover through mines to a turret.
         {name="Support: Orbital Gatling Barrage", price=600, max=1, kind="support"},
-        {name="Support: Cover delivery", price=280, max=1, kind="support"},
-        {name="Support: Minefield delivery", price=360, max=1, kind="support", requires=22},
+        {name="Support: Cover delivery", price=280, prices={280,560,840}, max=3, kind="support"},
+        {name="Support: Minefield delivery", price=360, prices={360,720,1080}, max=3, kind="support", requires=22},
         {name="Support: Orbital Precision Strike", price=800, max=1, kind="support", requires=21},
         {name="Support: Carpet Bomb", price=1000, max=1, kind="support", requires=24},
         {name="Support: Static turret", price=520, max=1, kind="support", requires=23},
@@ -146,7 +146,7 @@ CONFIG.ai={
     researchResponses={infantry={2,4},vehicles={3,6}},
     playerResearchFocus={[1]="infantry",[4]="infantry",[5]="vehicles",[6]="infantry",
         [7]="infantry",[8]="infantry",[9]="infantry",[10]="vehicles",[16]="infantry"},
-    researchTargets={repeatable={[1]=true,[2]=true,[13]=true,[29]=true},missile=10,equipmentFirst=18,equipmentLast=20,supportFirst=21,supportLast=28},
+    researchTargets={repeatable={[1]=true,[2]=true,[13]=true,[22]=true,[23]=true,[29]=true},missile=10,equipmentFirst=18,equipmentLast=20,supportFirst=21,supportLast=28},
     roster={roninIndex=6,initialRonins=CONFIG.STARTING_SQUAD_SIZE,selectableCount=5},
     weaponResearch={pistol=1,smg=7,shotgun=8,sniper=9,missile=10,assault=16,sidearms=19,medkits=17,grenades=18,armor=20},
     weaponIndices={pistol=1,smg=2,shotgun=3,assault=4,sniper=5,missile=6},
@@ -178,6 +178,9 @@ CONFIG.ai={
         baseDefenseBatchSize=6,
         enemyClusterRadius=120,
         enemyClusterMinimum=2,
+        enemyClusterVerticalRadius=180,
+        clusterCollateralRadius={strike=300,bomb=450,orbital=350},
+        clusterAssetThreatRadius=500,clusterAssetThreatBonus=12,
         playerDeploymentWindowMs=30000,
         playerRushDeploymentCount=3,
         playerCallinWindowMs=20000,
@@ -186,7 +189,6 @@ CONFIG.ai={
         rushBonus=4,
         targetTieBreak=0.01,
         woundedMinimum=2,
-        enemyPostMinimum=2,
         enemyVehicleThreat=8,
         antiVehicleTier=2,
         fortifyPreference=2,
@@ -215,7 +217,7 @@ CONFIG.supportEffects={
     medicDronesByLevel={0,1,2},
     miningCost=200,
     miningPinStrength=1000000,
-    mineAndCoverDropCount=3,
+    dropCountByLevel={cover={3,4,5},mines={3,4,5}},
     orbital={fragments=16},
     weaponPod={count=3,openDelayMs=1000,descentVelocity=45,releaseSpread=30,releaseHorizontalVelocity=10,releaseVerticalVelocity=4},
     bombRun={count=3,targetLead=192,height=400,flightDistance=360,speed=120,
@@ -226,6 +228,11 @@ CONFIG.supportEffects={
     jammerDrawing={segments=24,lineOffset=1,groundOffset=12,verticalRadius=130},
     bubbleShield={duration=30000,radius=180,verticalOffset=90,drawSegments=48},
 }
+
+local function supportDropCount(kind,level)
+    local counts=CONFIG.supportEffects.dropCountByLevel[kind]
+    return counts and counts[math.min(level,#counts)] or 0
+end
 CONFIG.map={
     outposts={
         largeSceneWidth=15000,mediumSceneWidth=10000,
@@ -363,8 +370,23 @@ CONFIG.researchPages={
     }},
     {title="SUPPORT NETWORK",columns={
         {title="MEDIC / INDUSTRY",items={11,12,14,28}},
-        {title="DEFENSE",items={22,13,23,26,27}},
         {title="OFFENSE",items={21,24,25}},
+    }},
+    {title="DEFENSE NETWORK",columns={
+        {title="DEFENSE",items={22,13,23,26,27}},
+    },graph={
+        nodes={
+            [22]={x=145,y=125,w=160}, [13]={x=15,y=168,w=180},
+            [23]={x=255,y=168,w=180}, [26]={x=255,y=224,w=180},
+            [27]={x=145,y=280,w=160},
+        },
+        edges={
+            {from=22,to=13,points={{225,141},{225,154},{105,154},{105,168}}},
+            {from=22,to=23,points={{225,141},{225,154},{345,154},{345,168}}},
+            {from=23,to=26,points={{420,184},{420,224}}},
+            {from=13,to=27,points={{15,176},{10,176},{10,288},{145,288}}},
+            {from=26,to=27,points={{435,232},{440,232},{440,288},{305,288}}},
+        },
     }},
 }
 CONFIG.researchLabels={
@@ -379,7 +401,7 @@ CONFIG.researchLabels={
     [24]="Orbital Precision Strike", [25]="Carpet Bomb", [26]="Turret",
     [27]="Energy Shield", [28]="Weapon Cache Pod", [29]="Squad Size +1",
 }
-CONFIG.researchPageOptions={1,2,3}
+CONFIG.researchPageOptions={1,2,3,4}
 
 function Frontline:StartActivity()
     self.originalHudDisabled=FrameMan:IsHudDisabled(0)==true
@@ -1478,7 +1500,7 @@ function TeamCommander:CallIn(kind,index)
             delay=CONFIG.CALLIN_TURRET_DELAY_MS,cost=cost,count=1,startY=startY,releaseY=releaseY})
         self:Notify((team==0 and "Your" or "Enemy").." turret dropship inbound (4s)!")
     elseif kind=="mines" or kind=="cover" then
-        local count=CONFIG.supportEffects.mineAndCoverDropCount
+        local count=supportDropCount(kind,t.levels[CONFIG.supportResearch[kind]])
         local startY=math.max(CONFIG.map.cover.minimumShipHeight,outpost.groundY-CONFIG.map.cover.startOffset)
         local releaseY = math.max(startY, outpost.groundY-CONFIG.map.cover.releaseOffset)
         local delay = kind=="mines" and CONFIG.CALLIN_MINES_DELAY_MS or CONFIG.CALLIN_COVER_DELAY_MS
@@ -2396,34 +2418,48 @@ function Frontline:UpdateAI()
         if post.owner==team and posts[i].allies>0 then
             addAction("supply","weaponPod",i,{allies=posts[i].allies})
         end
-        if posts[i].enemies>=aiTuning.enemyPostMinimum and posts[i].allies==0 then
-            for choice,kind in ipairs({"strike","bomb","orbital"}) do
-                local preference=choice==(ai.offenseChoice or 1) and 2 or 0
-                if kind=="orbital" and self.aiPersonality=="aggressive" and self:UnitCount(0)>aiTuning.enemyVehicleThreat then preference=preference+8 end
-                addAction("offense",kind,i,{
-                    enemies=posts[i].enemies,
-                    utility=preference,
-                })
-            end
-        end
     end
 
-    -- Area strikes may also target dense enemy groups outside capture zones.
-    local seenClusters={}
+    -- Examine actual nearby enemy groups everywhere, including off-post.
+    -- Different support weapons have conservative horizontal collateral
+    -- buffers; fragments can travel farther, so this is not a safety guarantee.
+    local seenX={}
     for _,candidate in ipairs(fieldActors) do
-        if candidate.Team==0 then
-            local enemies,allies=0,0
+        if candidate.Team==1-team and not seenX[candidate.Pos.X] then
+            local x=candidate.Pos.X
+            seenX[x]=true
+            local ground=SceneMan:MovePointToGround(Vector(x,0),0,CONFIG.map.outposts.groundProbe)
+            local enemies=0
             for _,actor in ipairs(fieldActors) do
-                if math.abs(actor.Pos.X-candidate.Pos.X)<aiTuning.enemyClusterRadius then
-                    if actor.Team==0 then enemies=enemies+1 else allies=allies+1 end
+                if actor.Team==1-team and math.abs(actor.Pos.X-x)<=aiTuning.enemyClusterRadius
+                    and math.abs(actor.Pos.Y-ground.Y)<=aiTuning.enemyClusterVerticalRadius then
+                    enemies=enemies+1
                 end
             end
-            local cluster=math.floor(candidate.Pos.X/aiTuning.enemyClusterRadius)
-            if enemies>=aiTuning.enemyClusterMinimum and allies==0 and not seenClusters[cluster] then
-                seenClusters[cluster]=true
-                local ground=SceneMan:MovePointToGround(Vector(candidate.Pos.X,0),0,4)
-                local target={name="enemy concentration",x=candidate.Pos.X,groundY=ground.Y,owner=-1}
-                addAction("offense","strike",target,{enemies=enemies})
+            if enemies>=aiTuning.enemyClusterMinimum then
+                local closestFriendly=math.huge
+                for actor in MovableMan.Actors do
+                    if actor.Team==team and not actor.ToDelete and (not actor.Health or actor.Health>0) and actor.Pos then
+                        closestFriendly=math.min(closestFriendly,math.abs(actor.Pos.X-x))
+                    end
+                end
+                local target={name="enemy concentration",x=x,groundY=ground.Y,owner=-1}
+                local threatBonus=0
+                for i,post in ipairs(self.outposts) do
+                    if post.x==x then target=i end
+                    if post.owner==team and math.abs(post.x-x)<=aiTuning.clusterAssetThreatRadius then
+                        threatBonus=aiTuning.clusterAssetThreatBonus
+                    end
+                end
+                if math.abs(self.brains[team].Pos.X-x)<=aiTuning.baseRushRadius then
+                    threatBonus=aiTuning.clusterAssetThreatBonus
+                end
+                for choice,kind in ipairs({"strike","bomb","orbital"}) do
+                    if closestFriendly>aiTuning.clusterCollateralRadius[kind] then
+                        local preference=choice==(ai.offenseChoice or 1) and 2 or 0
+                        addAction("offense",kind,target,{enemies=enemies,utility=preference+threatBonus})
+                    end
+                end
             end
         end
     end
@@ -2836,13 +2872,13 @@ function Frontline:DrawPanel()
         end)
         text(310,181,"Advance: capture, then attack",true)
         text(310,193,"Defend: capture and hold",true)
-        text(310,205,"Forward: +25/unit, "..(CONFIG.FORWARD_DEPLOY_COOLDOWN_MS/1000).."s cooldown",true)
+        text(310,205,"Forward: variable cost, "..(CONFIG.FORWARD_DEPLOY_COOLDOWN_MS/1000).."s cooldown",true)
         text(310,217,"MED / GRN: +45 each",true)
         text(310,229,"ARM: +"..CONFIG.UNIT_ARMOR_COST.."/unit",true)
         text(15,266,"SQUAD SIZE: "..self:MaxSquadSize(0).." MAX  |  RESEARCH "..(t.levels[CONFIG.SQUAD_SIZE_RESEARCH] or 0).."/6")
     elseif self.tab=="Research" then
         local page=CONFIG.researchPages[self.researchPage] or CONFIG.researchPages[1]
-        text(15,80,"TECH TREE  |  Complete earlier nodes to open connected upgrades.")
+        text(15,80,page.graph and "TECH TREE  |  Follow lines downward to unlock." or "TECH TREE  |  Complete earlier nodes to open connected upgrades.")
         text(15,94,page.title.."  |  Click a node to research.")
         button(350,80,100,"PAGE "..self.researchPage.." / "..#CONFIG.researchPages,"available",function(step)
             self.researchPage=cycleOption(CONFIG.researchPageOptions,self.researchPage,step)
@@ -2852,12 +2888,24 @@ function Frontline:DrawPanel()
         local columnGap=columns==3 and 150 or 225
         local rowSpacing=43
         local nodePositions={}
+        if page.graph then
+            for _,edge in ipairs(page.graph.edges) do
+                local locked=not researchUnlocked(t.levels,CONFIG.research[edge.to])
+                for i=1,#edge.points-1 do
+                    local from,to=edge.points[i],edge.points[i+1]
+                    PrimitiveMan:DrawLinePrimitive(pos(from[1],from[2]),pos(to[1],to[2]),locked and 94 or 120)
+                end
+            end
+        end
         for columnIndex,column in ipairs(page.columns) do
             local x=15+(columnIndex-1)*columnGap
             text(x,109,column.title,false)
             for row,index in ipairs(column.items) do
                 local r=CONFIG.research[index]
-                local y=125+(row-1)*rowSpacing
+                local placement=page.graph and page.graph.nodes[index]
+                local x=placement and placement.x or x
+                local y=placement and placement.y or 125+(row-1)*rowSpacing
+                local nodeWidth=placement and placement.w or nodeWidth
                 local price=self:ResearchCost(0,index)
                 local locked=not researchUnlocked(t.levels,r)
                 nodePositions[index]={x=x,y=y}
@@ -2867,10 +2915,13 @@ function Frontline:DrawPanel()
                         PrimitiveMan:DrawLinePrimitive(pos(parent.x+nodeWidth/2,parent.y+16),pos(x+nodeWidth/2,y),locked and 94 or 120)
                     end
                 end
-                if r.requires then drawConnector({index=r.requires,level=r.requiresLevel or 1}) end
-                for _,requirement in ipairs(r.requiresAll or {}) do drawConnector(requirement) end
-                local state=(t.levels[index] or 0)>=r.max and "selected" or (locked and "locked" or (t.funds<price and "disabled" or "available"))
-                local label=CONFIG.researchLabels[index].."  "..(t.levels[index] or 0).."/"..r.max.."  "..price.."oz"
+                if not page.graph then
+                    if r.requires then drawConnector({index=r.requires,level=r.requiresLevel or 1}) end
+                    for _,requirement in ipairs(r.requiresAll or {}) do drawConnector(requirement) end
+                end
+                local maxed=(t.levels[index] or 0)>=r.max
+                local state=maxed and "selected" or (locked and "locked" or (t.funds<price and "disabled" or "available"))
+                local label=CONFIG.researchLabels[index].."  "..(t.levels[index] or 0).."/"..r.max.."  "..(maxed and "MAX" or (price.."oz"))
                 button(x,y,nodeWidth,label,state,function()
                     local _,msg=self.commanders[0]:Research(index)
                     if msg~="Research complete" then self:Notify(msg) end
@@ -2892,7 +2943,10 @@ function Frontline:DrawPanel()
                 end
             end
         end
-        if columns<3 then text(15,335,"Connectors show prerequisites. Research outpost discounts stack.") end
+        if page.graph then
+            local counts=CONFIG.supportEffects.dropCountByLevel
+            text(15,335,"Lv1/2/3: Cover "..table.concat(counts.cover,"/").." | Mines "..table.concat(counts.mines,"/"),true)
+        elseif columns<3 then text(15,335,"Connectors show prerequisites. Research outpost discounts stack.") end
     elseif self.tab=="Battle" then
         text(15,84,"OUTPOSTS: hold for stacking bonuses")
         for i,outpost in ipairs(self.outposts) do
@@ -2919,7 +2973,9 @@ function Frontline:DrawPanel()
                 if not unlocked then self:Notify("Research "..CONFIG.research[required].name.." first")
                 else self:BeginTargeting(kind) end
             end)
-            text(x,y+17,cost.." oz | "..status,true)
+            local level=t.levels[required] or 0
+            local drops=(kind=="cover" or kind=="mines") and (" | L"..level..":"..supportDropCount(kind,level)) or ""
+            text(x,y+17,cost.." oz"..drops.." | "..status,true)
             if not unlocked then text(x,y+28,"Requires "..CONFIG.researchLabels[required],true) end
         end
         supportOption("orbital","ORBITAL GATLING BARRAGE",CONFIG.CALLIN_ORBITAL_COST,t.orbitalTimer,CONFIG.CALLIN_ORBITAL_COOLDOWN_MS,15,128)

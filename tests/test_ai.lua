@@ -16,6 +16,7 @@ function CreateAHuman(name)
 end
 function CreateACrab(name) local actor=CreateAHuman(name); actor.vehicle=true; return actor end
 function CreateHDFirearm(name) return {name=name} end
+function CreateMOPixel(name) return {name=name} end
 function CreateTDExplosive(name) return {name=name} end
 function CreateACDropShip(name)
     nextId=nextId+1
@@ -577,3 +578,118 @@ do
         print('Persona decisions '..name..': '..signature)
     end
 end
+
+-- Concentrations are considered off-post, on friendly posts and in neutral
+-- territory; every available offense still uses normal call-in rules.
+do
+    local function setup(kind,x,amount,owner)
+        local a=newBattle()
+        a.settings.callins=true
+        local ai=a.teams[1]; ai.funds=1000; ai.stats.deployed=3; ai.timer.ElapsedSimTimeMS=0
+        ai.baseArmor=3; ai.turret={Health=100}; ai.turretLevel=2
+        if owner then a.outposts[2].owner=owner end
+        if kind=='orbital' then ai.levels[21]=1
+        elseif kind=='strike' then ai.levels[21]=1; ai.levels[24]=1; ai.orbitalTimer.ElapsedSimTimeMS=0
+        elseif kind=='bomb' then
+            ai.levels[21]=1; ai.levels[24]=1; ai.levels[25]=1
+            ai.orbitalTimer.ElapsedSimTimeMS=0; ai.strikeTimer.ElapsedSimTimeMS=0
+        end
+        for i=1,amount do
+            local enemy=CreateAHuman('enemy'); enemy.Team=0
+            enemy.Pos=Vector(x+(i-1)*20,565); MovableMan:AddActor(enemy)
+        end
+        return a,ai
+    end
+    local costs={strike=220,bomb=260,orbital=175}
+    for _,kind in ipairs({'strike','bomb','orbital'}) do
+        local a,ai=setup(kind,2100,3)
+        a:UpdateAI()
+        local order=kind=='strike' and a.pendingStrikes[1] or
+            (kind=='orbital' and a.pendingOrbitals[1] or a.pendingDrops[1])
+        assert(order and order.target.x>=2100 and order.target.x<=2140
+            and ai.lastAIAction.kind=='offense' and ai.funds==1000-costs[kind],
+            kind..' should target the off-post cluster and pay the normal cost')
+        local timer=kind=='strike' and ai.strikeTimer or (kind=='bomb' and ai.bombTimer or ai.orbitalTimer)
+        assert(timer.ElapsedSimTimeMS==0,'offensive support must start its usual cooldown')
+    end
+    for _,owner in ipairs({-1,1}) do
+        local a=setup('orbital',2600,3,owner)
+        a:UpdateAI()
+        assert(#a.pendingOrbitals==1 and a.pendingOrbitals[1].target.x>=2600,
+            'cluster targeting must work on neutral and owned posts')
+    end
+    local function noOffense(a,ai)
+        a:UpdateAI()
+        assert(#a.pendingStrikes==0 and #a.pendingOrbitals==0
+            and (not ai.lastAIAction or ai.lastAIAction.kind~='offense'),
+            'unavailable or unsafe support must not be ordered')
+    end
+    local a,ai=setup(nil,2100,3); noOffense(a,ai)
+    a,ai=setup('strike',2100,3); ai.strikeTimer.ElapsedSimTimeMS=0; noOffense(a,ai)
+    a,ai=setup('strike',2100,3); ai.funds=200; noOffense(a,ai)
+    a,ai=setup('strike',2100,3)
+    local ally=CreateAHuman('friendly'); ally.Team=1; ally.Pos=Vector(2250,565); MovableMan:AddActor(ally)
+    noOffense(a,ai)
+    a,ai=setup('strike',500,3); noOffense(a,ai)
+    a,ai=setup('strike',2100,1); noOffense(a,ai)
+    a,ai=setup('strike',2100,3); a.settings.callins=false; noOffense(a,ai)
+    a,ai=setup('strike',2100,3); a.ShieldBlocks=function() return true end; noOffense(a,ai)
+    a,ai=setup('strike',4800,3); noOffense(a,ai) -- friendly brain is inside the buffer
+    a,ai=setup('strike',2100,3)
+    local turret=CreateACrab('friendly turret'); turret.Team=1; turret.Pos=Vector(2250,565)
+    ai.turret=turret; ai.turretID=turret.UniqueID; MovableMan:AddActor(turret)
+    noOffense(a,ai)
+    a,ai=setup('strike',2100,3)
+    local ship=CreateACDropShip('friendly ship'); ship.Team=1; ship.Pos=Vector(2250,200)
+    MovableMan:AddActor(ship)
+    noOffense(a,ai)
+    a,ai=setup('strike',2100,3)
+    for _,actor in ipairs(actors) do
+        if actor.Team==0 and actor.Pos.X>2000 then actor.Pos=Vector(actor.Pos.X,100) end
+    end
+    noOffense(a,ai)
+
+    a,ai=setup('strike',750,1)
+    local legal=CreateAHuman('enemy'); legal.Team=0; legal.Pos=Vector(810,565); MovableMan:AddActor(legal)
+    a:UpdateAI()
+    assert(a.pendingStrikes[1] and a.pendingStrikes[1].target.x==810,
+        'an excluded first point must not hide a nearby legal concentration')
+
+    a,ai=setup('strike',2100,3)
+    a.outposts[3].owner=1
+    for i=1,3 do
+        local enemy=CreateAHuman('enemy'); enemy.Team=0; enemy.Pos=Vector(3500+i*15,565); MovableMan:AddActor(enemy)
+    end
+    a:UpdateAI()
+    assert(a.pendingStrikes[1] and a.pendingStrikes[1].target.x>=3500,
+        'equal clusters threatening a friendly outpost should take priority')
+
+    -- A denser cluster must win even if a sparser group is iterated first.
+    a,ai=setup('strike',1900,2)
+    for i=1,4 do
+        local enemy=CreateAHuman('enemy'); enemy.Team=0; enemy.Pos=Vector(3200+i*15,565); MovableMan:AddActor(enemy)
+    end
+    a:UpdateAI()
+    assert(a.pendingStrikes[1] and a.pendingStrikes[1].target.x>=3200,
+        'higher enemy density should beat the first sparse cluster')
+end
+print('AI targets safe feasible clusters with all three offensive supports')
+
+-- The actual AI investment loop can buy both later support tiers.
+for _,index in ipairs({22,23}) do
+    local a=newBattle()
+    local ai=a.teams[1]
+    for i=1,29 do ai.levels[i]=10 end
+    ai.levels[index]=1
+    ai.baseArmor=3; ai.turret={Health=100}; ai.turretLevel=2
+    ai.timer.ElapsedSimTimeMS=0
+    for level=2,3 do
+        ai.funds=5000
+        local price=a:ResearchCost(1,index)
+        a:UpdateAI()
+        assert(ai.levels[index]==level and ai.lastAIAction.kind=='research'
+            and ai.lastAIAction.target==index and ai.funds==5000-price,
+            'AI must purchase each available Cover/Mines tier at its normal price')
+    end
+end
+print('AI purchases Cover and Mines research levels 2 and 3')

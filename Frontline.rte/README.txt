@@ -18,8 +18,9 @@ upgrades increase the maximum by one each, up to 9 units.
 
 Unit research follows the Coalition Light -> Coalition Heavy -> Dummy/Gatling
 Drone -> Browncoat chain. Weapon and equipment unlocks are in the Arsenal tree.
-The Research tab has categorized pages, including a Support page; connector
-lines mark prerequisites. `CONFIG.research` is a one-based Lua array: its
+The Research tab cycles through Foundations, Arsenal, Support Network and
+Defense Network; lines run downward from prerequisites to unlocks.
+`CONFIG.research` is a one-based Lua array: its
 indices run from 1 through 29 and match the prerequisite and support references.
 Support Jammer is one node at index 13 with levels 1 and 2. Energy Shield is
 index 27 and requires Turret research (26) and Support Jammer level 2 (13).
@@ -33,6 +34,11 @@ the drop to two drones. Mining Call-In delivers a Dummy with a pistol and
 Light Digger; it seeks deposits and digs. The Support Jammer's two levels
 increase its duration.
 
+Cover and Mines research each have three levels, delivering 3, 4 or 5
+payloads per call-in. Cover research costs 280 / 560 / 840 oz; Mines costs
+360 / 720 / 1080 oz. Mines requires Cover Lv.1, and Turret requires Mines
+Lv.1. Call-in prices and cooldowns do not increase with research level.
+
 Weapon Cache Pod is delivered by a landing pod that opens and dispenses three
 random firearms using qualified names from all loaded HDFirearm presets, including exotic mods.
 The upgradeable base turret uses a custom cannon firing the engine's damaging
@@ -45,8 +51,8 @@ benefits when rebuilt.
 
 The approach hallway's walkable floor is aligned to the main vault exit on both
 teams. Mirrored upper turret rooms align with the battlefield-facing outer exits;
-the HE base turret bases rest on the room floor; their heads retain the stock
-Gatling mount's 6-pixel upward attachment and fire outward above the corridor roof.
+the stock Gatling head and cover use their original pivot alignment; a single
+HE cannon fires outward above the lower corridor roof.
 
 
 The Support tab orders the offense as Orbital Gatling Barrage, Orbital Precision
@@ -85,6 +91,10 @@ score bias, not a replacement for tactical context. Successful player
 deployments, research and call-ins are tracked for adaptation. A base threat
 strength of 4 within 800 pixels interrupts the current goal for home defense;
 the goal clears below strength 2.
+The AI considers unlocked offensive support against clustered enemies on or
+between outposts, favoring groups threatening friendly positions. It avoids
+targets near friendly actors, brains or turrets using conservative buffers;
+stray fragments can still cause friendly fire.
 Each battle randomly chooses one of ten personalities: aggressive, defensive,
 economic, balanced, strategic, raider, guardian, artillery, engineer or
 vanguard. Their goal, support, investment and research preferences differ;

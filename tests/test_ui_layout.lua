@@ -78,7 +78,8 @@ function Frontline:GetTeamDeathCount(team) return self.deathCounts[team] or 0 en
 assert(loadfile('Frontline.rte/Frontline.lua'))()
 
 local function capture(activity,draw,width,height)
- local items,background,lastFill,lastBorder={}
+ local items,background,lastFill,lastBorder,lines={},nil,nil,nil,{}
+ PrimitiveMan.DrawLinePrimitive=function(_,a,b) lines[#lines+1]={a=a,b=b} end
  activity.UIDrawBoxFill=function(_,_,a,b)
   local rect={kind='button',x=a.X,y=a.Y,r=b.X+1,b=b.Y+1}
   if not background then background=rect else lastFill=rect end
@@ -98,6 +99,23 @@ local function capture(activity,draw,width,height)
  FrameMan.PlayerScreenWidth=width; FrameMan.PlayerScreenHeight=height
  activity[draw](activity)
  assert(background,'UI did not draw its panel background')
+ if draw=='DrawPanel' and activity.tab=='Research' and activity.researchPage==4 then
+  for _,line in ipairs(lines) do
+   local a,b=line.a,line.b
+   assert(a.X==b.X or a.Y==b.Y,'research dependency line must be orthogonal')
+   for _,item in ipairs(items) do
+    local right=item.kind=='button' and item.r-1 or item.r
+    local bottom=item.kind=='button' and item.b-1 or item.b
+    local crossing
+    if a.X==b.X then
+     crossing=a.X>item.x and a.X<right and math.max(a.Y,b.Y)>item.y and math.min(a.Y,b.Y)<bottom
+    else
+     crossing=a.Y>item.y and a.Y<bottom and math.max(a.X,b.X)>item.x and math.min(a.X,b.X)<right
+    end
+    assert(not crossing,string.format('dependency line (%s,%s)-(%s,%s) crosses %s (%s,%s)-(%s,%s)',a.X,a.Y,b.X,b.Y,item.label or item.kind,item.x,item.y,item.r,item.b))
+   end
+  end
+ end
  return inspect(background,{x=0,y=0,r=width,b=height},items),items
 end
 
@@ -207,10 +225,11 @@ for _,scene in ipairs({{5200,3},{10400,5},{15600,9}}) do
   run(sceneWidth..' spawn '..destination,a,'DrawPanel',640,480)
  end
  for _,post in ipairs(a.outposts) do post.owner=-1 end
- for _,state in ipairs({'locked','unlocked','long'}) do
+ for _,state in ipairs({'locked','unlocked','maxed','long'}) do
   local t=a.teams[0]
   for i=1,29 do t.levels[i]=state=='locked' and 0 or 1 end
   t.tier=state=='locked' and 0 or 3
+  if state=='maxed' then t.levels[13]=2; t.levels[22]=3; t.levels[23]=3; t.levels[27]=1 end
   if state=='long' then
    a.matchTimer.ElapsedSimTimeMS=1234567890
    a.deathCounts={[0]=12345,[1]=67890}
@@ -223,7 +242,7 @@ for _,scene in ipairs({{5200,3},{10400,5},{15600,9}}) do
   for _,viewport in ipairs({{640,480},{960,540}}) do
    for _,tab in ipairs(tabs) do
     a.tab=tab
-    local pages=tab=='Research' and 3 or (tab=='Squad' and 2 or 1)
+    local pages=tab=='Research' and 4 or (tab=='Squad' and 2 or 1)
     for page=1,pages do
      if tab=='Research' then a.researchPage=page elseif tab=='Squad' then a.rosterPage=page end
      run(sceneWidth..' '..state..' '..tab..' page '..page,a,'DrawPanel',viewport[1],viewport[2])

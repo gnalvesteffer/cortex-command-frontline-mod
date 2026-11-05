@@ -512,6 +512,8 @@ ai.funds=2000; bot:UpdateAI(); assert(#bot.jamFields==1 and bot.jamFields[1].tea
 print('AI uses shared income, research, units, forward orders, medics, strikes and shields')
 -- The AI cycles through the other offensive call-ins and both fortification types.
 ai.funds=2000; bot:UpdateAI(); assert(#bot.pendingDrops==1 and bot.pendingDrops[1].kind=='bomb' and bot.pendingDrops[1].totalBombs==3 and ai.funds==1740)
+-- The bomb craft has left the target area before another salvo is considered.
+bot.pendingDrops[1].ship.Pos=Vector(bot.outposts[2].x+1000,200)
 ai.funds=2000; bot:UpdateAI(); assert(#bot.pendingOrbitals==2 and bot.pendingOrbitals[2].team==1 and ai.funds==1825)
 foe1.Pos=Vector(bot.outposts[3].x-260,565); foe2.Pos=Vector(bot.outposts[3].x-260,565)
 medic1.Health=100; medic2.Health=100; bot.pendingOrbitals={}; ai.funds=2000; ai.levels[14]=1; bot.aiPersonality="defensive"
