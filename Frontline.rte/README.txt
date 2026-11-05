@@ -45,7 +45,8 @@ benefits when rebuilt.
 
 The approach hallway's walkable floor is aligned to the main vault exit on both
 teams. Mirrored upper turret rooms align with the battlefield-facing outer exits;
-the HE base turret mounts rest on the room floor and fire outward above the corridor roof.
+the HE base turret bases rest on the room floor; their heads retain the stock
+Gatling mount's 6-pixel upward attachment and fire outward above the corridor roof.
 
 
 The Support tab orders the offense as Orbital Gatling Barrage, Orbital Precision
