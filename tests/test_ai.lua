@@ -138,6 +138,24 @@ do
         'opponent purchases must not be attributed to the player')
 end
 
+-- Passive-player adaptation requires repeated small batches, not just low investment.
+do
+    local activity=newBattle()
+    activity.matchTimer.ElapsedSimTimeMS=61000
+    local behavior=activity.playerBehavior
+    behavior.deployments=3
+    behavior.researchPurchases=0
+    behavior.callinsUsed=0
+    behavior.recentDeploymentCount=3
+    behavior.lastDeploymentCount=3
+    assert(activity:IsPlayerPassive(),'repeated small deployments with no investment should be passive')
+    behavior.lastDeploymentCount=5
+    assert(not activity:IsPlayerPassive(),'a large latest batch must not meet the small-wave condition')
+    behavior.lastDeploymentCount=3
+    behavior.recentDeploymentCount=2
+    assert(not activity:IsPlayerPassive(),'insufficient recent batches must not meet the small-wave condition')
+end
+
 -- A home emergency must interrupt ordinary strategy and cease after attackers
 -- leave; budget and deployment cooldown still apply during the emergency.
 do
@@ -509,10 +527,11 @@ do
 end
 
 -- Identical battlefield: a raider presses the neutral post while a balanced
--- commander assembles at its held post.
+-- commander assembles at its held post. Use low temperature for deterministic comparison.
 do
     local function goal(personality)
-        local a=newBattle(); a.aiPersonality=personality; a.teams[1].funds=0
+        local a=newBattle(); a.aiPersonality=personality; a.aiTemperature=0.01
+        a.teams[1].funds=0
         a.outposts[3].owner=1
         for i=1,3 do
             local ally=CreateAHuman('ally'); ally.Team=1
@@ -534,7 +553,7 @@ do
     local names={'aggressive','defensive','economic','balanced','strategic','raider','guardian','artillery','engineer','vanguard'}
     local function scenario(personality,which)
         math.randomseed(100)
-        local a=newBattle(); a.aiPersonality=personality
+        local a=newBattle(); a.aiPersonality=personality; a.aiTemperature=0.01
         local ai=a.teams[1]
         ai.stats.deployed=3; ai.funds=which<=2 and 0 or 2000; ai.timer.ElapsedSimTimeMS=0
         if which<=2 then

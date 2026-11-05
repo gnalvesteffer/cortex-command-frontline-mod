@@ -151,6 +151,8 @@ CONFIG.ai={
     weaponResearch={pistol=1,smg=7,shotgun=8,sniper=9,missile=10,assault=16,sidearms=19,medkits=17,grenades=18,armor=20},
     weaponIndices={pistol=1,smg=2,shotgun=3,assault=4,sniper=5,missile=6},
     strategy={attackGroupSize=6},
+    temperature=0.7, -- Higher = more random exploration; lower = more greedy/optimal (0.0-2.0)
+    passivePlayerDetection=true, -- Detect and adapt to passive player strategies
     tuning={
         pressureUnitAdvantage=2,
         researchReserve=240,
@@ -333,17 +335,59 @@ local function scoreAIAction(action, personality, pressured)
     return score
 end
 
-local function chooseAIAction(actions, personality, pressured)
-    local best
-    for _,action in ipairs(actions) do
-        action.score=scoreAIAction(action,personality,pressured)
-        if not best or action.score>best.score then best=action end
+-- Softmax-based probabilistic selection with temperature control.
+-- Higher temperature = more random exploration; lower = more greedy/optimal.
+local function softmaxSelect(actions, scores, temperature)
+    if #actions==0 then return nil end
+    if #actions==1 or temperature<=0.001 then
+        -- Deterministic: pick highest score
+        local best=1
+        for i=2,#scores do
+            if scores[i]>scores[best] then best=i end
+        end
+        return actions[best]
     end
-    return best
+
+    -- Compute softmax probabilities
+    local maxScore=scores[1]
+    for i=2,#scores do
+        if scores[i]>maxScore then maxScore=scores[i] end
+    end
+
+    local sum=0
+    local expScores={}
+    for i=1,#scores do
+        local e=math.exp((scores[i]-maxScore)/temperature)
+        expScores[i]=e
+        sum=sum+e
+    end
+
+    -- Sample from distribution
+    local r=math.random()*sum
+    local cumulative=0
+    for i=1,#actions do
+        cumulative=cumulative+expScores[i]
+        if r<=cumulative then return actions[i] end
+    end
+    return actions[#actions]
+end
+
+local function chooseAIAction(actions, personality, pressured, temperature)
+    if #actions==0 then return nil end
+
+    local scores={}
+    for i,action in ipairs(actions) do
+        action.score=scoreAIAction(action,personality,pressured)
+        scores[i]=action.score
+    end
+
+    -- Use temperature-based selection for strategic variety
+    return softmaxSelect(actions,scores,temperature or CONFIG.ai.temperature)
 end
 
 function Frontline:ChooseAIAction(actions, pressured)
-    return chooseAIAction(actions,self.aiPersonality,pressured)
+    local temp=self.aiTemperature or CONFIG.ai.temperature
+    return chooseAIAction(actions,self.aiPersonality,pressured,temp)
 end
 
 -- Each side makes decisions through the same team-bound commander.
@@ -2031,8 +2075,49 @@ function Frontline:CheckUrgentAIThreats(team)
     return baseStrength>=threshold,postThreat
 end
 
+-- Detect passive player behavior: many small deployments of basic units with
+-- no research, support call-ins, or base upgrades. This indicates a "turtle"
+-- strategy where the player just sends waves of cheap units.
+function Frontline:IsPlayerPassive()
+    if not CONFIG.ai.passivePlayerDetection then return false end
+    local behavior=self.playerBehavior
+    if not behavior then return false end
+
+    -- Need enough data to make a determination (at least 3 deployments)
+    local deployments=behavior.deployments or 0
+    if deployments<3 then return false end
+
+    -- Check for passive indicators:
+    -- 1. Repeated recent deployments with a small latest batch (<= 4 units)
+    local recentCount=behavior.recentDeploymentCount or 0
+    local lastDeploySize=behavior.lastDeploymentCount or 0
+    -- Recent batches are a proxy for the player's deployment pattern. Require
+    -- both repeated recent activity and a small latest batch before adapting.
+    if recentCount<3 or lastDeploySize>4 then return false end
+
+    -- 2. No or very few research purchases relative to deployments
+    local researchPurchases=behavior.researchPurchases or 0
+    local researchRatio=researchPurchases/deployments
+    if researchRatio>0.3 then return false end -- actively researching
+
+    -- 3. No support call-ins used
+    local callinsUsed=behavior.callinsUsed or 0
+    if callinsUsed>0 then return false end
+
+    -- 4. Player has been playing for a while (match time > 60 seconds)
+    local matchTimeSecs=self.matchTimer.ElapsedSimTimeMS/1000
+    if matchTimeSecs<60 then return false end
+
+    -- If player is just deploying basic units repeatedly without investing,
+    -- they're playing passively. AI should adapt by focusing on defense and
+    -- efficient use of terrain rather than expanding aggressively.
+    return true
+end
+
 function Frontline:ChooseAIStrategicGoal(snapshot,ai)
     local goals={}
+    -- Detect passive player early so all goal scoring can adapt
+    local playerPassive=self:IsPlayerPassive()
     local allPostsHeld=true
     local rallyTarget=0
     local strongestRally=0
@@ -2045,13 +2130,17 @@ function Frontline:ChooseAIStrategicGoal(snapshot,ai)
                 if actor.Team==snapshot.team then nearest=math.min(nearest,math.abs(actor.Pos.X-post.x)) end
             end
             local progress=snapshot.team==0 and post.progress or -post.progress
-            local distanceValue=math.max(-20,12-nearest/80)
+            -- Against passive players, be more cautious about advancing to neutral posts
+            local advancePenalty=playerPassive and (post.owner==-1 and 6 or 0) or 0
+            local distanceValue=math.max(-20,12-nearest/80)-advancePenalty
             goals[#goals+1]={goal="advance",kind="advance",target=i,neutral=post.owner==-1,
                 enemies=situation.enemies,utility=distanceValue+(post.owner==-1 and 4 or 0)
                     +progress*12+i*CONFIG.ai.tuning.targetTieBreak}
         elseif situation.threats>0 then
+            -- Against passive players, defend more aggressively since they'll keep sending waves
+            local defenseBonus=playerPassive and 15 or 0
             goals[#goals+1]={goal="defendPost",kind="defend",target=i,threats=situation.threats,
-                allies=situation.allies,utility=situation.threats*CONFIG.ai.tuning.postThreatUrgency}
+                allies=situation.allies,utility=situation.threats*CONFIG.ai.tuning.postThreatUrgency+defenseBonus}
         elseif situation.allies>strongestRally then
             strongestRally=situation.allies
             rallyTarget=i
@@ -2060,9 +2149,10 @@ function Frontline:ChooseAIStrategicGoal(snapshot,ai)
     if snapshot.urgentBaseDefense then
         return {goal="defendBase",kind="defend",target=0,score=math.huge,urgent=true}
     end
+
     if rallyTarget>0 and strongestRally<CONFIG.ai.strategy.attackGroupSize then
         goals[#goals+1]={goal="regroup",kind="regroup",target=rallyTarget,allies=strongestRally,
-            utility=CONFIG.ai.tuning.regroupUtility}
+            utility=CONFIG.ai.tuning.regroupUtility+(playerPassive and 8 or 0)}
     end
     if allPostsHeld then
         goals[#goals+1]={goal="rush",kind="rush",allPostsHeld=true,
@@ -2097,6 +2187,9 @@ function Frontline:UpdateAI()
     local fieldActors=snapshot.fieldActors
     local urgentBaseDefense=snapshot.urgentBaseDefense
     local pressured=snapshot.pressured
+
+    -- Detect passive player and adapt strategy accordingly
+    local playerPassive=self:IsPlayerPassive()
     -- Each decision gets a private priority list before adapting to player research.
     local configured=CONFIG.ai.researchPriorities
     local profile=CONFIG.ai.personas[self.aiPersonality] or CONFIG.ai.personas.balanced
@@ -2132,17 +2225,21 @@ function Frontline:UpdateAI()
     if brain.Health<brain.MaxHealth-aiTuning.brainHealthMargin
         and ai.funds>=repairCost+aiTuning.baseRepairReserve then
         addInvestment({kind="baseUpgrade",purchase="repair",cost=repairCost,
-            utility=28,damageRatio=(brain.MaxHealth-brain.Health)/brain.MaxHealth})
+            utility=28+(playerPassive and 10 or 0),damageRatio=(brain.MaxHealth-brain.Health)/brain.MaxHealth})
     end
     local turretActive=ai.turret and MovableMan:IsActor(ai.turret) and (not ai.turret.Health or ai.turret.Health>0)
     if not turretActive and ai.funds>=CONFIG.BASE_TURRET_COST+aiTuning.baseTurretReserve then
-        addInvestment({kind="baseUpgrade",purchase="turret",cost=CONFIG.BASE_TURRET_COST,utility=30})
+        local turretUtility=30+(playerPassive and 12 or 0)
+        if enemyVehicle then turretUtility=turretUtility+8 end -- Prioritize anti-vehicle defense
+        addInvestment({kind="baseUpgrade",purchase="turret",cost=CONFIG.BASE_TURRET_COST,utility=turretUtility})
     elseif turretActive and ai.turretLevel<2 and ai.funds>=CONFIG.BASE_TURRET_UPGRADE_COST+aiTuning.baseTurretReserve then
-        addInvestment({kind="baseUpgrade",purchase="turretUpgrade",cost=CONFIG.BASE_TURRET_UPGRADE_COST,utility=22})
+        local upgradeUtility=22+(playerPassive and 8 or 0)
+        if enemyVehicle then upgradeUtility=upgradeUtility+6 end
+        addInvestment({kind="baseUpgrade",purchase="turretUpgrade",cost=CONFIG.BASE_TURRET_UPGRADE_COST,utility=upgradeUtility})
     end
     local armorCost=CONFIG.BASE_ARMOR_COST*(ai.baseArmor+1)
     if ai.baseArmor<CONFIG.BASE_ARMOR_LEVELS and ai.funds>=armorCost+aiTuning.baseArmorReserve then
-        addInvestment({kind="baseUpgrade",purchase="armor",cost=armorCost,utility=14-ai.baseArmor*2})
+        addInvestment({kind="baseUpgrade",purchase="armor",cost=armorCost,utility=14-ai.baseArmor*2+(playerPassive and 6 or 0)})
     end
 
     local seenResearch={}
@@ -2408,10 +2505,12 @@ function Frontline:UpdateAI()
             and (posts[i].threats>0 or snapshot.playerDeployments>aiTuning.playerDeploymentsBeforeFortify) then
             local kinds={"cover","mines","turret"}
             for _,kind in ipairs(kinds) do
+                -- Against passive players, prioritize defensive fortifications to handle waves
+                local passiveBonus=playerPassive and (kind=="mines" and 10 or kind=="cover" and 8 or 4) or 0
                 addAction("fortify",kind,i,{
                     threats=posts[i].threats,
                     allies=posts[i].allies,
-                    utility=(kind==ai.fortifyChoice and aiTuning.fortifyPreference or (kind=="turret" and aiTuning.turretPriority or 0)),
+                    utility=(kind==ai.fortifyChoice and aiTuning.fortifyPreference or (kind=="turret" and aiTuning.turretPriority or 0))+passiveBonus,
                 })
             end
         end

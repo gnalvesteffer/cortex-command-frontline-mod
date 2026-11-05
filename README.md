@@ -30,6 +30,16 @@ Automatic deployment starts enabled. Click **DEPLOY** or use **AUTO**; both shar
 
 Edit the `CONFIG` table at the beginning of `Frontline.rte/Frontline.lua` to tune the roster, prices, income, bounty, unit limits, opening grace time, outpost capture and income, and call-in costs and cooldowns. `DEPLOY_COOLDOWN_MS` and `FORWARD_DEPLOY_COOLDOWN_MS` set the shared manual and automatic deployment intervals, defaulting to 10,000 and 20,000 ms. `unitSurcharges.forwardDeployment` sets the forward price per distance interval (25 oz by default).
 
+The AI selects scored actions with a configurable softmax temperature
+(`CONFIG.ai.temperature`, default 0.7): lower values favor the highest score,
+while higher values increase strategic variety. Set an activity's
+`aiTemperature` to override it; values at or below 0.001 select the highest
+score deterministically. The AI also adapts its defensive priorities when the
+player has made at least three deployments, at least three recent batches (in
+the configured observation window) with the latest batch of four units or
+fewer, no more than 0.3 research purchases per deployment, no call-ins, and
+the match has passed 60 seconds.
+
 ## Status and testing
 
 This is an experimental build. An earlier build loaded in Cortex Command 7.0.0, and the command panel and camera lock were verified interactively. The latest changes have passed Lua mock tests and the small scene has been started headlessly; manual targeting, mining effectiveness, balance, and complete matches still need interactive play-testing. Bounties currently count enemy deaths rather than verified kill attribution.
