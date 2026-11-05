@@ -30,6 +30,7 @@ local CONFIG = {
     CALLIN_SHIELD_COST = 200, CALLIN_SHIELD_COOLDOWN_MS = 60000, CALLIN_JAM_RADIUS = 180,
     CALLIN_BUBBLE_COST=280, CALLIN_BUBBLE_COOLDOWN_MS=75000,
     CALLIN_WEAPON_POD_COST=320, CALLIN_WEAPON_POD_COOLDOWN_MS=60000, CALLIN_WEAPON_POD_DELAY_MS=3000,
+    CALLIN_ASSAULT_SQUAD_COST=500, CALLIN_ASSAULT_SQUAD_COOLDOWN_MS=60000, CALLIN_ASSAULT_SQUAD_DELAY_MS=4000,
     BASE_ARMOR_COST = 200, BASE_ARMOR_HEALTH = 50, BASE_ARMOR_LEVELS = 3,
     BASE_REPAIR_COST = 120, BASE_REPAIR_HEALTH = 50, BASE_TURRET_COST = 350, BASE_TURRET_UPGRADE_COST=650,
     BASE_TURRET_RANGE_MULTIPLIER=2, BASE_TURRET_AIM_DISTANCE=30, BASE_TURRET_VIEWPORT_RANGE_FACTOR=0.51,
@@ -37,12 +38,12 @@ local CONFIG = {
     BASE_TOWER_DISTANCE=484, BASE_TOWER_HEIGHT=102, BASE_TURRET_ROOM_OFFSET_Y=15, BASE_TURRET_PIN_STRENGTH=100000,
     -- Unit and equipment catalogs
     roster = {
-        {name="Coalition Light", actor="Soldier Light", mod="Coalition.rte", price=75, unlock=0, research=1},
-        {name="Coalition Heavy", actor="Soldier Heavy", mod="Coalition.rte", price=120, unlock=1, research=4},
-        {name="Dummy", actor="Dummy", mod="Dummy.rte", price=30, unlock=2, research=5},
-        {name="Browncoat Light", actor="Browncoat", mod="Browncoats.rte", price=145, unlock=3, research=6},
+        {name="Coalition Light", actor="Soldier Light", mod="Frontline.rte", price=75, unlock=0, research=1},
+        {name="Coalition Heavy", actor="Soldier Heavy", mod="Frontline.rte", price=120, unlock=1, research=4},
+        {name="Dummy", actor="Dummy", mod="Frontline.rte", price=30, unlock=2, research=5},
+        {name="Browncoat Light", actor="Browncoat", mod="Frontline.rte", price=145, unlock=3, research=6},
         {name="Gatling Drone", actor="Gatling Drone", mod="Coalition.rte", price=260, unlock=2, research=5, vehicle=true},
-        {name="Ronin Bandit", actor="Bandit", mod="Ronin.rte", price=50, unlock=0},
+        {name="Ronin Bandit", actor="Bandit", mod="Frontline.rte", price=50, unlock=0},
     },
     weapons = {
         {name="Pistol", preset="Pistol", mod="Base.rte", price=5, unlock=0},
@@ -95,9 +96,10 @@ local CONFIG = {
         {name="Support: Energy Shield", price=1200, max=1, kind="support", requires=26, requiresAll={{index=13,level=2}}},
         {name="Support: Weapon Cache Pod", price=700, max=1, kind="support", requires=14},
         {name="Squad Size +1", price=500, prices={500,700,900,1100,1300,1500}, max=6, kind="capacity"},
+        {name="Support: Assault Squad", price=700, max=1, kind="support"},
 }
 }
-CONFIG.supportResearch={strike=24,medic=11,cover=22,mines=23,bomb=25,turret=26,orbital=21,shield=13,bubble=27,mining=14,weaponPod=28}
+CONFIG.supportResearch={strike=24,medic=11,cover=22,mines=23,bomb=25,turret=26,orbital=21,shield=13,bubble=27,mining=14,weaponPod=28,assaultSquad=30}
 CONFIG.matchSetup={
     defaults={startFunds=CONFIG.START_FUNDS,income=CONFIG.INCOME_PER_SECOND,unitCap=CONFIG.TEAM_UNIT_CAP,outpostBonuses=true,callins=true},
     options={
@@ -146,7 +148,7 @@ CONFIG.ai={
     researchResponses={infantry={2,4},vehicles={3,6}},
     playerResearchFocus={[1]="infantry",[4]="infantry",[5]="vehicles",[6]="infantry",
         [7]="infantry",[8]="infantry",[9]="infantry",[10]="vehicles",[16]="infantry"},
-    researchTargets={repeatable={[1]=true,[2]=true,[13]=true,[22]=true,[23]=true,[29]=true},missile=10,equipmentFirst=18,equipmentLast=20,supportFirst=21,supportLast=28},
+    researchTargets={repeatable={[1]=true,[2]=true,[13]=true,[22]=true,[23]=true,[29]=true},missile=10,equipmentFirst=18,equipmentLast=20,supportIndices={21,22,23,24,25,26,27,28,30}},
     roster={roninIndex=6,initialRonins=CONFIG.STARTING_SQUAD_SIZE,selectableCount=5},
     weaponResearch={pistol=1,smg=7,shotgun=8,sniper=9,missile=10,assault=16,sidearms=19,medkits=17,grenades=18,armor=20},
     weaponIndices={pistol=1,smg=2,shotgun=3,assault=4,sniper=5,missile=6},
@@ -222,6 +224,7 @@ CONFIG.supportEffects={
     dropCountByLevel={cover={3,4,5},mines={3,4,5}},
     orbital={fragments=16},
     weaponPod={count=3,openDelayMs=1000,descentVelocity=45,releaseSpread=30,releaseHorizontalVelocity=10,releaseVerticalVelocity=4},
+    assaultSquad={count=3},
     bombRun={count=3,targetLead=192,height=400,flightDistance=360,speed=120,
         dropClearance=12,intervalMs=800,horizontalVelocityMultiplier=0,verticalVelocity=20,shipRadiusFallback=50},
     delivery={approachMs=2000,shipRadiusFallback=50,dropClearance=12,releaseSpread=16,releaseVerticalVelocity=10,
@@ -398,7 +401,7 @@ local function freshTeam()
     local levels={}
     for i=1,#CONFIG.research do levels[i]=0 end
     return {funds=CONFIG.START_FUNDS, levels=levels, tier=0,
-        counts={0,0,0,0,0,CONFIG.STARTING_SQUAD_SIZE}, weapons={1,1,1,1,1,1}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), lastDeployCooldown=CONFIG.DEPLOY_COOLDOWN_MS, deaths=0, strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), turretTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), bubbleTimer=Timer(), weaponPodTimer=Timer(), baseArmor=0, turretLevel=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
+        counts={0,0,0,0,0,CONFIG.STARTING_SQUAD_SIZE}, weapons={1,1,1,1,1,1}, sidearms={}, medkits={}, grenades={}, armor={}, order="Rush", orderTarget=2, forward=0, auto=true, timer=Timer(), lastDeployCooldown=CONFIG.DEPLOY_COOLDOWN_MS, deaths=0, strikeTimer=Timer(), medicTimer=Timer(), coverTimer=Timer(), minesTimer=Timer(), bombTimer=Timer(), turretTimer=Timer(), orbitalTimer=Timer(), shieldTimer=Timer(), bubbleTimer=Timer(), weaponPodTimer=Timer(), assaultSquadTimer=Timer(), baseArmor=0, turretLevel=0, turretID=nil, turret=nil, stats={deployed=0,captures=0,earned=0,brainDamage=0,troopDamage=0}}
 end
 function Frontline:MaxSquadSize(team)
     return math.min(CONFIG.MAX_SQUAD_SIZE,CONFIG.STARTING_SQUAD_SIZE+(self.teams[team].levels[CONFIG.SQUAD_SIZE_RESEARCH] or 0))
@@ -415,21 +418,24 @@ CONFIG.researchPages={
     {title="SUPPORT NETWORK",columns={
         {title="MEDIC / INDUSTRY",items={11,12,14,28}},
         {title="OFFENSE",items={21,24,25}},
+        {title="PERSONNEL",items={30}},
     }},
     {title="DEFENSE NETWORK",columns={
         {title="DEFENSE",items={22,13,23,26,27}},
     },graph={
         nodes={
-            [22]={x=145,y=125,w=160}, [13]={x=15,y=168,w=180},
-            [23]={x=255,y=168,w=180}, [26]={x=255,y=224,w=180},
-            [27]={x=145,y=280,w=160},
+            [22]={x=155,y=124,w=150}, [13]={x=15,y=178,w=180},
+            [23]={x=270,y=178,w=180}, [26]={x=270,y=236,w=180},
+            [27]={x=155,y=294,w=150},
         },
         edges={
-            {from=22,to=13,points={{225,141},{225,154},{105,154},{105,168}}},
-            {from=22,to=23,points={{225,141},{225,154},{345,154},{345,168}}},
-            {from=23,to=26,points={{420,184},{420,224}}},
-            {from=13,to=27,points={{15,176},{10,176},{10,288},{145,288}}},
-            {from=26,to=27,points={{435,232},{440,232},{440,288},{305,288}}},
+            -- All connectors run from a source's bottom-center to the next
+            -- node's top-center; the first two share a clear branch.
+            {from=22,to=13,points={{230,139},{230,161},{105,161},{105,178}}},
+            {from=22,to=23,points={{230,139},{230,161},{360,161},{360,178}}},
+            {from=23,to=26,points={{360,193},{360,236}}},
+            {from=13,to=27,points={{105,193},{105,264},{230,264},{230,294}}},
+            {from=26,to=27,points={{360,251},{360,274},{230,274},{230,294}}},
         },
     }},
 }
@@ -443,13 +449,14 @@ CONFIG.researchLabels={
     [17]="Medikit Packs", [18]="Grenade Packs", [19]="Sidearms", [20]="Unit Armor",
     [21]="Orbital Gatling Barrage", [22]="Cover", [23]="Mines",
     [24]="Orbital Precision Strike", [25]="Carpet Bomb", [26]="Turret",
-    [27]="Energy Shield", [28]="Weapon Cache Pod", [29]="Squad Size +1",
+    [27]="Energy Shield", [28]="Weapon Cache Pod", [29]="Squad Size +1", [30]="Assault Squad",
 }
 CONFIG.researchPageOptions={1,2,3,4}
 
 function Frontline:StartActivity()
     self.originalHudDisabled=FrameMan:IsHudDisabled(0)==true
     self.weaponPodPresets=nil
+    self.assaultWeaponPresets=nil
     local ok,method=pcall(function() return PrimitiveMan.DrawScreenBoxFillPrimitive end)
     self.screenUI=ok and method~=nil
     self.teams = {[0]=freshTeam(), [1]=freshTeam()}
@@ -491,6 +498,7 @@ function Frontline:StartActivity()
         mines=CreateSoundContainer("Frontline Mines Order","Frontline.rte"),
         cover=CreateSoundContainer("Frontline Cover Order","Frontline.rte"),
         weaponPod=CreateSoundContainer("Frontline Cover Order","Frontline.rte"),
+        assaultSquad=CreateSoundContainer("Frontline Cover Order","Frontline.rte"),
     }
     for team=0,1 do
         self.teams[team].strikeTimer.ElapsedSimTimeMS=CONFIG.CALLIN_STRIKE_COOLDOWN_MS
@@ -503,6 +511,7 @@ function Frontline:StartActivity()
         self.teams[team].shieldTimer.ElapsedSimTimeMS=CONFIG.CALLIN_SHIELD_COOLDOWN_MS
         self.teams[team].bubbleTimer.ElapsedSimTimeMS=CONFIG.CALLIN_BUBBLE_COOLDOWN_MS
         self.teams[team].weaponPodTimer.ElapsedSimTimeMS=CONFIG.CALLIN_WEAPON_POD_COOLDOWN_MS
+        self.teams[team].assaultSquadTimer.ElapsedSimTimeMS=CONFIG.CALLIN_ASSAULT_SQUAD_COOLDOWN_MS
     end
     self.matchTimer=Timer()
     self.battleStarted=false
@@ -712,6 +721,30 @@ function Frontline:IsFieldUnit(actor)
         and actor.UniqueID~=self.teams[team].turretID and (IsAHuman(actor) or IsACrab(actor))
 end
 
+function Frontline:CreateBaseTurret(team,upgraded)
+    local t=self.teams[team]
+    local turret
+    if upgraded then turret=CreateACrab("Frontline HE Turret","Frontline.rte")
+    else turret=CreateACrab("Frontline HE Base Turret","Frontline.rte") end
+    if not turret then return false,"Turret preset unavailable" end
+    turret.Team=team
+    local x=team==0 and CONFIG.BASE_TOWER_DISTANCE or SceneMan.SceneWidth-CONFIG.BASE_TOWER_DISTANCE
+    turret.Pos=Vector(x,self.baseGround[team]-CONFIG.BASE_TOWER_HEIGHT+CONFIG.BASE_TURRET_ROOM_OFFSET_Y)
+    turret.HFlipped=team==1
+    turret.AIMode=Actor.AIMODE_SENTRY
+    turret.MaxHealth=CONFIG.BASE_TURRET_HEALTH
+    turret.Health=CONFIG.BASE_TURRET_HEALTH
+    turret.AimDistance=CONFIG.BASE_TURRET_AIM_DISTANCE*CONFIG.BASE_TURRET_RANGE_MULTIPLIER
+        +FrameMan.PlayerScreenWidth*CONFIG.BASE_TURRET_VIEWPORT_RANGE_FACTOR
+    turret.PinStrength=CONFIG.BASE_TURRET_PIN_STRENGTH
+    local current=t.turret
+    if current and MovableMan:IsActor(current) then current.ToDelete=true end
+    t.turretLevel=upgraded and 2 or 1
+    t.turretID=turret.UniqueID
+    t.turret=turret
+    MovableMan:AddActor(turret)
+    return true
+end
 function TeamCommander:BaseUpgrade(kind)
     local team=self.team
     local self=self.activity
@@ -732,6 +765,7 @@ function TeamCommander:BaseUpgrade(kind)
         cost=CONFIG.BASE_REPAIR_COST
         if t.funds<cost then return false,"Not enough funds" end
         brain.Health=math.min(brain.MaxHealth,brain.Health+CONFIG.BASE_REPAIR_HEALTH)
+
     elseif kind=="turret" or kind=="turretUpgrade" then
         local current=t.turret
         local active=current and MovableMan:IsActor(current) and (not current.Health or current.Health>0)
@@ -746,25 +780,8 @@ function TeamCommander:BaseUpgrade(kind)
         end
         if t.funds<cost then return false,"Not enough funds" end
         local upgraded=upgrading or (t.turretLevel>=2)
-        local turret
-        if upgraded then turret=CreateACrab("Frontline HE Turret","Frontline.rte")
-        else turret=CreateACrab("Frontline HE Base Turret","Frontline.rte") end
-        if not turret then return false,"Turret preset unavailable" end
-        turret.Team=team
-        local x=team==0 and CONFIG.BASE_TOWER_DISTANCE or SceneMan.SceneWidth-CONFIG.BASE_TOWER_DISTANCE
-        turret.Pos=Vector(x,self.baseGround[team]-CONFIG.BASE_TOWER_HEIGHT+CONFIG.BASE_TURRET_ROOM_OFFSET_Y)
-        turret.HFlipped=team==1
-        turret.AIMode=Actor.AIMODE_SENTRY
-        turret.MaxHealth=CONFIG.BASE_TURRET_HEALTH
-        turret.Health=CONFIG.BASE_TURRET_HEALTH
-        turret.AimDistance=CONFIG.BASE_TURRET_AIM_DISTANCE*CONFIG.BASE_TURRET_RANGE_MULTIPLIER
-            +FrameMan.PlayerScreenWidth*CONFIG.BASE_TURRET_VIEWPORT_RANGE_FACTOR
-        turret.PinStrength=CONFIG.BASE_TURRET_PIN_STRENGTH
-        if current and MovableMan:IsActor(current) then current.ToDelete=true end
-        t.turretLevel=upgraded and 2 or 1
-        t.turretID=turret.UniqueID
-        t.turret=turret
-        MovableMan:AddActor(turret)
+        local ok,message=self:CreateBaseTurret(team,upgraded)
+        if not ok then return false,message end
     else
         return false,"Unknown base upgrade"
     end
@@ -1036,7 +1053,7 @@ function TeamCommander:Deploy()
                 end
                 for n=1,3 do
                     if t.medkits[i] then local item=CreateHDFirearm("Medikit","Base.rte"); if not item then return false,"Medikit preset unavailable" end; actor:AddInventoryItem(item) end
-                    if t.grenades[i] then local item=CreateTDExplosive("Frag Grenade","Base.rte"); if not item then return false,"Grenade preset unavailable" end; actor:AddInventoryItem(item) end
+                    if t.grenades[i] then local item=CreateTDExplosive("Frag Grenade","Coalition.rte"); if not item then return false,"Grenade preset unavailable" end; actor:AddInventoryItem(item) end
                 end
             end
             actor.Team=team
@@ -1357,13 +1374,14 @@ end
 
 -- Create a fresh craft immediately before it enters the scene. Craft timers
 -- run even while an object is waiting off-map, and stale timers can scuttle it.
-function Frontline:CreateSupportShip(team,kind,count,x,startY)
+function Frontline:CreateSupportShip(team,kind,count,x,startY,passengers)
+    if kind=="assaultSquad" and (not passengers or #passengers~=count) then return nil end
     local ship=CreateACDropShip("Dropship MK1","Base.rte")
     if not ship then return nil end
     local payload={}
     for i=1,count do
         local item
-        if kind=="bomb" then item=CreateTDExplosive("Frontline Heavy Bomb","Frontline.rte")
+        if kind=="assaultSquad" then item=passengers[i]
         elseif kind=="turret" then item=CreateACrab("Gatling Turret","Coalition.rte")
         elseif kind=="medic" then item=CreateACrab("Medic Drone","Base.rte")
         elseif kind=="mines" then item=CreateMOSRotating("Anti Personnel Mine Active","Base.rte")
@@ -1385,8 +1403,8 @@ function Frontline:CreateSupportShip(team,kind,count,x,startY)
 end
 
 -- Cache qualified names from every loaded firearm preset, including exotic mod weapons.
-function Frontline:CreateWeaponPodPayload()
-    if not self.weaponPodPresets or #self.weaponPodPresets==0 then
+function Frontline:LoadedFirearmPresetNames()
+    if not self.weaponPodPresets then
         local presets,seen={},{}
         if PresetMan and PresetMan.Modules then
             for module in PresetMan.Modules do
@@ -1403,10 +1421,84 @@ function Frontline:CreateWeaponPodPayload()
                 end
             end
         end
+        table.sort(presets)
         self.weaponPodPresets=presets
     end
+    return self.weaponPodPresets
+end
+
+-- Rank non-stock HDFirearm presets by their loaded-game gold value. Only the
+-- three highest-value mod firearms above the stock ceiling qualify; ties use
+-- their qualified names so every match selects the same loadout.
+function Frontline:AssaultSquadWeaponPresets()
+    if self.assaultWeaponPresets then return self.assaultWeaponPresets end
+    local stockModules={
+        ["Base.rte"]=true,["Coalition.rte"]=true,["Browncoats.rte"]=true,
+        ["Dummy.rte"]=true,["Ronin.rte"]=true,["Techion.rte"]=true,["Frontline.rte"]=true,
+    }
+    local candidates,stockCeiling={},0
+    for _,name in ipairs(self:LoadedFirearmPresetNames()) do
+        local moduleName=name:match("^([^/]+)/")
+        local probe=CreateHDFirearm(name)
+        if probe then
+            local value=type(probe.GetGoldValue)=="function" and probe:GetGoldValue(0,1,1) or nil
+            if moduleName and type(value)=="number" and value>0 then
+                if stockModules[moduleName] then
+                    stockCeiling=math.max(stockCeiling,value)
+                else
+                    candidates[#candidates+1]={name=name,value=value}
+                end
+            end
+            probe.ToDelete=true
+        end
+    end
+    table.sort(candidates,function(a,b)
+        if a.value==b.value then return a.name<b.name end
+        return a.value>b.value
+    end)
+    local selected={}
+    for _,candidate in ipairs(candidates) do
+        if candidate.value<=stockCeiling then break end
+        selected[#selected+1]=candidate.name
+        if #selected==CONFIG.supportEffects.assaultSquad.count then break end
+    end
+    if #selected~=CONFIG.supportEffects.assaultSquad.count then
+        return nil,"Assault Squad requires three loaded exotic firearms above stock weapon value"
+    end
+    self.assaultWeaponPresets=selected
+    return selected
+end
+
+function Frontline:CreateAssaultSquadPayload(team)
+    local presets,errorMessage=self:AssaultSquadWeaponPresets()
+    if not presets then return nil,errorMessage end
+    local squad={}
+    for index,name in ipairs(presets) do
+        local actor=CreateAHuman("Soldier Light","Coalition.rte")
+        local weapon=CreateHDFirearm(name)
+        if not actor or not weapon then
+            if actor then actor.ToDelete=true end
+            if weapon then weapon.ToDelete=true end
+            for _,passenger in ipairs(squad) do passenger.ToDelete=true end
+            return nil,"Assault Squad actor or exotic firearm preset unavailable"
+        end
+        weapon.Team=team
+        actor:AddInventoryItem(weapon)
+        actor.Team=team
+        actor.HFlipped=team==1
+        squad[index]=actor
+    end
+    return squad
+end
+
+local function discardAssaultSquadPayload(squad)
+    for _,actor in ipairs(squad or {}) do actor.ToDelete=true end
+end
+
+function Frontline:CreateWeaponPodPayload()
+    local presets=self:LoadedFirearmPresetNames()
     local available={}
-    for i,name in ipairs(self.weaponPodPresets) do available[i]=name end
+    for i,name in ipairs(presets) do available[i]=name end
     local weapons={}
     for _=1,CONFIG.supportEffects.weaponPod.count do
         local weapon
@@ -1470,6 +1562,7 @@ function TeamCommander:CallIn(kind,index)
         bubble={timer=t.bubbleTimer,cooldown=CONFIG.CALLIN_BUBBLE_COOLDOWN_MS,cost=CONFIG.CALLIN_BUBBLE_COST},
         mining={timer=t.minesTimer,cooldown=CONFIG.CALLIN_MINES_COOLDOWN_MS,cost=CONFIG.supportEffects.miningCost},
         weaponPod={timer=t.weaponPodTimer,cooldown=CONFIG.CALLIN_WEAPON_POD_COOLDOWN_MS,cost=CONFIG.CALLIN_WEAPON_POD_COST},
+        assaultSquad={timer=t.assaultSquadTimer,cooldown=CONFIG.CALLIN_ASSAULT_SQUAD_COOLDOWN_MS,cost=CONFIG.CALLIN_ASSAULT_SQUAD_COST},
     }
     local option=options[kind]
     if not option then return false,"Unknown call-in" end
@@ -1567,6 +1660,16 @@ function TeamCommander:CallIn(kind,index)
         table.insert(self.pendingDrops,{team=team,kind="weaponPod",target=outpost,timer=Timer(),
             delay=CONFIG.CALLIN_WEAPON_POD_DELAY_MS,startY=startY,cost=cost,weapons=weapons})
         self:Notify((team==0 and "Your" or "Enemy").." weapon cache pod inbound!")
+    elseif kind=="assaultSquad" then
+        local squad,errorMessage=self:CreateAssaultSquadPayload(team)
+        if not squad then return false,errorMessage end
+        local ground=SceneMan:MovePointToGround(Vector(outpost.x,0),0,CONFIG.map.outposts.groundProbe)
+        local startY=math.max(CONFIG.map.cover.minimumShipHeight,ground.Y-CONFIG.map.cover.startOffset)
+        table.insert(self.pendingDrops,{team=team,kind=kind,target=outpost,timer=Timer(),
+            delay=CONFIG.CALLIN_ASSAULT_SQUAD_DELAY_MS,startY=startY,
+            releaseY=math.max(startY,ground.Y-CONFIG.map.cover.releaseOffset),
+            count=#squad,cost=cost,squad=squad})
+        self:Notify((team==0 and "Your" or "Enemy").." assault squad dropship inbound!")
     end
     t.funds=t.funds-cost
     timer:Reset()
@@ -1651,7 +1754,7 @@ function Frontline:UpdateCallIns()
                 order.ship.Pos=Vector(currentX,order.startY)
                 local bombsDue=math.min(order.totalBombs,math.floor(elapsed/run.intervalMs))
                 while order.bombsDropped<bombsDue do
-                    local item=CreateMOPixel("Bomb Run Bomb","Frontline.rte")
+                    local item=CreateMOSRotating("Frontline Carpet Bomb","Frontline.rte")
                     if not item then break end
                     item.Pos=Vector(currentX,order.ship.Pos.Y+(order.ship.Radius or run.shipRadiusFallback)+run.dropClearance)
                     item.Vel=Vector(order.direction*run.speed*run.horizontalVelocityMultiplier,run.verticalVelocity)
@@ -1677,23 +1780,27 @@ function Frontline:UpdateCallIns()
         local order=self.pendingDrops[i]
         if order.kind~="bomb" and order.kind~="weaponPod" then
         local target,ship=order.target,order.ship
+        local orderLabel=order.kind=="assaultSquad" and "ASSAULT SQUAD" or string.upper(order.kind)
         if not order.timer:IsPastSimMS(order.delay) then
             local remaining=math.max(0,math.ceil((order.delay-order.timer.ElapsedSimTimeMS)/1000))
-            self:DrawCallInMarker(target,order.team,string.upper(order.kind).." SHIP ARRIVES IN "..remaining.."s")
+            self:DrawCallInMarker(target,order.team,orderLabel.." SHIP ARRIVES IN "..remaining.."s")
         elseif not order.arrivalTimer then
             if self:ShieldBlocks(target,order.team) then
                 self.teams[order.team].funds=self.teams[order.team].funds+order.cost
-                self:Notify("Jammer intercepted "..order.kind.." drop; cost refunded")
+                if order.kind=="assaultSquad" then discardAssaultSquadPayload(order.squad); order.squad=nil end
+                self:Notify("Jammer intercepted "..orderLabel.." drop; cost refunded")
                 table.remove(self.pendingDrops,i)
             else
                 -- Create and add the ship after the countdown, with fresh timers.
-                ship=self:CreateSupportShip(order.team,order.kind,order.count,target.x,order.startY)
+                ship=self:CreateSupportShip(order.team,order.kind,order.count,target.x,order.startY,order.squad)
                 if not ship then
                     self.teams[order.team].funds=self.teams[order.team].funds+order.cost
+                    if order.kind=="assaultSquad" then discardAssaultSquadPayload(order.squad); order.squad=nil end
                     self:Notify("Support dropship unavailable; cost refunded")
                     table.remove(self.pendingDrops,i)
                 else
                     order.ship=ship
+                    if order.kind=="assaultSquad" then order.squad=nil end
                     if order.miner then
                         ship:AddInventoryItem(order.miner)
                         order.miner=nil -- The ship now owns the passenger.
@@ -1701,7 +1808,7 @@ function Frontline:UpdateCallIns()
                     self.frontlineCraft[ship.UniqueID]=true
                     MovableMan:AddActor(ship)
                     order.arrivalTimer=Timer()
-                    self:Notify(string.upper(order.kind).." dropship arriving at "..target.name)
+                    self:Notify(orderLabel.." dropship arriving at "..target.name)
                 end
             end
         elseif not MovableMan:IsActor(ship) or (ship.Health and ship.Health<=0) then
@@ -1725,7 +1832,7 @@ function Frontline:UpdateCallIns()
             ship.Pos=Vector(target.x,order.startY+(order.releaseY-order.startY)*progress)
             if not order.arrivalTimer:IsPastSimMS(delivery.approachMs) then
                 local remaining=math.max(0,math.ceil((delivery.approachMs-order.arrivalTimer.ElapsedSimTimeMS)/1000))
-                self:DrawCallInMarker(target,order.team,string.upper(order.kind).." DROP IN "..remaining.."s")
+                self:DrawCallInMarker(target,order.team,orderLabel.." DROP IN "..remaining.."s")
             else
                 -- Opening a hatch early ejects cargo automatically, so wait
                 -- until the craft has arrived at the release point.
@@ -1739,6 +1846,25 @@ function Frontline:UpdateCallIns()
                         item.Team=order.team
                         item.AIMode=Actor.AIMODE_SENTRY
                         item.PinStrength=delivery.turretPinStrength
+                        MovableMan:AddMO(cargo)
+                    end
+                elseif order.kind=="assaultSquad" then
+                    local ground=SceneMan:MovePointToGround(Vector(target.x,0),0,CONFIG.map.outposts.groundProbe)
+                    local passengers={}
+                    for n=1,order.count do
+                        local cargo=ship:RemoveInventoryItemAtIndex(0)
+                        if cargo then table.insert(passengers,cargo) end
+                    end
+                    ship:OpenHatch()
+                    for n,cargo in ipairs(passengers) do
+                        local actor=ToActor(cargo)
+                        local spread=n-(#passengers+1)/2
+                        actor.Pos=Vector(target.x+spread*delivery.medicSpread,ground.Y-(actor.Height or 70)/2)
+                        actor.Vel=Vector(spread*delivery.otherHorizontalVelocity,delivery.releaseVerticalVelocity)
+                        actor.Team=order.team
+                        actor.HFlipped=order.team==1
+                        actor.PinStrength=0
+                        self:AssignOrder(actor,order.team)
                         MovableMan:AddMO(cargo)
                     end
                 elseif order.kind=="medic" then
@@ -1797,8 +1923,8 @@ function Frontline:UpdateCallIns()
                 ship.CanEnterOrbit=true
                 ship.AIMode=Actor.AIMODE_RETURN
                 ship:SetControllerMode(Controller.CIM_AI,-1)
-                local warning=order.kind=="cover" and "" or "! Friendly fire!"
-                self:Notify(string.upper(order.kind).." delivered at "..target.name..warning)
+                local warning=(order.kind=="cover" or order.kind=="assaultSquad") and "" or "! Friendly fire!"
+                self:Notify(orderLabel.." delivered at "..target.name..warning)
                 table.remove(self.pendingDrops,i)
             end
         end
@@ -1944,6 +2070,11 @@ function Frontline:StartBattle()
     if self.battleStarted then return end
     self.aiPersonality=CONFIG.ai.personaOrder[math.random(1,#CONFIG.ai.personaOrder)]
     self.battleStarted=true
+    for team=0,1 do
+        local current=self.teams[team].turret
+        local active=current and MovableMan:IsActor(current) and (not current.Health or current.Health>0)
+        if not active then self:CreateBaseTurret(team,false) end
+    end
     self.matchTimer:Reset()
     self.aiTimer:Reset()
     self.aiEmergencyTimer:Reset()
@@ -2119,12 +2250,15 @@ function Frontline:ChooseAIStrategicGoal(snapshot,ai)
     -- Detect passive player early so all goal scoring can adapt
     local playerPassive=self:IsPlayerPassive()
     local allPostsHeld=true
+    local safeAdvance=false
     local rallyTarget=0
     local strongestRally=0
+    local rallyPosts=0
     for i,post in ipairs(self.outposts) do
         local situation=snapshot.posts[i]
         if post.owner~=snapshot.team then
             allPostsHeld=false
+            if situation.enemies==0 then safeAdvance=true end
             local nearest=math.abs(self.brains[snapshot.team].Pos.X-post.x)
             for _,actor in ipairs(snapshot.fieldActors) do
                 if actor.Team==snapshot.team then nearest=math.min(nearest,math.abs(actor.Pos.X-post.x)) end
@@ -2141,16 +2275,21 @@ function Frontline:ChooseAIStrategicGoal(snapshot,ai)
             local defenseBonus=playerPassive and 15 or 0
             goals[#goals+1]={goal="defendPost",kind="defend",target=i,threats=situation.threats,
                 allies=situation.allies,utility=situation.threats*CONFIG.ai.tuning.postThreatUrgency+defenseBonus}
-        elseif situation.allies>strongestRally then
-            strongestRally=situation.allies
-            rallyTarget=i
+        elseif situation.allies>0 then
+            rallyPosts=rallyPosts+1
+            if situation.allies>strongestRally then
+                strongestRally=situation.allies
+                rallyTarget=i
+            end
         end
     end
     if snapshot.urgentBaseDefense then
         return {goal="defendBase",kind="defend",target=0,score=math.huge,urgent=true}
     end
 
-    if rallyTarget>0 and strongestRally<CONFIG.ai.strategy.attackGroupSize then
+    if rallyTarget>0 and strongestRally<CONFIG.ai.strategy.attackGroupSize
+        and (not safeAdvance and not allPostsHeld or rallyPosts>1
+            or CONFIG.ai.personas[self.aiPersonality].archetype=="defensive") then
         goals[#goals+1]={goal="regroup",kind="regroup",target=rallyTarget,allies=strongestRally,
             utility=CONFIG.ai.tuning.regroupUtility+(playerPassive and 8 or 0)}
     end
@@ -2211,7 +2350,7 @@ function Frontline:UpdateAI()
     end
     local supportRange=CONFIG.ai.researchTargets
     for index=supportRange.equipmentFirst,supportRange.equipmentLast do priorities[#priorities+1]=index end
-    for index=supportRange.supportFirst,supportRange.supportLast do priorities[#priorities+1]=index end
+    for _,index in ipairs(supportRange.supportIndices) do priorities[#priorities+1]=index end
     
     -- Compete feasible purchases in one budget choice instead of spending in a fixed category order.
     local investments={}
@@ -2448,6 +2587,7 @@ function Frontline:UpdateAI()
         bubble={cost=CONFIG.CALLIN_BUBBLE_COST,cooldown=CONFIG.CALLIN_BUBBLE_COOLDOWN_MS,timer=ai.bubbleTimer},
         turret={cost=CONFIG.CALLIN_TURRET_COST,cooldown=CONFIG.CALLIN_TURRET_COOLDOWN_MS,timer=ai.turretTimer},
         weaponPod={cost=CONFIG.CALLIN_WEAPON_POD_COST,cooldown=CONFIG.CALLIN_WEAPON_POD_COOLDOWN_MS,timer=ai.weaponPodTimer},
+        assaultSquad={cost=CONFIG.CALLIN_ASSAULT_SQUAD_COST,cooldown=CONFIG.CALLIN_ASSAULT_SQUAD_COOLDOWN_MS,timer=ai.assaultSquadTimer},
     }
     local function addAction(kind,callin,target,context,reserve)
         local option=calls[callin]
@@ -2516,6 +2656,9 @@ function Frontline:UpdateAI()
         end
         if post.owner==team and posts[i].allies>0 then
             addAction("supply","weaponPod",i,{allies=posts[i].allies})
+            if (ai.levels[CONFIG.supportResearch.assaultSquad] or 0)>0 and self:AssaultSquadWeaponPresets() then
+                addAction("supply","assaultSquad",i,{allies=posts[i].allies})
+            end
         end
     end
 
@@ -2614,6 +2757,39 @@ function Frontline:UpdateWeaponPickups()
         end
     end
 end
+-- Native ThrowTarget validates target LOS and ballistic reachability but does
+-- not trace the flight arc; this gate also requires a clear landing area.
+function Frontline:CanFrontlineThrowGrenade(actor,target,grenade,angleSolver)
+    if not actor or not target or not grenade or not MovableMan:ValidMO(actor)
+        or not MovableMan:ValidMO(target) or actor.Team==target.Team
+        or target.Health<=0 or not (IsAHuman(target) or IsACrab(target)) then return false end
+    local maxThrowVel=grenade:GetCalculatedMaxThrowVelIncludingArmThrowStrength()
+    local startPos=grenade.MuzzlePos or actor.EyePos or actor.Pos
+    local distance=SceneMan:ShortestDistance(startPos,target.Pos,false)
+    local ppm=GetPPM()
+    if maxThrowVel<=0 or distance.Magnitude<=100 or distance.Magnitude>maxThrowVel*ppm then return false end
+    local aimPoint=target.Pos
+    if target.EyePos then
+        aimPoint=Vector((target.Pos.X+target.EyePos.X)*0.5,(target.Pos.Y+target.EyePos.Y)*0.5)
+    end
+    -- Match ThrowTarget's solver inputs: it does not lead target velocity.
+    if angleSolver and not angleSolver(aimPoint,Vector(),startPos,maxThrowVel) then return false end
+    local eyePos=actor.EyePos or actor.Pos
+    local ray=SceneMan:CastMORay(eyePos,SceneMan:ShortestDistance(eyePos,aimPoint,false),
+        actor.ID,actor.IgnoresWhichTeam,rte.grassID,false,3)
+    if ray<1 or ray==rte.NoMOID or MovableMan:GetRootMOID(ray)~=target.ID then return false end
+    local radius=grenade:GetNumberValue("TrajectoryGuideBlastRadius")
+    if radius<=0 then radius=75 end
+    radius=radius+25
+    for ally in MovableMan.Actors do
+        if ally~=target and ally.Team==actor.Team and ally.Health>0 and ally.Pos then
+            local allyDistance=SceneMan:ShortestDistance(aimPoint,ally.Pos,SceneMan.SceneWrapsX)
+            if allyDistance.Magnitude<=radius+(ally.IndividualRadius or 0) then return false end
+        end
+    end
+    return true
+end
+
 
 function Frontline:UpdateActivity()
     if self.ActivityState==Activity.OVER then return end
@@ -2977,7 +3153,7 @@ function Frontline:DrawPanel()
         text(15,266,"SQUAD SIZE: "..self:MaxSquadSize(0).." MAX  |  RESEARCH "..(t.levels[CONFIG.SQUAD_SIZE_RESEARCH] or 0).."/6")
     elseif self.tab=="Research" then
         local page=CONFIG.researchPages[self.researchPage] or CONFIG.researchPages[1]
-        text(15,80,page.graph and "TECH TREE  |  Follow lines downward to unlock." or "TECH TREE  |  Complete earlier nodes to open connected upgrades.")
+        text(15,80,page.graph and "LINES SHOW PREREQUISITES  |  JOIN = BOTH REQUIRED" or "TECH TREE  |  Complete earlier nodes to open connected upgrades.")
         text(15,94,page.title.."  |  Click a node to research.")
         button(350,80,100,"PAGE "..self.researchPage.." / "..#CONFIG.researchPages,"available",function(step)
             self.researchPage=cycleOption(CONFIG.researchPageOptions,self.researchPage,step)
@@ -3025,7 +3201,7 @@ function Frontline:DrawPanel()
                     local _,msg=self.commanders[0]:Research(index)
                     if msg~="Research complete" then self:Notify(msg) end
                 end)
-                if locked then
+                if locked and (not page.graph or index==27) then
                     local requirements={}
                     if r.requires then
                         table.insert(requirements,researchRequirementText(r.requires,r.requiresLevel or 1))
@@ -3034,7 +3210,7 @@ function Frontline:DrawPanel()
                         table.insert(requirements,researchRequirementText(requirement.index,requirement.level or 1))
                     end
                     if #requirements>0 then
-                        text(x,y+17,"Requires: "..requirements[1],true)
+                        text(x,y+(page.graph and 18 or 17),"Requires: "..requirements[1],true)
                         for requirementIndex=2,#requirements do
                             text(x,y+29,"and "..requirements[requirementIndex],true)
                         end
@@ -3088,10 +3264,11 @@ function Frontline:DrawPanel()
         supportOption("medic","MEDIC DRONE",CONFIG.CALLIN_MEDIC_COST,t.medicTimer,CONFIG.CALLIN_MEDIC_COOLDOWN_MS,315,128)
         supportOption("mining","MINING",CONFIG.supportEffects.miningCost,t.minesTimer,CONFIG.CALLIN_MINES_COOLDOWN_MS,315,174)
         supportOption("weaponPod","WEAPON CACHE POD",CONFIG.CALLIN_WEAPON_POD_COST,t.weaponPodTimer,CONFIG.CALLIN_WEAPON_POD_COOLDOWN_MS,315,220)
-        text(315,274,"Shield destroys hostile",true)
-        text(315,286,"projectiles in its bubble.",true)
-        text(315,301,"Jammer blocks enemy",true)
-        text(315,313,"strikes, bombs, orbital fire.",true)
+        supportOption("assaultSquad","ASSAULT SQUAD",CONFIG.CALLIN_ASSAULT_SQUAD_COST,t.assaultSquadTimer,CONFIG.CALLIN_ASSAULT_SQUAD_COOLDOWN_MS,315,266)
+        text(315,307,"Shield destroys hostile",true)
+        text(315,319,"projectiles in its bubble.",true)
+        text(315,334,"Jammer blocks enemy",true)
+        text(315,346,"strikes, bombs, orbital fire.",true)
     elseif self.tab=="Base" then
         local brain=self.brains[0]
         text(15,84,"BASE DEFENSES")

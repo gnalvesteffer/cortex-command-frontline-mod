@@ -18,14 +18,23 @@ upgrades increase the maximum by one each, up to 9 units.
 
 Unit research follows the Coalition Light -> Coalition Heavy -> Dummy/Gatling
 Drone -> Browncoat chain. Weapon and equipment unlocks are in the Arsenal tree.
+
+Grenade Packs research equips selected human units with three Coalition Frag
+Grenades. This preset does not activate on release; its four-second fuze starts
+when activated (normally as the native throw begins), so death-release does not
+arm the grenade. Frontline human actor variants retain NativeHumanAI and use the
+native ThrowTarget behavior after a Frontline-only check for visible, reachable
+enemies and friendly clearance around the predicted blast area. Unsafe throws
+retain native firearm behavior when available, or native Sentry behavior without
+a firearm; neither path changes current orders.
 The Research tab cycles through Foundations, Arsenal, Support Network and
 Defense Network; lines run downward from prerequisites to unlocks.
 `CONFIG.research` is a one-based Lua array: its
-indices run from 1 through 29 and match the prerequisite and support references.
+indices run from 1 through 30 and match the prerequisite and support references.
 Support Jammer is one node at index 13 with levels 1 and 2. Energy Shield is
 index 27 and requires Turret research (26) and Support Jammer level 2 (13).
 Weapon Cache Pod is index 28 and requires Mining Call-In (14). Squad Size +1
-is index 29, with up to six upgrades.
+is index 29, with up to six upgrades. Assault Squad is research index 30.
 
 Support call-ins have research unlocks. Orbital Gatling Barrage unlocks Orbital
 Precision Strike, then Carpet Bomb. Mines follow Cover and the turret follows
@@ -34,6 +43,14 @@ the drop to two drones. Mining Call-In delivers a Dummy with a pistol and
 Light Digger; it seeks deposits and digs. The Support Jammer's two levels
 increase its duration.
 
+Assault Squad research unlocks a 500 oz call-in with a 60-second base cooldown.
+A dropship delivers three Coalition Light soldiers carrying the three
+highest-value loaded non-stock HDFirearm presets whose gold value exceeds the
+best stock firearm; qualified module/preset names break ties. It accepts any
+position permitted by the existing support-target rules. If fewer than three
+exotic firearms qualify, the call-in reports that requirement rather than
+substituting ordinary guns.
+
 Cover and Mines research each have three levels, delivering 3, 4 or 5
 payloads per call-in. Cover research costs 280 / 560 / 840 oz; Mines costs
 360 / 720 / 1080 oz. Mines requires Cover Lv.1, and Turret requires Mines
@@ -41,13 +58,19 @@ Lv.1. Call-in prices and cooldowns do not increase with research level.
 
 Weapon Cache Pod is delivered by a landing pod that opens and dispenses three
 random firearms using qualified names from all loaded HDFirearm presets, including exotic mods.
+Each team receives one free baseline HE turret in its upper bunker room when battle starts; the Base tab can upgrade it to HE Mk2 or rebuild it after destruction.
+
 The upgradeable base turret uses a custom cannon firing the engine's damaging
 explosive fragmentation shell. Both levels have twice the stock Gatling's
-health. Their un-sharp target-acquisition ray is twice the stock Gatling ray at
-the viewport width when built; sharp aim also adds the weapon's SharpLength.
-Level 2 keeps the same firing rate and doubles the damaging fragment payload
-from ten to twenty per shell. Both enemy and player builds retain these
-benefits when rebuilt.
+health and match its 1,000-rounds-per-minute cadence while retaining their HE
+rounds. Each 12-round magazine takes four seconds to reload after it is empty.
+Their un-sharp target-acquisition ray is twice the stock Gatling ray at the
+viewport width when built; sharp aim also adds the weapon's SharpLength. Both
+variants use full Perceptiveness for a broader native scan while preserving
+stock aim limits, terrain-blocked sight rays and enemy-team filtering. Level 2
+keeps the same fast firing rate and doubles the damaging fragment payload from
+ten to twenty per shell. Both enemy and player builds retain these benefits
+when rebuilt.
 
 The approach hallway's walkable floor is aligned to the main vault exit on both
 teams. Mirrored upper turret rooms align with the battlefield-facing outer exits;
@@ -63,8 +86,9 @@ releasing bombs loses its remaining drops without a refund. Released bombs and
 weapons are not blocked. Energy Shield requires both Turret research and Support
 Jammer level 2; it destroys hostile projectiles inside its 180-pixel bubble for
 30 seconds. The Gatling barrage fires 72 rounds plus up to 36 from turret
-research, with 16 fragments per round. Carpet Bomb releases three bombs across
-its flight path.
+research, with 16 fragments per round. Carpet Bomb releases three visible
+Standard Bomb-sprite shells; each creates and activates its heavy explosive
+payload only on collision.
 
 Forward drops to captured posts cost an extra 25 oz per unit for each interval
 of progress toward the enemy base, rounded up. The distance between bases is
@@ -73,10 +97,7 @@ The Squad SPAWN selector shows the selected destination's per-unit surcharge.
 Base deployments have no surcharge. Configure the 25 oz tier using
 unitSurcharges.forwardDeployment in Frontline.lua.
 
-Both manual and automatic deployment cost funds and share a cooldown. Both brains have Gatling Guns. Buy brain armor,
-repairs and a rebuildable upper-room turret on the Base tab. Destroy
-the enemy brain to win. The match report tracks deployments, losses, captures,
-funds and observed health loss; health loss is not attacker-attributed.
+Both manual and automatic deployment cost funds and share a cooldown. Both brains have Gatling Guns. Each team starts with one free HE turret in its upper bunker room; upgrade it to HE Mk2 or rebuild it after destruction on the Base tab. Destroy the enemy brain to win. The match report tracks deployments, losses, captures, funds and observed health loss; health loss is not attacker-attributed.
 
 Tweak balance values at the start of Frontline.lua. This build needs further
 in-game testing, especially vehicle navigation, forward spawn, shields and the

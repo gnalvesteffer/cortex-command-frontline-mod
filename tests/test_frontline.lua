@@ -1,9 +1,9 @@
-Frontline={}; Actor={AIMODE_SENTRY=1,AIMODE_BRAINHUNT=2,AIMODE_GOTO=3,AIMODE_DELIVER=5,AIMODE_RETURN=6}; Controller={CIM_AI=1,CIM_DISABLED=0}; Activity={OBSERVE=1,OVER=2,NOTEAM=-1}
-Key={TAB=1}; MouseButtons={MOUSE_LEFT=1,MOUSE_RIGHT=2}; rte={goldID=2}
+Frontline={}; Actor={AIMODE_SENTRY=1,AIMODE_BRAINHUNT=2,AIMODE_GOTO=3,AIMODE_SQUAD=4,AIMODE_DELIVER=5,AIMODE_RETURN=6}; Controller={CIM_AI=1,CIM_DISABLED=0}; Activity={OBSERVE=1,OVER=2,NOTEAM=-1}
+Key={TAB=1}; MouseButtons={MOUSE_LEFT=1,MOUSE_RIGHT=2}; rte={goldID=2,grassID=1,NoMOID=255}
 function Timer() return {ElapsedSimTimeMS=0, IsPastSimMS=function(s,n) return s.ElapsedSimTimeMS>=n end, Reset=function(s) s.ElapsedSimTimeMS=0 end} end
-function Vector(x,y) return setmetatable({X=x,Y=y},{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
+function Vector(x,y) x=x or 0; y=y or 0; local v={X=x,Y=y,Magnitude=math.sqrt(x*x+y*y)}; return setmetatable(v,{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
 local nextId=0
-function CreateAHuman(n,m) nextId=nextId+1; return {Team=0,UniqueID=nextId,name=n,Health=100,MaxHealth=100,Height=70,AddInventoryItem=function(self,item) self.inventory=item end,ClearAIWaypoints=function(self) self.waypoint=nil end,AddAISceneWaypoint=function(self,v) self.waypoint=v end} end
+function CreateAHuman(n,m) nextId=nextId+1; local a={Team=0,UniqueID=nextId,ID=nextId,name=n,module=m,Health=100,MaxHealth=100,Height=70,inventoryItems={}}; function a:AddInventoryItem(item) self.inventory=item; table.insert(self.inventoryItems,item) end; function a:ClearAIWaypoints() self.waypoint=nil end; function a:AddAISceneWaypoint(v) self.waypoint=v end; return a end
 local turretMuzzles={
     ["Frontline HE Base Turret"]={x=11,y=-8},
     ["Frontline HE Turret"]={x=11,y=-8},
@@ -44,8 +44,8 @@ local function entity(name)
     return item
 end
 function CreateHDFirearm(n,m) return {name=n,module=m} end
-function CreateTDExplosive(n,m) return {name=n,GibThis=function(self) self.gibbed=true end,Activate=function(self) self.activated=true end} end
-function CreateMOSRotating(n,m) return entity(n) end
+function CreateTDExplosive(n,m) return {name=n,module=m,GibThis=function(self) self.gibbed=true end,Activate=function(self) self.activated=true end} end
+function CreateMOSRotating(n,m) local item=entity(n); item.module=m; item.entityType='MOSRotating'; return item end
 function CreateMOPixel(n,m) return entity(n) end
 function CreateMOSParticle(n,m) return entity(n) end
 function ToTDExplosive(item) return item end
@@ -59,16 +59,24 @@ MovableMan={
     AddMO=function(s,a) table.insert(actors,a) end,
     AddParticle=function(s,p) s.lastParticle=p; s.particleCount=(s.particleCount or 0)+1; s.particles=s.particles or {}; table.insert(s.particles,p) end,
     AddItem=function(s,item) s.items=s.items or {}; table.insert(s.items,item) end,
+    GetMOFromID=function(s,id) for _,a in ipairs(actors) do if a.ID==id then return a end end end,
+    GetRootMOID=function(_,id) return id end,
+    ValidMO=function(_,a) return a~=nil and a.Health>0 end,
     IsActor=function(s,a) return a~=nil and not a.deleted end,
     IsParticle=function(s,p) for _,item in ipairs(s.particles or {}) do if item==p then return not p.ToDelete end end; return false end,
 }
 MovableMan.Particles=(function() local i=0; return function() i=i+1; local items=MovableMan.particles or {}; if not items[i] then i=0; return nil end; return items[i] end end)()
 function IsAHuman(a) return not a.vehicle and not a.ship end; function IsACrab(a) return a.vehicle==true end
 local sceneObjects={}
-SceneMan={SceneWidth=5200, SceneHeight=800, CastMaterialRay=function() return false end, AddSceneObject=function(_,o) table.insert(sceneObjects,o) end, MovePointToGround=function(_,p) return Vector(p.X,600) end}; MusicMan={PlayDynamicSong=function() end}
+SceneMan={SceneWidth=5200, SceneHeight=800, CastMaterialRay=function() return false end,
+    CastMORay=function() return rte.NoMOID end,
+    ShortestDistance=function(_,a,b) return Vector(b.X-a.X,b.Y-a.Y) end,
+    AddSceneObject=function(_,o) table.insert(sceneObjects,o) end,
+    MovePointToGround=function(_,p) return Vector(p.X,600) end}; MusicMan={PlayDynamicSong=function() end}
 FrameMan={PlayerScreenWidth=640,IsHudDisabled=function() return false end,SetHudDisabled=function() end}
 PrimitiveMan={}
 TimerMan={DeltaTimeSecs=1}; UInputMan={KeyPressed=function()return false end}
+function GetPPM() return 20 end
 ActivityMan={EndActivity=function() end}
 function Frontline:SetPlayerBrain() end; function Frontline:SetViewState() end; function Frontline:SetObservationTarget() end
 function Frontline:GetTeamDeathCount(team) return self.deathCounts[team] end
@@ -283,12 +291,18 @@ assert(MovableMan.particleCount==previous and bombDrop.bombsDropped==0)
 bombDrop.timer.ElapsedSimTimeMS=800; c:UpdateCallIns()
 assert(MovableMan.particleCount==previous+1 and bombDrop.bombsDropped==1)
 local releasedBomb=MovableMan.lastParticle
-assert(releasedBomb.name=='Bomb Run Bomb' and releasedBomb.Team==0
-    and releasedBomb.Pos.Y>bombDrop.ship.Pos.Y+(bombDrop.ship.Radius or 50),
-    'released bomb must clear the dropship before its collision script can detonate it')
+assert(releasedBomb.name=='Frontline Carpet Bomb' and releasedBomb.module=='Frontline.rte'
+    and releasedBomb.entityType=='MOSRotating' and releasedBomb.Team==0
+    and releasedBomb.Pos.X==bombDrop.startX+96
+    and releasedBomb.Pos.Y==bombDrop.ship.Pos.Y+(bombDrop.ship.Radius or 50)+12
+    and releasedBomb.Vel.X==0 and releasedBomb.Vel.Y==20,
+    'first carpet-bomb shell must remain a visible non-explosive payload at its original release position and velocity')
 bombDrop.timer.ElapsedSimTimeMS=1600; c:UpdateCallIns(); assert(MovableMan.particleCount==previous+2)
 bombDrop.timer.ElapsedSimTimeMS=2400; c:UpdateCallIns()
-assert(MovableMan.particleCount==previous+3 and #c.pendingDrops==0)
+assert(MovableMan.particleCount==previous+3 and #c.pendingDrops==0
+    and MovableMan.lastParticle.name=='Frontline Carpet Bomb' and MovableMan.lastParticle.entityType=='MOSRotating'
+    and MovableMan.lastParticle.Pos.X==bombDrop.startX+288
+    and MovableMan.lastParticle.Team==0 and MovableMan.lastParticle.Vel.Y==20)
 -- The orbital salvo warns, fires over time, and then completes.
 assert(c.commanders[0]:CallIn('orbital', 2)); assert(ct.funds==1245 and #c.pendingOrbitals==1 and c.supportSounds.orbital.playCount==1)
 local salvo=c.pendingOrbitals[1]; previous=MovableMan.particleCount
@@ -529,22 +543,51 @@ ai.minesTimer.ElapsedSimTimeMS=45000; ai.funds=2000; bot.aiTemperature=0.001; bo
 print('AI can use bomb, orbital cannon, turret and mines through standard call-in rules')
 
 
--- Base upgrades spend funds, affect the brain and exclude the sentry from
--- mobile army capacity and issued commands. Both teams can purchase them.
+-- Free opening turrets are symmetric and stationary; paid upgrades retain
+-- the existing range, health, rebuild and mobile-army exclusion behavior.
 actors={}; local base=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
-base:StartActivity(); assert(not base.commanders[0]:BaseUpgrade('armor')); base:StartBattle()
-local bt=base.teams[0]; bt.funds=2000
+base:StartActivity(); assert(not base.commanders[0]:BaseUpgrade('armor'))
+local startingFunds={base.teams[0].funds,base.teams[1].funds}
+base:StartBattle()
+local bt=base.teams[0]; local enemyBaseTurret=base.teams[1].turret
+local expectedTurretAimDistance=549.6
+assert(bt.turret and bt.turret.name=='Frontline HE Base Turret' and bt.turretLevel==1
+    and bt.turret.Team==0 and bt.turret.Pos.X==484 and bt.turret.Pos.Y==513 and not bt.turret.HFlipped
+    and bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.turret.Health==200 and bt.turret.MaxHealth==200
+    and bt.turret.AimDistance==expectedTurretAimDistance and bt.turret.PinStrength==100000,
+    'player must start with the configured free baseline HE turret')
+assert(enemyBaseTurret and enemyBaseTurret.name=='Frontline HE Base Turret' and base.teams[1].turretLevel==1
+    and enemyBaseTurret.Team==1 and enemyBaseTurret.Pos.X==4716 and enemyBaseTurret.Pos.Y==513 and enemyBaseTurret.HFlipped
+    and enemyBaseTurret.AIMode==Actor.AIMODE_SENTRY and enemyBaseTurret.Health==200 and enemyBaseTurret.MaxHealth==200
+    and enemyBaseTurret.AimDistance==expectedTurretAimDistance and enemyBaseTurret.PinStrength==100000,
+    'enemy must start with the configured free mirrored baseline HE turret')
+assert(base.teams[0].funds==startingFunds[1] and base.teams[1].funds==startingFunds[2],
+    'granting both opening turrets must not spend either team’s funds')
+local function countLiveBaseTurrets()
+    local count=0
+    for _,actor in ipairs(actors) do
+        if (actor.name=='Frontline HE Base Turret' or actor.name=='Frontline HE Turret')
+            and not actor.deleted and not actor.ToDelete and actor.Health>0 then count=count+1 end
+    end
+    return count
+end
+assert(countLiveBaseTurrets()==2)
+base:StartBattle()
+assert(countLiveBaseTurrets()==2 and base.teams[0].turret==bt.turret and base.teams[1].turret==enemyBaseTurret,
+    'repeated start calls must not create duplicate base turrets')
+base:UpdateActivity()
+assert(countLiveBaseTurrets()==2,'ordinary updates must not recreate opening turrets')
+assert(not base.commanders[0]:BaseUpgrade('turret'),'opening turret must not be purchasable a second time')
+bt.funds=2000
 assert(base.commanders[0]:BaseUpgrade('armor')); assert(bt.baseArmor==1 and base.brains[0].Health==150 and base.brains[0].MaxHealth==150 and bt.funds==1800)
 assert(not base.commanders[0]:BaseUpgrade('repair')); base.brains[0].Health=90
 assert(base.commanders[0]:BaseUpgrade('repair')); assert(base.brains[0].Health==140 and bt.funds==1680)
-assert(base.commanders[0]:BaseUpgrade('turret'))
+assert(bt.turret.name=='Frontline HE Base Turret' and bt.funds==1680)
 local playerMuzzleX,playerMuzzleY=worldMuzzle(bt.turret)
-local expectedTurretAimDistance=549.6
-assert(bt.turret.name=='Frontline HE Base Turret' and bt.turret.AIMode==Actor.AIMODE_SENTRY
-    and bt.turret.AimDistance==expectedTurretAimDistance and bt.turret.Health==200 and bt.turret.MaxHealth==200
+assert(bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.turret.AimDistance==expectedTurretAimDistance
+    and bt.turret.Health==200 and bt.turret.MaxHealth==200
     and bt.turret.Pos.X==484 and bt.turret.Pos.Y==513 and not bt.turret.HFlipped
     and playerMuzzleX>upperLeft.Pos.X and playerMuzzleX<playerExit and playerMuzzleY>=upperOpeningTop and playerMuzzleY<=upperOpeningBottom
-    and bt.funds==1330
     and bt.turret.Pos.Y+bt.turret.SpriteOffset.Y+bt.turret.SpriteHeight==materialFloorY(upperLeft))
 local gatling=bt.turret
 assert(base.commanders[0]:BaseUpgrade('turretUpgrade'))
@@ -552,7 +595,7 @@ local upgradedPlayerMuzzleX,upgradedPlayerMuzzleY=worldMuzzle(bt.turret)
 assert(gatling.ToDelete and bt.turret.name=='Frontline HE Turret'
     and bt.turret.AimDistance==expectedTurretAimDistance and bt.turret.Health==200 and bt.turret.MaxHealth==200
     and upgradedPlayerMuzzleX>upperLeft.Pos.X and upgradedPlayerMuzzleX<playerExit and upgradedPlayerMuzzleY>=upperOpeningTop
-    and upgradedPlayerMuzzleY<=upperOpeningBottom and bt.funds==680
+    and upgradedPlayerMuzzleY<=upperOpeningBottom and bt.funds==1030
     and bt.turret.Pos.Y+bt.turret.SpriteOffset.Y+bt.turret.SpriteHeight==materialFloorY(upperLeft),
     'HE upgrade retains floor contact, doubled health/range, and outward fragmentation cannon')
 assert(base:UnitCount(0)==0 and not base.commanders[0]:BaseUpgrade('turret'),
@@ -568,7 +611,7 @@ base.commanders[0]:SetOrder('Advance',2); assert(bt.turret.AIMode==Actor.AIMODE_
 base.settings.callins=false
 local bi=base.teams[1]
 for index=1,29 do bi.levels[index]=10 end
-bi.baseArmor=3; bi.auto=false; bi.funds=3000; bi.timer.ElapsedSimTimeMS=0
+bi.baseArmor=3; bi.auto=false; bi.funds=0; bi.timer.ElapsedSimTimeMS=0
 base:UpdateAI()
 assert(bi.turret and bi.turret.name=='Frontline HE Base Turret'
     and bi.turret.AimDistance==expectedTurretAimDistance and bi.turret.Health==200 and bi.turret.MaxHealth==200
@@ -630,6 +673,7 @@ engineFunds[0]=550; economy:CraftEnteredOrbit(ship); assert(engineFunds[0]==550)
 FrameMan.ClearScreenText=oldClear
 print('Returning Frontline ships cannot refund their hull or cargo')
 
+do
 -- Starter tier and separately priced, research-gated optional equipment.
 actors={}; local kit=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 startActivity(kit); kit:StartBattle(); kit.matchTimer.ElapsedSimTimeMS=15000
@@ -638,9 +682,128 @@ assert(kt.weapons[1]==1 and kt.counts[6]==3 and kit:Batch(0)==165)
 kt.counts={1,0,0,0,0,0}; kt.sidearms[1]=1; assert(not kit:Batch(0))
 assert(kit.commanders[0]:Research(1)); assert(kit.commanders[0]:Research(19)); assert(kit.commanders[0]:Research(17)); assert(kit.commanders[0]:Research(18))
 kt.medkits[1]=true; kt.grenades[1]=true
-assert(kit:Batch(0)==180); assert(kit.commanders[0]:Deploy())
+assert(kit:Batch(0)==180)
+local playerFirstActor=#actors+1
+assert(kit.commanders[0]:Deploy())
 assert(kt.medkits[1] and kt.grenades[1] and kt.sidearms[1]==1)
-print('Three-unit start, research-gated optional equipment and loadout costs passed')
+local function countSafeGrenades(actor)
+    local count=0
+    for _,item in ipairs(actor.inventoryItems) do
+        if item.name=='Frag Grenade' and item.module=='Coalition.rte' then count=count+1 end
+    end
+    return count
+end
+assert(actors[playerFirstActor].module=='Frontline.rte' and countSafeGrenades(actors[playerFirstActor])==3,
+    'player deployment must use the Frontline actor and exactly three safe Coalition Frag Grenades')
+local aiKit=kit.teams[1]
+aiKit.funds=5000; aiKit.levels[1]=1; aiKit.levels[17]=1; aiKit.levels[18]=1; aiKit.counts={1,0,0,0,0,0}; aiKit.grenades[1]=true
+local aiFirstActor=#actors+1
+assert(kit.commanders[1]:Deploy())
+assert(actors[aiFirstActor].module=='Frontline.rte' and countSafeGrenades(actors[aiFirstActor])==3,
+    'AI deployment must use the same Frontline actor and three safe Coalition Frag Grenades')
+print('Three-unit start and research-gated optional equipment use the safe timed-fuze grenade pack')
+actors={}
+local thrower=CreateAHuman('Soldier Light','Frontline.rte'); thrower.Team=0
+thrower.Pos=Vector(100,200); thrower.EyePos=Vector(100,200); thrower.AIMode=Actor.AIMODE_GOTO
+local throwTarget=CreateAHuman('Soldier Light','Coalition.rte'); throwTarget.Team=1
+throwTarget.ID=9001; throwTarget.Pos=Vector(300,200); throwTarget.EyePos=Vector(300,190); throwTarget.Vel=Vector(5,0)
+local throwAlly=CreateAHuman('Soldier Light','Frontline.rte'); throwAlly.Team=0
+throwAlly.Pos=Vector(600,400); throwAlly.IndividualRadius=10
+MovableMan:AddActor(thrower); MovableMan:AddActor(throwTarget); MovableMan:AddActor(throwAlly)
+local rayHit=throwTarget.ID
+SceneMan.CastMORay=function() return rayHit end
+local grenade={
+    MuzzlePos=Vector(110,200),
+    GetCalculatedMaxThrowVelIncludingArmThrowStrength=function() return 15 end,
+    GetNumberValue=function(_,key) return key=='TrajectoryGuideBlastRadius' and 75 or 0 end,
+}
+local receivedAimPoint,receivedVelocity
+local canThrow=function(aimPoint,velocity)
+    receivedAimPoint=aimPoint; receivedVelocity=velocity; return 0
+end
+assert(kit:CanFrontlineThrowGrenade(thrower,throwTarget,grenade,canThrow),
+    'a visible reachable enemy with clear friendly landing space must pass the throw policy')
+assert(receivedAimPoint.X==300 and receivedAimPoint.Y==195 and receivedVelocity.Magnitude==0,
+    'the safety solver must use Native ThrowTarget’s un-led aim point despite target velocity')
+throwAlly.Pos=Vector(426,195)
+assert(kit:CanFrontlineThrowGrenade(thrower,throwTarget,grenade,canThrow),
+    'safety clearance must use the native un-led landing aim, not a second velocity lead')
+throwAlly.Pos=Vector(310,195)
+assert(not kit:CanFrontlineThrowGrenade(thrower,throwTarget,grenade,canThrow),
+    'the throw policy must reject a landing area containing a teammate')
+throwAlly.Pos=Vector(600,400); rayHit=throwAlly.ID
+assert(not kit:CanFrontlineThrowGrenade(thrower,throwTarget,grenade,canThrow),
+    'the throw policy must reject an enemy obscured by a friendly')
+rayHit=throwTarget.ID
+assert(not kit:CanFrontlineThrowGrenade(thrower,throwTarget,grenade,function() return nil end),
+    'the throw policy must reject an unreachable ballistic solution')
+rayHit=throwTarget.ID
+local firearm={name='Assault Rifle'}
+local grenadeDevice={
+    MuzzlePos=grenade.MuzzlePos,
+    GetCalculatedMaxThrowVelIncludingArmThrowStrength=grenade.GetCalculatedMaxThrowVelIncludingArmThrowStrength,
+    GetNumberValue=grenade.GetNumberValue,
+    HasObjectInGroup=function(_,group) return group=='Bombs - Grenades' end,
+}
+thrower.EquippedItem=firearm; thrower.ThrowableIsReady=true
+local inventoryIndex=0
+thrower.Inventory=function()
+    inventoryIndex=inventoryIndex+1
+    if inventoryIndex==1 then return grenadeDevice end
+end
+function thrower:IsPlayerControlled() return false end
+function thrower:HasObjectInGroup(group) return group=='Bombs - Grenades' end
+function thrower:EquipDeviceInGroup(group,force) self.EquippedItem=grenadeDevice; return group=='Bombs - Grenades' and force end
+function thrower:EquipFirearm() self.EquippedItem=firearm; return true end
+local nativeAttackCount,nativeSawSquadMode=0,false
+local function nativeLikeAttack(self,owner)
+    nativeAttackCount=nativeAttackCount+1
+    nativeSawSquadMode=owner.AIMode==Actor.AIMODE_SQUAD
+    local distance=SceneMan:ShortestDistance(owner.Pos,self.Target.Pos,false)
+    if owner.AIMode~=Actor.AIMODE_SQUAD and owner.AIMode~=Actor.AIMODE_SENTRY
+        and self.Target.HFlipped==owner.HFlipped and owner:EquipDeviceInGroup("Bombs - Grenades",true)
+        and distance.Magnitude>100
+        and distance.Magnitude<grenadeDevice:GetCalculatedMaxThrowVelIncludingArmThrowStrength()*GetPPM()
+        and (self.Target.Pos.Y+20)>owner.Pos.Y then
+        self.NextBehavior=coroutine.create(HumanBehaviors.ThrowTarget)
+        self.NextBehaviorName='ThrowTarget'
+    elseif owner:EquipFirearm(true) then
+        self.NextBehaviorName='NativeFirearm'
+    end
+end
+thrower.AI={Target=throwTarget,ReloadTimer=Timer(),TargetLostTimer={Reset=function() end,SetSimTimeLimitMS=function() end},
+    CreateAttackBehavior=nativeLikeAttack}
+HumanBehaviors={GetGrenadeAngle=function() return 0 end,ThrowTarget=function() end,Sentry=function() end}
+ActivityMan.GetActivity=function() return kit end
+ToThrownDevice=function(item) return item end
+thrower.AI:CreateAttackBehavior(thrower)
+assert(thrower.AI.NextBehaviorName=='ThrowTarget' and not nativeSawSquadMode,
+    'the native-like selector must prefer its grenade branch for this unsafe-target fixture')
+nativeAttackCount=0; thrower.EquippedItem=firearm
+local nativeCreateCount,nativeUpdateCount,nativeDestroyCount=0,0,0
+NativeHumanAI={Create=function(_,owner)
+    nativeCreateCount=nativeCreateCount+1
+    owner.AI.Update=function() nativeUpdateCount=nativeUpdateCount+1 end
+    owner.AI.Destroy=function() nativeDestroyCount=nativeDestroyCount+1 end
+    return owner.AI
+end}
+assert(loadfile('Frontline.rte/FrontlineGrenadeAI.lua'))()
+local FrontlineCreate=Create
+thrower.AI=NativeHumanAI:Create(thrower)
+FrontlineCreate(thrower)
+assert(nativeCreateCount==1,'the copied preset must create native AI once before the Frontline hook')
+thrower.AI:Update(thrower); ThreadedUpdateAI(thrower); thrower.AI:Destroy(thrower)
+assert(nativeUpdateCount==1 and nativeDestroyCount==1,'the Frontline hook must leave native update and destroy to the copied preset')
+thrower.AI:CreateAttackBehavior(thrower)
+assert(thrower.AI.NextBehaviorName=='ThrowTarget' and thrower.EquippedItem==grenadeDevice
+    and nativeAttackCount==0 and thrower.AIMode==Actor.AIMODE_GOTO,
+    'Frontline AI must use the native throw behavior without changing its formation/order mode')
+throwAlly.Pos=Vector(310,195)
+thrower.AI:CreateAttackBehavior(thrower)
+assert(thrower.AI.NextBehaviorName=='NativeFirearm' and thrower.EquippedItem==firearm
+    and nativeAttackCount==1 and nativeSawSquadMode and thrower.AIMode==Actor.AIMODE_GOTO,
+    'unsafe throws must bypass native grenade preference, select a firearm, and restore the order mode')
+end
 
 -- Capture points must begin between the two bases on every battlefield size.
 for _,case in ipairs({{width=5200,count=3},{width=10400,count=5},{width=15600,count=9}}) do
@@ -666,7 +829,7 @@ assert(tall.brains[0].Pos.Y==1070 and tall.brains[1].Pos.Y==1070)
 tall:StartBattle(); tall.matchTimer.ElapsedSimTimeMS=15001; tall.teams[0].funds=5000
 tall.teams[0].timer.ElapsedSimTimeMS=10001
 assert(tall.commanders[0]:Deploy()); assert(actors[#actors].Pos.Y==1065)
-assert(tall.commanders[0]:BaseUpgrade('turret')); assert(tall.teams[0].turret.Pos.Y==1013)
+assert(tall.teams[0].turret.Pos.Y==1013 and not tall.commanders[0]:BaseUpgrade('turret'))
 SceneMan.MovePointToGround=originalGround; SceneMan.SceneWidth=5200
 print('Elevated battlefield spawns bases, squads and turrets at ground-relative heights')
 

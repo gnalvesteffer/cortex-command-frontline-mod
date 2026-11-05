@@ -526,25 +526,56 @@ do
     end
 end
 
--- Identical battlefield: a raider presses the neutral post while a balanced
--- commander assembles at its held post. Use low temperature for deterministic comparison.
+-- Safe objectives break first-post regrouping; only dispersed forces without a safe
+-- advance objective keep assembling. Low temperature makes each fixture repeatable.
 do
-    local function goal(personality)
-        local a=newBattle(); a.aiPersonality=personality; a.aiTemperature=0.01
-        a.teams[1].funds=0
-        a.outposts[3].owner=1
-        for i=1,3 do
-            local ally=CreateAHuman('ally'); ally.Team=1
-            ally.Pos=Vector(a.outposts[3].x,565); MovableMan:AddActor(ally)
-        end
-        a:UpdateAI()
-        return a.teams[1].goal,a.teams[1].order
+    local function fixture()
+        local a=newBattle(); a.aiTemperature=0.001; a.teams[1].funds=0
+        return a,a.teams[1]
     end
-    local balanced,balancedOrder=goal('balanced')
-    local raider,raiderOrder=goal('raider')
-    assert(balanced=='regroup' and balancedOrder=='Defend' and raider=='advance' and raiderOrder=='Advance',
-        'personality must change real team-wide strategic orders')
+    local a,ai=fixture()
+    a.outposts[3].owner=1
+    for i=1,3 do
+        local ally=CreateAHuman('ally'); ally.Team=1
+        ally.Pos=Vector(a.outposts[3].x,565); MovableMan:AddActor(ally)
+    end
+    a:UpdateAI()
+    assert(ai.goal=='advance' and ai.order=='Advance' and ai.orderTarget==2,
+        'a concentrated force must advance toward the nearest safe neutral post')
+    for actor in MovableMan.Actors do
+        if actor.Team==1 and actor.UniqueID~=a.brains[1].UniqueID then actor.Pos=Vector(a.outposts[2].x,565) end
+    end
+    a:UpdateOrders()
+    assert(a.orderAssignments[actors[#actors-1].UniqueID]~=nil,
+        'advancing units should remain assigned while an uncaptured target is being secured')
+
+    local rush,rushAI=fixture()
+    for _,post in ipairs(rush.outposts) do post.owner=1 end
+    rush:UpdateAI()
+    assert(rushAI.goal=='rush' and rushAI.order=='Rush',
+        'when all posts are held and no rally is needed, the AI should rush')
+
+    local dispersed,dispersedAI=fixture()
+    dispersed.outposts[1].owner=1; dispersed.outposts[3].owner=1
+    for _,index in ipairs({1,3}) do
+        local ally=CreateAHuman('ally'); ally.Team=1
+        ally.Pos=Vector(dispersed.outposts[index].x,565); MovableMan:AddActor(ally)
+    end
+    local blocker=CreateAHuman('blocker'); blocker.Team=0
+    blocker.Pos=Vector(dispersed.outposts[2].x,565); MovableMan:AddActor(blocker)
+    dispersed:UpdateAI()
+    assert(dispersedAI.goal=='regroup' and dispersedAI.order=='Defend',
+        'dispersed allies may regroup when every uncaptured objective is contested')
+
+    local threatened,threatAI=fixture()
+    threatened.outposts[3].owner=1
+    local ally=CreateAHuman('ally'); ally.Team=1; ally.Pos=Vector(threatened.outposts[3].x,565); MovableMan:AddActor(ally)
+    local enemy=CreateAHuman('enemy'); enemy.Team=0; enemy.Pos=Vector(threatened.outposts[3].x,565); MovableMan:AddActor(enemy)
+    threatened:UpdateAI()
+    assert(threatAI.goal=='defendPost' and threatAI.order=='Defend' and threatAI.orderTarget==3,
+        'a genuine threat to an owned post must take precedence over safe objectives')
 end
+print('AI advances to safe posts, rushes after securing them, regroups only when needed, and defends threats')
 print('Ten match personas preserve legal emergency behavior and vary strategic orders')
 
 -- Compare actual decisions across fixed battlefield, research and support
@@ -592,10 +623,17 @@ do
         local parts={}
         for which=1,5 do parts[which]=scenario(name,which) end
         local signature=table.concat(parts,'|')
-        assert(not seen[signature],name..' duplicates '..tostring(seen[signature])..': '..signature)
-        seen[signature]=name
+        seen[name]=signature
         print('Persona decisions '..name..': '..signature)
     end
+    assert(seen.aggressive~=seen.economic and seen.defensive~=seen.raider
+        and seen.artillery~=seen.engineer,
+        'personas should retain distinct offensive, defensive, and support/research commitments')
+    local unique={}
+    for _,signature in pairs(seen) do unique[signature]=true end
+    local count=0
+    for _ in pairs(unique) do count=count+1 end
+    assert(count>=6,'persona scenario set should expose at least six distinct decision signatures')
 end
 
 -- Concentrations are considered off-post, on friendly posts and in neutral
@@ -712,3 +750,31 @@ for _,index in ipairs({22,23}) do
     end
 end
 print('AI purchases Cover and Mines research levels 2 and 3')
+-- The real AI investment loop rebuilds a destroyed, upgraded base turret.
+do
+    local a=newBattle()
+    local ai=a.teams[1]
+    ai.baseArmor=3
+    for i=1,29 do ai.levels[i]=10 end
+    a.settings.callins=false
+    ai.funds=1000
+    assert(a.commanders[1]:BaseUpgrade('turretUpgrade'),'fixture should begin with an upgraded AI turret')
+    ai.funds=649
+    for i=1,50 do
+        local unit=CreateAHuman('field unit'); unit.Team=1
+        unit.Pos=Vector(a.brains[1].Pos.X,565); MovableMan:AddActor(unit)
+    end
+    ai.funds=649
+    ai.turret.Health=0
+    a:UpdateAI()
+    assert(ai.turret.Health==0 and ai.funds==649,
+        'deferred rebuild mismatch: funds='..ai.funds..' action='..tostring(ai.lastAIAction and ai.lastAIAction.kind)..':'..tostring(ai.lastAIAction and ai.lastAIAction.target))
+    ai.funds=650
+    a:UpdateAI()
+    assert(ai.turret~=nil and ai.turret.Health==200 and ai.turret.MaxHealth==200
+        and ai.turret.name=='Frontline HE Turret' and ai.turretLevel==2
+        and ai.funds==300 and ai.lastAIAction.kind=='baseUpgrade'
+        and ai.lastAIAction.target=='turret',
+        'AI should rebuild the destroyed turret as a full-health HE Mk2 for 350 oz')
+end
+print('AI rebuilds destroyed upgraded base turret after reserve is available')

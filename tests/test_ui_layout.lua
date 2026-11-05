@@ -60,6 +60,10 @@ function Timer() return {ElapsedSimTimeMS=0,IsPastSimMS=function(s,n) return s.E
 function Vector(x,y) return setmetatable({X=x,Y=y},{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
 local nextId=0
 function CreateAHuman(name) nextId=nextId+1; return {name=name,UniqueID=nextId,Team=0,Health=100,MaxHealth=100,Height=70,AddInventoryItem=function() end} end
+function CreateACrab(name,module)
+ local actor=CreateAHuman(name,module); actor.vehicle=true; actor.SpriteOffset=Vector(-13,-7); actor.SpriteHeight=16
+ return actor
+end
 function CreateHDFirearm(name) return {name=name} end
 function CreateSoundContainer() return {Play=function() end} end
 function CreateTerrainObject(name) return {name=name} end
@@ -69,7 +73,7 @@ MovableMan.Particles=function() return nil end
 function IsAHuman(a) return not a.vehicle end
 function IsACrab(a) return a.vehicle==true end
 SceneMan={SceneWidth=5200,SceneHeight=800,CastMaterialRay=function() return false end,AddSceneObject=function() end,MovePointToGround=function(_,p) return Vector(p.X,600) end}
-MusicMan={PlayDynamicSong=function() end}; FrameMan={IsHudDisabled=function() return false end}
+MusicMan={PlayDynamicSong=function() end}; FrameMan={PlayerScreenWidth=640,IsHudDisabled=function() return false end}
 CameraMan={GetOffset=function() return Vector(0,0) end}
 UInputMan={GetMouseMovement=function() return Vector(0,0) end,MouseButtonPressed=function() return false end}
 PrimitiveMan={DrawLinePrimitive=function() end,DrawScreenBoxFillPrimitive=function() end}
@@ -100,21 +104,65 @@ local function capture(activity,draw,width,height)
  activity[draw](activity)
  assert(background,'UI did not draw its panel background')
  if draw=='DrawPanel' and activity.tab=='Research' and activity.researchPage==4 then
+  local cards,ports={}, {}
+  for _,item in ipairs(items) do
+   if item.kind=='button' and item.x>=15 and item.r<=451 and item.y>=124 and item.y<=294 then
+    cards[#cards+1]=item
+    ports[item]={top=0,bottom=0}
+   end
+  end
+  assert(#cards==5,'Defense Network must expose all five research node cards')
   for _,line in ipairs(lines) do
    local a,b=line.a,line.b
    assert(a.X==b.X or a.Y==b.Y,'research dependency line must be orthogonal')
-   for _,item in ipairs(items) do
-    local right=item.kind=='button' and item.r-1 or item.r
-    local bottom=item.kind=='button' and item.b-1 or item.b
+   for _,endpoint in ipairs({a,b}) do
+    for _,card in ipairs(cards) do
+     local right,bottom=card.r-1,card.b-1
+     if endpoint.X>=card.x and endpoint.X<=right and endpoint.Y>=card.y and endpoint.Y<=bottom then
+      assert(endpoint.X==(card.x+right)/2 and (endpoint.Y==card.y or endpoint.Y==bottom),
+       'research connector must meet a node only at its top/bottom center port')
+      ports[card][endpoint.Y==card.y and 'top' or 'bottom']=ports[card][endpoint.Y==card.y and 'top' or 'bottom']+1
+     end
+    end
+   end
+   for _,card in ipairs(cards) do
+    local right,bottom=card.r-1,card.b-1
     local crossing
     if a.X==b.X then
-     crossing=a.X>item.x and a.X<right and math.max(a.Y,b.Y)>item.y and math.min(a.Y,b.Y)<bottom
+     crossing=a.X>card.x and a.X<right and math.max(a.Y,b.Y)>card.y and math.min(a.Y,b.Y)<bottom
     else
-     crossing=a.Y>item.y and a.Y<bottom and math.max(a.X,b.X)>item.x and math.min(a.X,b.X)<right
+     crossing=a.Y>card.y and a.Y<bottom and math.max(a.X,b.X)>card.x and math.min(a.X,b.X)<right
     end
-    assert(not crossing,string.format('dependency line (%s,%s)-(%s,%s) crosses %s (%s,%s)-(%s,%s)',a.X,a.Y,b.X,b.Y,item.label or item.kind,item.x,item.y,item.r,item.b))
+    assert(not crossing,string.format('dependency line (%s,%s)-(%s,%s) crosses research node card (%s,%s)-(%s,%s)',a.X,a.Y,b.X,b.Y,card.x,card.y,card.r,card.b))
    end
   end
+  for _,card in ipairs(cards) do
+   local p=ports[card]
+   assert(p.top>0 or p.bottom>0,'each Defense Network node must connect through a centered top/bottom port')
+  end
+  local expected={
+   {230,139,105,178,3}, {230,139,360,178,3}, {360,193,360,236,1},
+   {105,193,230,294,3}, {360,251,230,294,3},
+  }
+  assert(#lines==13,'Defense Network must render all five expected prerequisite paths')
+  local lineIndex=1
+  local function cardAtPort(x,y,port)
+   for _,card in ipairs(cards) do
+    local center=(card.x+card.r-1)/2
+    local edge=port=='bottom' and card.b-1 or card.y
+    if center==x and edge==y then return card end
+   end
+  end
+  for _,edge in ipairs(expected) do
+   assert(cardAtPort(edge[1],edge[2],'bottom'),'expected edge source must use a node bottom-center port')
+   assert(cardAtPort(edge[3],edge[4],'top'),'expected edge destination must use a node top-center port')
+   local first,last=lines[lineIndex],lines[lineIndex+edge[5]-1]
+   assert(first and last and first.a.X==edge[1] and first.a.Y==edge[2]
+    and last.b.X==edge[3] and last.b.Y==edge[4],
+    'each expected Defense Network edge must connect its bottom-center source to top-center destination')
+   lineIndex=lineIndex+edge[5]
+  end
+  assert(lineIndex==#lines+1,'no extra Defense Network edge or path segment may be rendered')
  end
  return inspect(background,{x=0,y=0,r=width,b=height},items),items
 end
@@ -227,7 +275,7 @@ for _,scene in ipairs({{5200,3},{10400,5},{15600,9}}) do
  for _,post in ipairs(a.outposts) do post.owner=-1 end
  for _,state in ipairs({'locked','unlocked','maxed','long'}) do
   local t=a.teams[0]
-  for i=1,29 do t.levels[i]=state=='locked' and 0 or 1 end
+  for i=1,30 do t.levels[i]=state=='locked' and 0 or 1 end
   t.tier=state=='locked' and 0 or 3
   if state=='maxed' then t.levels[13]=2; t.levels[22]=3; t.levels[23]=3; t.levels[27]=1 end
   if state=='long' then

@@ -1,4 +1,4 @@
--- Falling bomb that explodes on impact with terrain or actors.
+-- Visible falling shell; creates the active heavy explosive only on impact.
 local function explode(self)
     if self.exploded then return end
     self.exploded=true

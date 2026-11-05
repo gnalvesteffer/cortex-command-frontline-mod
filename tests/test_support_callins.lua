@@ -3,7 +3,7 @@ Key={TAB=1}; MouseButtons={MOUSE_LEFT=1,MOUSE_RIGHT=2}; rte={goldID=2}
 function Timer() return {ElapsedSimTimeMS=0, IsPastSimMS=function(s,n) return s.ElapsedSimTimeMS>=n end, Reset=function(s) s.ElapsedSimTimeMS=0 end} end
 function Vector(x,y) return setmetatable({X=x,Y=y},{__add=function(a,b) return Vector(a.X+b.X,a.Y+b.Y) end}) end
 local nextId=0
-function CreateAHuman(n,m) nextId=nextId+1; return {Team=0,UniqueID=nextId,name=n,Health=100,MaxHealth=100,Height=70,AddInventoryItem=function(self,item) self.inventory=item end,ClearAIWaypoints=function(self) self.waypoint=nil end,AddAISceneWaypoint=function(self,v) self.waypoint=v end} end
+function CreateAHuman(n,m) nextId=nextId+1; return {Team=0,UniqueID=nextId,name=n,module=m,Health=100,MaxHealth=100,Height=70,AddInventoryItem=function(self,item) self.inventory=item end,ClearAIWaypoints=function(self) self.waypoint=nil end,AddAISceneWaypoint=function(self,v) self.waypoint=v end} end
 function CreateACrab(n,m) local a=CreateAHuman(n,m); a.vehicle=true; return a end
 function CreateACDropShip(n,m)
     nextId=nextId+1
@@ -35,11 +35,14 @@ function CreateHDFirearm(presetOrQualifiedName,module)
     if qualified then moduleName,presetName=presetOrQualifiedName:match("^([^/]+)/(.+)$") end
     table.insert(firearmCreates,{name=presetName,module=moduleName,qualified=qualified})
     if presetName=="Broken Firearm" then return nil end
-    return {name=presetName,module=moduleName,qualified=qualified}
+    local values={["Base.rte/Pistol"]=5,["Coalition.rte/Shotgun"]=120,
+        ["Mod A.rte/Rifle A"]=400,["Mod C.rte/Rifle B"]=260,["Mod D.rte/Plasma Cannon"]=900}
+    return {name=presetName,module=moduleName,qualified=qualified,
+        GetGoldValue=function() return values[(moduleName or "").."/"..(presetName or "")] or 0 end}
 end
-function CreateTDExplosive(n,m) return {name=n,GibThis=function(self) self.gibbed=true end,Activate=function(self) self.activated=true end} end
-function CreateMOSRotating(n,m) local item=entity(n); function item:GibThis() self.gibbed=true; self.ToDelete=true end; return item end
-function CreateMOPixel(n,m) return entity(n) end
+function CreateTDExplosive(n,m) return {name=n,module=m,GibThis=function(self) self.gibbed=true end,Activate=function(self) self.activated=true end} end
+function CreateMOSRotating(n,m) local item=entity(n); item.module=m; item.entityType='MOSRotating'; function item:GibThis() self.gibbed=true; self.ToDelete=true end; return item end
+function CreateMOPixel(n,m) local item=entity(n); item.entityType='MOPixel'; return item end
 function CreateMOSParticle(n,m) return entity(n) end
 function ToTDExplosive(item) return item end
 -- ToActor returns a borrowed view; the original removed cargo remains owned.
@@ -58,6 +61,7 @@ local presets={
     {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod B.rte/Broken Firearm" end},
     {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Coalition.rte/Shotgun" end},
     {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod C.rte/Rifle B" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod D.rte/Plasma Cannon" end},
     {ClassName="MOSRotating",GetModuleAndPresetName=function() return "Base.rte/Not a firearm" end},
 }
 PresetMan={Modules=iterator({{Presets=iterator(presets)}})}
@@ -78,7 +82,7 @@ MovableMan.Particles=(function() local i=0; return function() i=i+1; local items
 function IsAHuman(a) return not a.vehicle and not a.ship end; function IsACrab(a) return a.vehicle==true end
 local sceneObjects={}
 SceneMan={SceneWidth=5200, SceneHeight=800, CastMaterialRay=function() return false end, AddSceneObject=function(_,o) table.insert(sceneObjects,o) end, MovePointToGround=function(_,p) return Vector(p.X,600) end}; MusicMan={PlayDynamicSong=function() end}
-FrameMan={IsHudDisabled=function() return false end,SetHudDisabled=function() end}; PrimitiveMan={DrawLinePrimitive=function() end,DrawTextPrimitive=function() end}
+FrameMan={PlayerScreenWidth=640,IsHudDisabled=function() return false end,SetHudDisabled=function() end}; PrimitiveMan={DrawLinePrimitive=function() end,DrawTextPrimitive=function() end}
 TimerMan={DeltaTimeSecs=1}; UInputMan={KeyPressed=function()return false end}; ActivityMan={EndActivity=function() end}
 function Frontline:SetPlayerBrain() end; function Frontline:SetViewState() end; function Frontline:SetObservationTarget() end
 function Frontline:GetTeamDeathCount(team) return self.deathCounts[team] end
@@ -116,15 +120,21 @@ UInputMan.MouseButtonPressed=function() return false end
 activity.tab='Support'; activity:DrawPanel()
 local supportLabels=table.concat(panelText,' ')
 local function smallFontWidthEstimate(label) return #label*5 end
-assert(#supportDescriptionLines==4 and supportLabels:find('WEAPON CACHE POD',1,true),
-    'personnel column must expose the weapon pod and capture all Energy Shield/Jammer description lines')
+assert(#supportDescriptionLines==4 and supportLabels:find('WEAPON CACHE POD',1,true)
+    and supportLabels:find('ASSAULT SQUAD',1,true) and supportLabels:find('500 oz | LOCKED',1,true),
+    'personnel column must expose both call-ins, the locked 500-oz Assault Squad, and Energy Shield/Jammer descriptions')
 for _,line in ipairs(supportDescriptionLines) do
-    assert(line.small and line.x==315 and line.y>=274 and line.y<=326
+    assert(line.small and line.x==315 and line.y>=307 and line.y<=346
         and line.x+smallFontWidthEstimate(line.label)<=465,
         'Support description must remain in-column: '..line.label)
 end
 print('Support Energy Shield/Jammer description lines fit the column width (x + estimated small-font width <= 465)')
 assert(table.concat(tabOrder,',')=='Squad,Research,Support,Base,Battle,Setup','Battle must be the penultimate tab, immediately before Setup')
+local researchTextStart=#panelText
+activity.tab='Research'; activity.researchPage=3; activity:DrawPanel()
+assert(table.concat(panelText,' ',researchTextStart+1):find('Assault Squad',1,true),
+    'Support Network research page must include Assault Squad index 30')
+activity.tab='Support'; activity.researchPage=1
 local panelTextStart=#panelText
 activity.tab='Squad'; activity:DrawPanel()
 local squadPanelText=table.concat(panelText,' ',panelTextStart+1)
@@ -152,11 +162,11 @@ assert(barrage and precision and carpetBomb and barrage<precision and precision<
 assert(bubbleShield and supportLabels:find('LOCKED',1,true), 'unresearched supports, including energy shield, must display locked states')
 local team=activity.teams[0]; team.funds=25000
 local target=activity.outposts[2]
-local expectedCosts={[1]=300,[2]=360,[3]=320,[4]=500,[5]=700,[6]=1000,[7]=300,[8]=340,[9]=400,[10]=600,[11]=400,[12]=700,[13]=500,[14]=400,[15]=500,[16]=700,[17]=400,[18]=440,[19]=480,[20]=600,[21]=600,[22]=280,[23]=360,[24]=800,[25]=1000,[26]=520,[27]=1200,[28]=700,[29]=500}
+local expectedCosts={[1]=300,[2]=360,[3]=320,[4]=500,[5]=700,[6]=1000,[7]=300,[8]=340,[9]=400,[10]=600,[11]=400,[12]=700,[13]=500,[14]=400,[15]=500,[16]=700,[17]=400,[18]=440,[19]=480,[20]=600,[21]=600,[22]=280,[23]=360,[24]=800,[25]=1000,[26]=520,[27]=1200,[28]=700,[29]=500,[30]=700}
 for index,price in pairs(expectedCosts) do
     assert(activity:ResearchCost(0,index)==price, 'research index '..index..' should cost '..price..' oz before outpost discount')
 end
-for _,kind in ipairs({'strike','medic','cover','mines','bomb','turret','orbital','shield','bubble','mining','weaponPod'}) do
+for _,kind in ipairs({'strike','medic','cover','mines','bomb','turret','orbital','shield','bubble','mining','weaponPod','assaultSquad'}) do
     local ok,message=activity.commanders[0]:CallIn(kind, 2)
     assert(not ok and message:find('Research',1,true), kind..' must be gated by its research node')
 end
@@ -169,6 +179,7 @@ assert(activity.commanders[0]:Research(6) and team.tier==3)
 assert(not activity.commanders[0]:Research(12), 'medic level 2 must require level 1')
 assert(activity.commanders[0]:Research(11)); assert(not activity.commanders[0]:Research(13), 'Support Jammer must require Cover'); assert(activity.commanders[0]:Research(14))
 assert(activity.commanders[0]:Research(28) and team.levels[28]==1)
+assert(activity.commanders[0]:Research(30) and team.levels[30]==1)
 assert(activity.commanders[0]:CallIn('weaponPod', 2))
 local podDelivery=activity.pendingDrops[#activity.pendingDrops]
 assert(podDelivery.kind=='weaponPod' and #podDelivery.weapons==3)
@@ -202,6 +213,67 @@ for index=itemsBefore+1,#MovableMan.items do
     assert(weapon.Team==0 and weapon.ToSettle and weapon.Pos.Y==588 and weapon.module
         and weapon.qualified and weapon.name~='Broken Firearm')
 end
+
+local squadTarget={name='off-post legal target',x=2600,groundY=600,owner=-1}
+local fundsBeforeSquad=25000; team.funds=fundsBeforeSquad
+local illegalTarget={name='inside enemy base exclusion',x=SceneMan.SceneWidth-100,groundY=600,owner=-1}
+local illegalCallin,illegalMessage=activity.commanders[0]:CallIn('assaultSquad',illegalTarget)
+assert(not illegalCallin and illegalMessage=='Support restricted near enemy base'
+    and team.funds==fundsBeforeSquad and team.assaultSquadTimer.ElapsedSimTimeMS==60000,
+    'Assault Squad must reject illegal targets without spending funds or starting cooldown')
+assert(activity:PostBonusCount(0,3)==0 and activity:CallinCooldown(0,60000)==60000,
+    'Assault Squad base cooldown must be exactly 60,000 ms without call-in post discounts')
+assert(activity.commanders[0]:CallIn('assaultSquad',squadTarget),'research-unlocked Assault Squad must accept any legal target position')
+assert(team.funds==fundsBeforeSquad-500 and team.assaultSquadTimer.ElapsedSimTimeMS==0,
+    'one ordered Assault Squad must debit exactly 500 oz and start its 60-second cooldown')
+local assaultDelivery=activity.pendingDrops[#activity.pendingDrops]
+assert(assaultDelivery.kind=='assaultSquad' and assaultDelivery.target==squadTarget
+    and assaultDelivery.count==3 and assaultDelivery.delay==4000 and #assaultDelivery.squad==3,
+    'Assault Squad must queue the standard three-person Coalition Light dropship payload at the requested position')
+local passengerIDs,selectedExotics={},{}
+for _,actor in ipairs(assaultDelivery.squad) do
+    local weapon=actor.inventory
+    assert(actor.name=='Soldier Light' and actor.module=='Coalition.rte' and actor.Team==0
+        and weapon and weapon.qualified and weapon.module~='Base.rte' and weapon.module~='Coalition.rte'
+        and weapon:GetGoldValue(0,1,1)>120,
+        'each Coalition Light passenger must carry a loaded-game exotic firearm above the stock weapon-value ceiling')
+    passengerIDs[actor.UniqueID]=true
+    selectedExotics[#selectedExotics+1]=weapon.module.."/"..weapon.name
+end
+assert(table.concat(selectedExotics,",")=="Mod D.rte/Plasma Cannon,Mod A.rte/Rifle A,Mod C.rte/Rifle B",
+    'Assault Squad must deterministically select the three highest-value loaded exotic firearms')
+team.assaultSquadTimer.ElapsedSimTimeMS=59999
+local coolingDown,cooldownMessage=activity.commanders[0]:CallIn('assaultSquad',squadTarget)
+assert(not coolingDown and cooldownMessage=='Call-in cooling down' and team.funds==fundsBeforeSquad-500,
+    'Assault Squad must remain unavailable until its full 60,000 ms cooldown elapses')
+assaultDelivery.timer.ElapsedSimTimeMS=4000
+activity:UpdateCallIns()
+local assaultShip=assaultDelivery.ship
+assert(assaultShip and #assaultShip.cargo==3 and assaultShip.cargo[1].name=='Soldier Light',
+    'Assault Squad must enter the normal support dropship delivery path with exactly three actors')
+assaultDelivery.arrivalTimer.ElapsedSimTimeMS=2000
+activity:UpdateCallIns()
+local delivered={}
+for _,actor in ipairs(actors) do
+    if passengerIDs[actor.UniqueID] then delivered[#delivered+1]=actor end
+end
+assert(#delivered==3 and assaultShip.hatchOpen and assaultShip.openedWithCargo==0,
+    'normal dropship arrival must deliver and open with all three squad actors extracted')
+for _,actor in ipairs(delivered) do
+    assert(actor.Team==0 and actor.module=='Coalition.rte' and actor.Pos.Y==565
+        and actor.inventory and actor.inventory.module~='Base.rte' and actor.inventory.module~='Coalition.rte',
+        'delivered Coalition Light actors must retain their exotic firearms and land on the legal target')
+end
+local savedAssaultPresets,savedLoadedPresets=activity.assaultWeaponPresets,activity.weaponPodPresets
+activity.assaultWeaponPresets=nil
+activity.weaponPodPresets={'Base.rte/Pistol','Coalition.rte/Shotgun'}
+local missingExotics,missingExoticMessage=activity:AssaultSquadWeaponPresets()
+assert(not missingExotics and missingExoticMessage:find('three loaded exotic firearms',1,true),
+    'Assault Squad must report when fewer than three high-tier exotic firearms are loaded')
+activity.assaultWeaponPresets=savedAssaultPresets
+activity.weaponPodPresets=savedLoadedPresets
+print('Assault Squad research, legal targeting, cost/cooldown, exotic loadout and standard dropship delivery verified')
+
 local ai=activity.teams[1]
 local oldFunds,oldAuto,oldTurretLevel,oldBaseArmor,oldTurret=ai.funds,ai.auto,ai.turretLevel,ai.baseArmor,ai.turret
 local oldStatsDeployed,oldPersonality=ai.stats.deployed,activity.aiPersonality
@@ -216,10 +288,10 @@ for _,key in ipairs({"autoDeploy","forward","orderPhase","attackTarget","rallyTa
     oldAIFields[key]=ai[key]
 end
 local oldLevels,oldTimerValues={},{}
-for index=1,29 do oldLevels[index]=ai.levels[index]; ai.levels[index]=10 end
+for index=1,30 do oldLevels[index]=ai.levels[index]; ai.levels[index]=10 end
 ai.levels[13]=2; ai.levels[29]=6; ai.levels[28]=1
 local callinTimers={ai.strikeTimer,ai.medicTimer,ai.coverTimer,ai.minesTimer,ai.bombTimer,
-    ai.turretTimer,ai.orbitalTimer,ai.shieldTimer,ai.bubbleTimer,ai.weaponPodTimer}
+    ai.turretTimer,ai.orbitalTimer,ai.shieldTimer,ai.bubbleTimer,ai.weaponPodTimer,ai.assaultSquadTimer}
 for index,timer in ipairs(callinTimers) do oldTimerValues[index]=timer.ElapsedSimTimeMS; timer.ElapsedSimTimeMS=0 end
 ai.weaponPodTimer.ElapsedSimTimeMS=1000000
 ai.auto=false; ai.turretLevel=2; ai.baseArmor=3; ai.turret={Health=100}; ai.funds=5000
@@ -243,7 +315,7 @@ for _,actor in ipairs(actors) do
     if actor.Team==1 and not existingAIActors[actor] then actor.deleted=true end
 end
 supplyActor.deleted=true; supplyPost.owner=oldOwner
-for index=1,29 do ai.levels[index]=oldLevels[index] end
+for index=1,30 do ai.levels[index]=oldLevels[index] end
 for index,timer in ipairs(callinTimers) do timer.ElapsedSimTimeMS=oldTimerValues[index] end
 ai.funds=oldFunds; ai.auto=oldAuto; ai.turretLevel=oldTurretLevel; ai.baseArmor=oldBaseArmor
 ai.turret=oldTurret; ai.stats.deployed=oldStatsDeployed; activity.aiPersonality=oldPersonality
@@ -361,35 +433,66 @@ mining.arrivalTimer.ElapsedSimTimeMS=2000; activity:UpdateCallIns()
 assert(miner._cargoOwner=='world' and miner.Pos.X==target.x and miner.Pos.Y==592 and miner.PinStrength==0)
 assert(activity.commanders[0]:CallIn('bomb', 2)); local bomb=activity.pendingDrops[#activity.pendingDrops]
 assert(bomb.startX==target.x-192 and bomb.flightDistance==360)
+local bombParticleCount=MovableMan.particleCount
+bomb.timer.ElapsedSimTimeMS=799; activity:UpdateCallIns()
+assert(MovableMan.particleCount==bombParticleCount and bomb.bombsDropped==0,
+    'carpet bomb must not release a physical payload before its first interval')
 bomb.timer.ElapsedSimTimeMS=800; activity:UpdateCallIns()
 local dropped=MovableMan.lastParticle
-assert(dropped.name=='Bomb Run Bomb' and dropped.Pos.X==target.x-96,'first bomb must drop as the ship crosses into the target area')
-assert(dropped.Team==0 and bomb.bombsDropped==1)
-assert(dropped.Pos.Y>bomb.ship.Pos.Y+(bomb.ship.Radius or 50),'bomb must clear the dropship collision envelope before falling')
+assert(MovableMan.particleCount==bombParticleCount+1 and bomb.bombsDropped==1,
+    'first due interval must release exactly one physical bomb')
+assert(dropped.name=='Frontline Carpet Bomb' and dropped.module=='Frontline.rte'
+    and dropped.entityType=='MOSRotating' and dropped.Team==0 and dropped.Pos.X==target.x-96
+    and dropped.Pos.Y==bomb.ship.Pos.Y+(bomb.ship.Radius or 50)+12
+    and dropped.Vel.X==0 and dropped.Vel.Y==20,
+    'first visible Standard Bomb shell must preserve its team, release position, and velocity')
+activity:UpdateCallIns()
+assert(MovableMan.particleCount==bombParticleCount+1 and bomb.bombsDropped==1,
+    'rechecking the same due time must not duplicate the first bomb')
 bomb.timer.ElapsedSimTimeMS=1600; activity:UpdateCallIns()
-assert(MovableMan.lastParticle.Pos.X==target.x and bomb.bombsDropped==2,'second bomb must pass directly over the target')
+local secondBomb=MovableMan.lastParticle
+assert(MovableMan.particleCount==bombParticleCount+2 and bomb.bombsDropped==2
+    and secondBomb.Pos.X==target.x
+    and secondBomb.Pos.Y==bomb.ship.Pos.Y+(bomb.ship.Radius or 50)+12 and secondBomb.Team==0
+    and secondBomb.Vel.X==0 and secondBomb.Vel.Y==20,
+    'second visible bomb shell must release directly over the target')
 bomb.timer.ElapsedSimTimeMS=2400; activity:UpdateCallIns()
-assert(MovableMan.lastParticle.Pos.X==target.x+96 and bomb.bombsDropped==3,'third bomb must continue across the target before the ship exits')
+local thirdBomb=MovableMan.lastParticle
+assert(MovableMan.particleCount==bombParticleCount+3 and bomb.bombsDropped==3
+    and thirdBomb.Pos.X==target.x+96
+    and thirdBomb.Pos.Y==bomb.ship.Pos.Y+(bomb.ship.Radius or 50)+12 and thirdBomb.Team==0
+    and thirdBomb.Vel.X==0 and thirdBomb.Vel.Y==20,
+    'third visible bomb shell must continue across the target')
+activity:UpdateCallIns()
+assert(MovableMan.particleCount==bombParticleCount+3,
+    'completed bomb run must not release extra visible shells')
+assert(loadfile('Frontline.rte/BombRunBomb.lua'))()
+local impactWrapper=CreateMOSRotating('Frontline Carpet Bomb','Frontline.rte')
+impactWrapper.Pos=Vector(target.x,600); impactWrapper.Team=0
+local impactParticlesBefore=#MovableMan.particles
+OnCollideWithTerrain(impactWrapper,0)
+local heavyBomb=MovableMan.lastParticle
+assert(impactWrapper.ToDelete and #MovableMan.particles-impactParticlesBefore==2)
+assert(heavyBomb.name=='Frontline Heavy Bomb' and heavyBomb.module=='Frontline.rte'
+    and heavyBomb.Team==0 and heavyBomb.activated,
+    'visible shell impact must spawn and activate the heavy explosive payload')
+local impactParticlesAfter=#MovableMan.particles
+OnCollideWithMO(impactWrapper,nil,nil)
+assert(#MovableMan.particles==impactParticlesAfter,'a carpet bomb shell must activate its payload only once')
 for _,field in ipairs(activity.jamFields) do field.timer.ElapsedSimTimeMS=field.duration end
 activity:UpdateCallIns()
 local enemyTeam=activity.teams[1]; enemyTeam.levels[25]=1; enemyTeam.funds=5000; enemyTeam.bombTimer.ElapsedSimTimeMS=55000
 assert(activity.commanders[1]:CallIn('bomb', 2)); local enemyBomb=activity.pendingDrops[#activity.pendingDrops]
 assert(enemyBomb.startX==target.x+192 and enemyBomb.direction==-1)
+local enemyParticleCount=MovableMan.particleCount
 enemyBomb.timer.ElapsedSimTimeMS=800; activity:UpdateCallIns()
-assert(MovableMan.lastParticle.Pos.X==target.x+96 and MovableMan.lastParticle.Team==1,
-    'enemy bomb run must sweep in the mirrored direction')
-assert(loadfile('Frontline.rte/BombRunBomb.lua'))()
-local bombImpact=CreateMOPixel('Bomb Run Bomb','Frontline.rte')
-bombImpact.Pos=Vector(target.x,600); bombImpact.Team=0
-local blastParticlesBefore=#MovableMan.particles
-OnCollideWithTerrain(bombImpact,0)
-local heavyBomb=MovableMan.lastParticle
-assert(bombImpact.exploded and bombImpact.ToDelete and #MovableMan.particles-blastParticlesBefore==2)
-assert(heavyBomb.name=='Frontline Heavy Bomb' and heavyBomb.Team==0 and heavyBomb.activated,
-    'dropped carpet bombs must activate the custom heavy explosive on impact')
-local blastParticlesAfter=#MovableMan.particles
-OnCollideWithMO(bombImpact,nil,nil)
-assert(#MovableMan.particles==blastParticlesAfter,'a carpet bomb must explode only once')
+local enemyReleased=MovableMan.lastParticle
+assert(MovableMan.particleCount==enemyParticleCount+1 and enemyBomb.bombsDropped==1
+    and enemyReleased.name=='Frontline Carpet Bomb' and enemyReleased.entityType=='MOSRotating'
+    and enemyReleased.Pos.X==target.x+96 and enemyReleased.Team==1
+    and enemyReleased.Vel.X==0 and enemyReleased.Vel.Y==20,
+    'enemy bomb run must release its visible shell in the mirrored direction with the correct team and velocity')
+assert(not enemyReleased.ToDelete and not enemyReleased.gibbed)
 print('Support research gates, physical deliveries, orbital fragments, and bidirectional carpet bombing passed')
 local treeText,graphText,graphLines,nodes={},{},{},{}
 local lastBox
@@ -570,6 +673,7 @@ end
 local ai=activity.teams[1]
 local rally=activity.outposts[1]
 rally.owner=1
+activity.aiPersonality="defensive"
 ai.funds=0
 ai.orderPhase=nil; ai.attackTarget=nil; ai.rallyTarget=nil
 local staged=0
