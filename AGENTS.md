@@ -34,7 +34,7 @@ Key call-in types:
 Bomb runs release three bombs along their flight path; released bombs are not intercepted by the Support Jammer. Orbital Gatling Barrage fires 72 rounds, with a 36-round research bonus and 16 fragments per round.
 
 ## Base Upgrades
-The upgradeable base turret uses a custom Frontline HE cannon at both levels; level 2 adds fragmentation. Both levels have twice the stock Gatling's un-sharp target-acquisition ray at the viewport width when built.
+Both factions use an HE turret for their upgradeable base turret; the upgrade path is HE→HE Mk2 (200 health). The acquisition ray is doubled from stock but remains unsharp at construction viewport range.
 
 The tabs are ordered Squad, Research, Support, Base, Battle, Setup. Squad selection uses manual unit configuration without presets. Squad size starts at 3 and can reach 9 through six Squad Size upgrades.
 
