@@ -6,7 +6,7 @@ local CONFIG = {
     TEAM_UNIT_CAP = 50, STARTING_SQUAD_SIZE=3, MAX_SQUAD_SIZE=9, SQUAD_SIZE_RESEARCH=29,
     UNIT_ARMOR_COST = 60, UNIT_ARMOR_HEALTH = 50,
     FORWARD_SHIP_PASSENGERS = 3, FORWARD_LANDING_OFFSET = 150, FORWARD_SHIP_SEPARATION = 170, FORWARD_DROP_HEIGHT = 650,
-    GRACE_MS = 15000, OUTPOST_CAPTURE_SECONDS = 8, OUTPOST_INCOME = 5, OUTPOST_RADIUS = 180,
+    GRACE_MS = 15000, OUTPOST_CAPTURE_SECONDS = 8, OUTPOST_INCOME = 5, OUTPOST_RADIUS = 180, OUTPOST_CAPTURE_VERTICAL_RADIUS = 72,
     MINER_GOLD_SCAN_STEP = 24, MINER_CHECK_INTERVAL_MS = 1000, MINER_RESCAN_INTERVAL_MS = 15000, MINER_DIG_DISTANCE = 45,
     economy={incomePerResearchLevel=2,bountyPerResearch=15,outpostResearchCostMultiplier=0.8,callinCooldownMultiplier=0.8},
     researchEffects={
@@ -14,7 +14,7 @@ local CONFIG = {
         training={basePerception=0.5,perLevel=0.05,maximumPerception=1},
     },
     orders={formationSlots=7,formationSpacing=20,formationCenter=3,arrivalRadiusX=90,arrivalRadiusY=120,waypointOffsetY=20},
-    ENEMY_BASE_SUPPORT_EXCLUSION_RADIUS = 600, -- Applied equally to both teams.
+    ENEMY_BASE_SUPPORT_EXCLUSION_RADIUS = 900, -- Applied equally to both teams; keeps offensive fire and drops away from the starting base.
     -- Support call-in balance
     CALLIN_STRIKE_COST = 220, CALLIN_STRIKE_COOLDOWN_MS = 45000,
     CALLIN_STRIKE_DELAY_MS = 3000, CALLIN_PRECISION_HEIGHT = 600, CALLIN_PRECISION_SPEED = 60, CALLIN_PRECISION_FLIGHT_MS = 5000, CALLIN_MEDIC_COST = 120,
@@ -30,11 +30,11 @@ local CONFIG = {
     CALLIN_SHIELD_COST = 200, CALLIN_SHIELD_COOLDOWN_MS = 60000, CALLIN_JAM_RADIUS = 180,
     CALLIN_BUBBLE_COST=280, CALLIN_BUBBLE_COOLDOWN_MS=75000,
     CALLIN_WEAPON_POD_COST=320, CALLIN_WEAPON_POD_COOLDOWN_MS=60000, CALLIN_WEAPON_POD_DELAY_MS=3000,
-    CALLIN_ASSAULT_SQUAD_COST=500, CALLIN_ASSAULT_SQUAD_COOLDOWN_MS=60000, CALLIN_ASSAULT_SQUAD_DELAY_MS=4000,
+    CALLIN_ASSAULT_SQUAD_COST=1000, CALLIN_ASSAULT_SQUAD_COOLDOWN_MS=120000, CALLIN_ASSAULT_SQUAD_DELAY_MS=4000,
     BASE_ARMOR_COST = 200, BASE_ARMOR_HEALTH = 50, BASE_ARMOR_LEVELS = 3,
     BASE_REPAIR_COST = 120, BASE_REPAIR_HEALTH = 50, BASE_TURRET_COST = 350, BASE_TURRET_UPGRADE_COST=650,
     BASE_TURRET_RANGE_MULTIPLIER=2, BASE_TURRET_AIM_DISTANCE=30, BASE_TURRET_VIEWPORT_RANGE_FACTOR=0.51,
-    BASE_TURRET_HEALTH=200,
+    BASE_TURRET_HEALTH=600,
     BASE_TOWER_DISTANCE=484, BASE_TOWER_HEIGHT=102, BASE_TURRET_ROOM_OFFSET_Y=15, BASE_TURRET_PIN_STRENGTH=100000,
     -- Unit and equipment catalogs
     roster = {
@@ -264,29 +264,95 @@ CONFIG.map={
         smallCount=3,mediumCount=5,largeCount=9,
         smallNames={"WEST","CENTER","EAST"},
         bonuses={"Income +5/s","Research -20%","Call-ins -20%"},
-        groundProbe=4,structureYOffset=24,
+        groundProbe=4,
     },
     mining={scanMargin=12,depositMergeVertical=80,verticalDistanceWeight=0.2,verticalDigRange=120},
+    highlandsBunker={
+        sceneName="Frontline Highlands Battlefield",sceneWidth=15600,surfaceY=1150,
+        shaftCenters={6912,7200},shaftSegments=3,shaftClearance=100,shaftPadHalfWidth=48,
+        captureOutposts={
+            {x=4200,name="CAVERN WEST",bonusKind=3,shaftSegments=2},
+            {x=11400,name="CAVERN EAST",bonusKind=3,shaftSegments=2},
+        },
+        captureRadiusX=CONFIG.OUTPOST_RADIUS,captureRadiusY=30,surfaceEntryOffset=300,
+    },
     baseApproach={
-        -- Tunnel material walkable surface is row 72 at local Y +24.
-        -- Brain Vault exit floor is row 119 at local Y +25 (BitmapOffset Y=-94).
-        -- Match both measured material surfaces, not their bitmap bounds.
-        corridorYOffset=30,
         -- Tunnel A/B footprints are 96/48px wide; centers meet edge-to-edge.
+        corridorYOffset=30,
         sections={{distance=340,preset="Tunnel A"},{distance=436,preset="Tunnel A"},{distance=508,preset="Tunnel B"}},
     },
     baseDeployment={edgeOffset=200,slotCount=6,slotSpacing=18,groundOffset=35,positionMargin=120,minimumShipHeight=-50},
     baseOffset=180,groundProbe=2,vaultYOffset=31,brainYOffset=30,
-    cover={minimumShipHeight=50,startOffset=650,releaseOffset=350,endOffset=650,minOutpostDistance=180,stepMin=220,stepMax=360,groundProbe=2,
+    cover={minimumShipHeight=50,startOffset=650,releaseOffset=350,endOffset=650,minOutpostDistance=180,stepMin=220,stepMax=360,
         minerSpawnYOffset=100,
+        -- Contact rows use substantial bitmap mass, not detached bottom pixels.
+        -- The large rock in particular has loose dirt well below its visible base.
         presets={
-            {preset="Zombie Cave Rock",yOffset=0},
-            {preset="Zombie Cave Under Rock 1",yOffset=0},
-            {preset="Zombie Cave Under Rock 2",yOffset=0},
-            {preset="Concrete Barrier",yOffset=-22},
-            {preset="Metal Crate Small A FG",yOffset=-22},
+            {preset="Zombie Cave Rock",bottom=40,footLeft=-42,footRight=52,bodyLeft=-60,bodyRight=64},
+            {preset="Zombie Cave Under Rock 1",bottom=22,footLeft=-45,footRight=15,bodyLeft=-60,bodyRight=54},
+            {preset="Zombie Cave Under Rock 2",bottom=28,footLeft=-43,footRight=18,bodyLeft=-45,bodyRight=51},
+            {preset="Concrete Barrier",bottom=21,footLeft=2,footRight=21,bodyLeft=0,bodyRight=23},
+            {preset="Metal Crate Small A FG",bottom=21,footLeft=0,footRight=23,bodyLeft=0,bodyRight=23},
         }},
 }
+
+local function isHighlandsScene()
+    local layout=CONFIG.map.highlandsBunker
+    local scene=SceneMan.Scene
+    return SceneMan.SceneWidth==layout.sceneWidth and scene~=nil and scene.PresetName==layout.sceneName
+end
+
+local function highlandsShaftCenters()
+    local layout=CONFIG.map.highlandsBunker
+    local centers={}
+    for _,x in ipairs(layout.shaftCenters) do centers[#centers+1]=x end
+    for _,outpost in ipairs(layout.captureOutposts) do centers[#centers+1]=outpost.x end
+    return centers
+end
+
+local function surfaceCoverPosition(entry,x)
+    local groundY=0
+    for dx=entry.footLeft,entry.footRight do
+        -- Accuracy is a pixel skip count; zero finds the first solid pixel.
+        groundY=math.max(groundY,SceneMan:MovePointToGround(Vector(x+dx,0),0,0).Y)
+    end
+    return Vector(x,groundY-entry.bottom+2)
+end
+
+local function placeHighlandsBunker()
+    local layout=CONFIG.map.highlandsBunker
+    if not isHighlandsScene() then return end
+    local function stamp(name,x,y,hFlipped,moduleName)
+        local object=CreateTerrainObject(name,moduleName or "Base.rte")
+        if not object then error("Missing required Highlands bunker part: "..name) end
+        object.Pos=Vector(x,y)
+        object.HFlipped=hFlipped==true
+        SceneMan:AddSceneObject(object)
+    end
+    local function stampLayout(shafts,segments)
+        local hallY=layout.surfaceY+48+segments*96
+        stamp("End B",shafts[1]-192,hallY)
+        for x=shafts[1]-96,shafts[#shafts]+96,96 do
+            local junction=false
+            for _,shaftX in ipairs(shafts) do
+                if x==shaftX then junction=true; break end
+            end
+            stamp(junction and "T-Junction B" or "Tunnel A",x,hallY)
+        end
+        for _,shaftX in ipairs(shafts) do
+            for segment=0,segments-1 do
+                stamp("Shaft A",shaftX,layout.surfaceY+48+segment*96)
+            end
+            for y=layout.surfaceY,hallY-48-24,24 do
+                stamp("Background Ladder",shaftX-12,y)
+            end
+        end
+    end
+    stampLayout(layout.shaftCenters,layout.shaftSegments)
+    for _,outpost in ipairs(layout.captureOutposts) do
+        stampLayout({outpost.x},outpost.shaftSegments)
+    end
+end
 
 -- A right click walks through the same ordered options in reverse.
 local function cycleOption(options,current,direction)
@@ -482,7 +548,6 @@ function Frontline:StartActivity()
     self.originalHudDisabled=FrameMan:IsHudDisabled(0)==true
     self.weaponPodPresets=nil
     self.assaultWeaponPresets=nil
-    self.assaultWeaponRotation=1
     local ok,method=pcall(function() return PrimitiveMan.DrawScreenBoxFillPrimitive end)
     self.screenUI=ok and method~=nil
     self.teams = {[0]=freshTeam(), [1]=freshTeam()}
@@ -543,23 +608,34 @@ function Frontline:StartActivity()
     self.battleStarted=false
     self.setupStep=1
     self.outposts={}
+    self.highlandsBunkerActive=isHighlandsScene()
+    placeHighlandsBunker()
     self:ScanGoldSites()
     local outpostConfig=CONFIG.map.outposts
     local postCount=SceneMan.SceneWidth>=outpostConfig.largeSceneWidth and outpostConfig.largeCount
         or (SceneMan.SceneWidth>=outpostConfig.mediumSceneWidth and outpostConfig.mediumCount or outpostConfig.smallCount)
+    self.surfaceOutpostCount=postCount
     local names=postCount==outpostConfig.smallCount and outpostConfig.smallNames or nil
     for i=1,postCount do
         local x=SceneMan.SceneWidth*i/(postCount+1)
         local ground=SceneMan:MovePointToGround(Vector(x,0),0,outpostConfig.groundProbe)
         local kind=(i-1)%#outpostConfig.bonuses+1
-        self.outposts[i]={name=names and names[i] or ("POST "..i), bonus=outpostConfig.bonuses[kind], kind=kind, owner=-1, progress=0, x=x, groundY=ground.Y}
+        self.outposts[i]={name=names and names[i] or ("POST "..i),bonus=outpostConfig.bonuses[kind],
+            kind=kind,owner=-1,progress=0,x=x,groundY=ground.Y,captureY=ground.Y-20,
+            captureRadiusY=CONFIG.OUTPOST_CAPTURE_VERTICAL_RADIUS,level="surface",surfaceY=ground.Y}
     end
-    -- Native bunker modules are destructible and have open entrances on both sides.
-    for _,post in ipairs(self.outposts) do
-        local structure=CreateTerrainObject("Tunnel A","Base.rte")
-        if structure then
-            structure.Pos=Vector(post.x,post.groundY-outpostConfig.structureYOffset)
-            SceneMan:AddSceneObject(structure)
+    if self.highlandsBunkerActive then
+        local bunker=CONFIG.map.highlandsBunker
+        local mid=SceneMan.SceneWidth/2
+        for _,entry in ipairs(bunker.captureOutposts) do
+            local hallY=bunker.surfaceY+48+entry.shaftSegments*96
+            local landingX=entry.x+(entry.x<mid and bunker.surfaceEntryOffset or -bunker.surfaceEntryOffset)
+            local landingY=SceneMan:MovePointToGround(Vector(landingX,0),0,outpostConfig.groundProbe).Y
+            local index=#self.outposts+1
+            self.outposts[index]={name=entry.name,bonus=outpostConfig.bonuses[entry.bonusKind],
+                kind=entry.bonusKind,owner=-1,progress=0,x=entry.x,groundY=hallY+24,
+                captureY=hallY+4,captureRadiusY=bunker.captureRadiusY,level="underground",
+                surfaceY=bunker.surfaceY,landingX=landingX,landingY=landingY,shaftSegments=entry.shaftSegments}
         end
     end
     self.noticeTimer=Timer()
@@ -619,8 +695,8 @@ function Frontline:StartActivity()
         MovableMan:AddActor(brain)
         self.brains[team]=brain
     end
-    -- Space randomized cover between the bases, leaving their spawn lanes clear.
-    -- Ground level is sampled from the scene so cover follows the rolling terrain.
+    -- TerrainObjects are stamped unrotated, so seat their measured feet at
+    -- the lowest ground under the footing, embedding the uneven bitmap edge.
     local cover=CONFIG.map.cover
     local x=cover.startOffset
     while x<SceneMan.SceneWidth-cover.endOffset do
@@ -629,10 +705,19 @@ function Frontline:StartActivity()
         for _,post in ipairs(self.outposts) do
             if math.abs(post.x-x)<cover.minOutpostDistance then tooClose=true; break end
         end
+        if self.highlandsBunkerActive then
+            local bunker=CONFIG.map.highlandsBunker
+            local bodyLeft,bodyRight=x+entry.bodyLeft,x+entry.bodyRight
+            for _,shaftX in ipairs(highlandsShaftCenters()) do
+                if bodyLeft<=shaftX+bunker.shaftClearance and bodyRight>=shaftX-bunker.shaftClearance then
+                    tooClose=true
+                    break
+                end
+            end
+        end
         local object=not tooClose and CreateTerrainObject(entry.preset,"Base.rte") or nil
         if object then
-            local ground=SceneMan:MovePointToGround(Vector(x,0),0,cover.groundProbe)
-            object.Pos=ground+Vector(0,entry.yOffset)
+            object.Pos=surfaceCoverPosition(entry,x)
             SceneMan:AddSceneObject(object)
         end
         x=x+math.random(cover.stepMin,cover.stepMax)
@@ -874,10 +959,11 @@ function Frontline:ForwardDeploymentCost(team)
     local x=self.outposts[index].x
     local distance=team==0 and x-CONFIG.map.baseOffset or SceneMan.SceneWidth-CONFIG.map.baseOffset-x
     local progress=math.max(0,math.min(1,distance/span))
-    local steps=progress*#self.outposts
+    local tierCount=self.surfaceOutpostCount or #self.outposts
+    local steps=progress*tierCount
     local nearest=math.floor(steps+0.5)
     -- Coordinate subtraction can put an exact boundary a few ulps above it.
-    local tolerance=8*2.220446049250313e-16*SceneMan.SceneWidth/span*#self.outposts
+    local tolerance=8*2.220446049250313e-16*SceneMan.SceneWidth/span*tierCount
     if nearest>0 and math.abs(steps-nearest)<=tolerance then steps=nearest end
     return math.ceil(steps)*CONFIG.unitSurcharges.forwardDeployment
 end
@@ -910,7 +996,8 @@ function Frontline:Batch(team)
 end
 
 -- Apply the chosen order to a unit; Advance resumes its attack after reaching
--- the post, while Defend becomes a sentry on arrival.
+-- the post, while Defend becomes a sentry on arrival. Non-climbing vehicles
+-- stage at the paired surface entry instead of entering a shaft.
 function Frontline:AssignOrder(actor,team)
     local t=self.teams[team]
     if self.miners[actor.UniqueID] then return end
@@ -928,9 +1015,14 @@ function Frontline:AssignOrder(actor,team)
             self.orderAssignments[actor.UniqueID]={order=t.order,base=true,targetX=baseX,targetY=baseY}
         else
             local target=self.outposts[t.orderTarget]
+            local vehicleAtEntry=target.level=="underground" and IsACrab(actor)
+            local destination=vehicleAtEntry and self:SurfaceEntryTarget(target) or target
+            local waypointY=vehicleAtEntry and destination.groundY-CONFIG.orders.waypointOffsetY
+                or (target.captureY or target.groundY-CONFIG.orders.waypointOffsetY)
             actor.AIMode=Actor.AIMODE_GOTO
-            actor:AddAISceneWaypoint(Vector(target.x+spread,target.groundY-CONFIG.orders.waypointOffsetY))
-            self.orderAssignments[actor.UniqueID]={order=t.order,target=t.orderTarget}
+            actor:AddAISceneWaypoint(Vector(destination.x+spread,waypointY))
+            self.orderAssignments[actor.UniqueID]={order=t.order,target=t.orderTarget,
+                surfaceHold=vehicleAtEntry,targetX=destination.x,targetY=destination.groundY}
         end
     end
 end
@@ -982,7 +1074,11 @@ function Frontline:UpdateOrders()
                 end
             else
                 local target=self.outposts[assignment.target]
-                if math.abs(actor.Pos.X-target.x)<CONFIG.orders.arrivalRadiusX and math.abs(actor.Pos.Y-target.groundY)<CONFIG.orders.arrivalRadiusY then
+                local arrived=assignment.surfaceHold
+                    and math.abs(actor.Pos.X-assignment.targetX)<CONFIG.orders.arrivalRadiusX
+                    and math.abs(actor.Pos.Y-assignment.targetY)<CONFIG.orders.arrivalRadiusY
+                    or self:IsActorInOutpostRange(actor,target)
+                if arrived then
                     if assignment.order=="Advance" and target.owner~=actor.Team then
                         -- Stay in the capture zone until it is secured.
                         if actor.AIMode~=Actor.AIMODE_SENTRY then
@@ -1112,15 +1208,17 @@ function TeamCommander:Deploy()
             group.mass=group.mass+mass
         end
         local post=self.outposts[t.forward]
+        local landingX=post.level=="underground" and post.landingX or post.x
+        local landingY=post.level=="underground" and post.landingY or post.groundY
         for index,group in ipairs(ships) do
             local ship=group.ship
             local direction=team==0 and -1 or 1
             local margin=CONFIG.map.baseDeployment.positionMargin
-            local x=math.max(margin,math.min(SceneMan.SceneWidth-margin,post.x+direction*(CONFIG.FORWARD_LANDING_OFFSET+(index-1)*CONFIG.FORWARD_SHIP_SEPARATION)))
+            local x=math.max(margin,math.min(SceneMan.SceneWidth-margin,landingX+direction*(CONFIG.FORWARD_LANDING_OFFSET+(index-1)*CONFIG.FORWARD_SHIP_SEPARATION)))
             ship.Team=team
             ship:SetGoldValue(0)
             self.frontlineCraft[ship.UniqueID]=true
-            ship.Pos=Vector(x,math.max(CONFIG.map.baseDeployment.minimumShipHeight,post.groundY-CONFIG.FORWARD_DROP_HEIGHT))
+            ship.Pos=Vector(x,math.max(CONFIG.map.baseDeployment.minimumShipHeight,landingY-CONFIG.FORWARD_DROP_HEIGHT))
             ship.AIMode=Actor.AIMODE_DELIVER
             ship:SetControllerMode(Controller.CIM_AI,-1)
             local delivery={ship=ship,team=team,passengers={}}
@@ -1234,8 +1332,33 @@ function Frontline:Notify(message)
     self.noticeTimer:Reset()
 end
 
--- Capture advances only for an uncontested team in the zone. Ownership changes
--- after the opposing team has crossed the full capture bar.
+local function outpostZoneContains(x,y,outpost,scale)
+    scale=scale or 1
+    local dx=(x-outpost.x)/(CONFIG.OUTPOST_RADIUS*scale)
+    local dy=(y-(outpost.captureY or outpost.groundY))
+        /((outpost.captureRadiusY or CONFIG.OUTPOST_CAPTURE_VERTICAL_RADIUS)*scale)
+    return dx*dx+dy*dy<=1
+end
+
+function Frontline:IsActorInOutpostRange(actor,outpost,scale)
+    if outpost.level=="underground" and IsACrab(actor) then return false end
+    return outpostZoneContains(actor.Pos.X,actor.Pos.Y,outpost,scale)
+end
+
+function Frontline:OutpostDistance(position,outpost)
+    local dx=position.X-outpost.x
+    local dy=position.Y-(outpost.captureY or outpost.groundY)
+    return math.sqrt(dx*dx+dy*dy)
+end
+
+function Frontline:SurfaceEntryTarget(outpost)
+    if outpost.level~="underground" then return outpost end
+    return {name=outpost.name.." SURFACE ENTRY",x=outpost.landingX,groundY=outpost.landingY,
+        owner=outpost.owner,level="surface"}
+end
+
+-- Capture advances only for an uncontested team in the level-specific zone.
+-- Ownership changes after the opposing team crosses the full capture bar.
 function Frontline:OutpostCount(team)
     local count=0
     for _,outpost in ipairs(self.outposts) do
@@ -1250,7 +1373,7 @@ function Frontline:UpdateOutpost(dt)
     for actor in MovableMan.Actors do
         if self:IsFieldUnit(actor) then
             for i,outpost in ipairs(self.outposts) do
-                if math.abs(actor.Pos.X-outpost.x)<=CONFIG.OUTPOST_RADIUS then
+                if self:IsActorInOutpostRange(actor,outpost) then
                     present[i][actor.Team]=true
                 end
             end
@@ -1293,12 +1416,15 @@ function Frontline:SupportTargetAllowed(team,x)
     return math.abs(x-enemyBaseX)>CONFIG.ENEMY_BASE_SUPPORT_EXCLUSION_RADIUS
 end
 
--- Jammers belong to the deploying team and prevent hostile support orders
--- within their horizontal radius. Friendly support is unaffected.
+-- Jammers prevent hostile support within a two-dimensional radius, so a
+-- surface jammer cannot block a separate underground target at the same X.
 function Frontline:ShieldBlocks(target,attacker)
     for _,field in ipairs(self.jamFields) do
         local duration=field.duration or CONFIG.supportEffects.shieldDurationByLevel[1]
-        if math.abs(field.x-target.x)<=CONFIG.CALLIN_JAM_RADIUS and field.team~=attacker and not field.timer:IsPastSimMS(duration) then return true end
+        local dx=field.x-target.x
+        local dy=field.groundY and target.groundY and field.groundY-target.groundY or 0
+        if dx*dx+dy*dy<=CONFIG.CALLIN_JAM_RADIUS*CONFIG.CALLIN_JAM_RADIUS
+            and field.team~=attacker and not field.timer:IsPastSimMS(duration) then return true end
     end
     return false
 end
@@ -1375,21 +1501,36 @@ function Frontline:UpdateTargeting()
     self.cursorX=math.max(8,math.min(FrameMan.PlayerScreenWidth-8,self.cursorX+move.X))
     self.cursorY=math.max(8,math.min(FrameMan.PlayerScreenHeight-8,self.cursorY+move.Y))
     local x=math.max(30,math.min(SceneMan.SceneWidth-30,offset.X+self.cursorX))
+    local worldY=offset.Y+self.cursorY
     local ground=SceneMan:MovePointToGround(Vector(x,0),0,CONFIG.map.outposts.groundProbe)
-    local label="TARGET: "..string.upper(self.targeting).." (CLICK)"
-    local allowed=self:SupportTargetAllowed(0,x)
-    if self.targeting=="shield" and allowed then
-        self:DrawShieldField({x=x,groundY=ground.Y},0)
-        label="PLACE SUPPORT JAMMER (CLICK)"
+    local postTarget
+    for _,post in ipairs(self.outposts) do
+        if post.level=="underground" and outpostZoneContains(x,worldY,post) then
+            postTarget=post
+            break
+        end
     end
-    if not allowed then label="ENEMY BASE: SUPPORT RESTRICTED" end
+    local target=postTarget or {name="target area",x=x,groundY=ground.Y,owner=-1}
+    local targetY=postTarget and postTarget.captureY or ground.Y
+    local effectTarget=(postTarget and (self.targeting=="shield" or self.targeting=="bubble"))
+        and target or self:SurfaceEntryTarget(target)
+    local label="TARGET: "..string.upper(self.targeting).." (CLICK)"
+    if postTarget then
+        label="UNDERGROUND "..postTarget.name
+        if self.targeting~="shield" and self.targeting~="bubble" then label=label.." - AIR SUPPORT AT SURFACE ENTRY" end
+    end
+    local allowed=self:SupportTargetAllowed(0,effectTarget.x) and not self:ShieldBlocks(effectTarget,0)
+    if self.targeting=="shield" and allowed then
+        self:DrawShieldField({x=target.x,groundY=targetY},0)
+        label=postTarget and "PLACE UNDERGROUND JAMMER (CLICK)" or "PLACE SUPPORT JAMMER (CLICK)"
+    end
+    if not allowed then label="ENEMY BASE OR JAMMER: SUPPORT RESTRICTED" end
     local targetColor=allowed and 120 or 13
-    PrimitiveMan:DrawLinePrimitive(Vector(x-15,ground.Y-45),Vector(x+15,ground.Y-45),targetColor)
-    PrimitiveMan:DrawLinePrimitive(Vector(x,ground.Y-60),Vector(x,ground.Y-30),targetColor)
-    PrimitiveMan:DrawTextPrimitive(Vector(x,ground.Y-70),label,true,1)
+    PrimitiveMan:DrawLinePrimitive(Vector(target.x-15,targetY-8),Vector(target.x+15,targetY-8),targetColor)
+    PrimitiveMan:DrawLinePrimitive(Vector(target.x,targetY-18),Vector(target.x,targetY+2),targetColor)
+    PrimitiveMan:DrawTextPrimitive(Vector(target.x,targetY-25),label,true,1)
     if UInputMan:KeyPressed(Key.TAB) then self.targeting=nil; self.panel=true; return end
     if UInputMan:MouseButtonPressed(MouseButtons.MOUSE_LEFT) then
-        local target={name="target area",x=x,groundY=ground.Y,owner=-1}
         local ok,msg=self.commanders[0]:CallIn(self.targeting,target)
         -- Leave the battlefield visible after confirming, including when the
         -- order fails; the compact HUD shows the result and Tab reopens us.
@@ -1453,14 +1594,22 @@ function Frontline:LoadedFirearmPresetNames()
     return self.weaponPodPresets
 end
 
--- Cache every actually creatable, carriable HDFirearm outside stock modules whose
--- value exceeds the best available stock firearm. Only use stock weapons to
--- fill squad slots when the eligible exotic pool is smaller than the squad.
+-- Cache all actually creatable, carriable eligible exotic firearms and stock
+-- candidates. Exotic weapons must exceed the best available stock firearm;
+-- stock weapons are used only when fewer than three exotics qualify.
 function Frontline:AssaultSquadWeaponPresets()
-    if self.assaultWeaponPresets then return self.assaultWeaponPresets end
+    if self.assaultWeaponPresets then
+        return self.assaultWeaponPresets.exotic,self.assaultWeaponPresets.stock
+    end
     local stockModules={
         ["Base.rte"]=true,["Coalition.rte"]=true,["Browncoats.rte"]=true,
         ["Dummy.rte"]=true,["Ronin.rte"]=true,["Techion.rte"]=true,
+    }
+    -- Dummy.rte utility weapons count toward the stock ceiling, but are not
+    -- useful stock fallbacks for Coalition Light infantry.
+    local stockFallbackModules={
+        ["Base.rte"]=true,["Coalition.rte"]=true,["Browncoats.rte"]=true,
+        ["Ronin.rte"]=true,["Techion.rte"]=true,
     }
     local candidates,stockCandidates,stockCeiling={}, {},0
     for _,name in ipairs(self:LoadedFirearmPresetNames()) do
@@ -1474,7 +1623,9 @@ function Frontline:AssaultSquadWeaponPresets()
                     local candidate={name=name,value=value}
                     if stockModules[moduleName] then
                         stockCeiling=math.max(stockCeiling,value)
-                        stockCandidates[#stockCandidates+1]=candidate
+                        if stockFallbackModules[moduleName] then
+                            stockCandidates[#stockCandidates+1]=candidate
+                        end
                     else
                         candidates[#candidates+1]=candidate
                     end
@@ -1483,39 +1634,41 @@ function Frontline:AssaultSquadWeaponPresets()
             end
         end
     end
-    local function rank(a,b)
-        if a.value==b.value then return a.name<b.name end
-        return a.value>b.value
-    end
-    table.sort(candidates,rank)
-    table.sort(stockCandidates,rank)
-    local selected={}
+    local exotic,stock={},{}
     for _,candidate in ipairs(candidates) do
-        if candidate.value>stockCeiling then selected[#selected+1]=candidate.name end
+        if candidate.value>stockCeiling then exotic[#exotic+1]=candidate.name end
     end
-    if #selected<CONFIG.supportEffects.assaultSquad.count then
-        for _,candidate in ipairs(stockCandidates) do
-            if #selected==CONFIG.supportEffects.assaultSquad.count then break end
-            selected[#selected+1]=candidate.name
-        end
-    end
-    if #selected<CONFIG.supportEffects.assaultSquad.count then
+    for _,candidate in ipairs(stockCandidates) do stock[#stock+1]=candidate.name end
+    local count=CONFIG.supportEffects.assaultSquad.count
+    if #exotic+#stock<count then
         return nil,"Assault Squad requires three loaded firearms that can be carried"
     end
-    self.assaultWeaponPresets=selected
-    self.assaultWeaponRotation=1
-    return selected
+    self.assaultWeaponPresets={exotic=exotic,stock=stock}
+    return exotic,stock
+end
+
+local function appendRandomWeaponSample(pool,selected,count)
+    local shuffled={}
+    for index,name in ipairs(pool) do shuffled[index]=name end
+    for index=1,math.min(count,#shuffled) do
+        local chosen=math.random(index,#shuffled)
+        shuffled[index],shuffled[chosen]=shuffled[chosen],shuffled[index]
+        selected[#selected+1]=shuffled[index]
+    end
 end
 
 function Frontline:CreateAssaultSquadPayload(team)
-    local presets,errorMessage=self:AssaultSquadWeaponPresets()
-    if not presets then return nil,errorMessage end
+    local exotic,stock=self:AssaultSquadWeaponPresets()
+    if not exotic then return nil,stock end
     local count=CONFIG.supportEffects.assaultSquad.count
-    local start=self.assaultWeaponRotation or 1
-    local squad,selected={},{ }
+    local selected={}
+    appendRandomWeaponSample(exotic,selected,count)
+    if #selected<count then
+        appendRandomWeaponSample(stock,selected,count-#selected)
+    end
+    local squad={}
     for index=1,count do
-        local presetIndex=(start+index-2)%#presets+1
-        local name=presets[presetIndex]
+        local name=selected[index]
         local actor=CreateAHuman("Soldier Light","Coalition.rte")
         local weapon=CreateHDFirearm(name)
         if not actor or not weapon then
@@ -1531,11 +1684,10 @@ function Frontline:CreateAssaultSquadPayload(team)
         actor.MaxHealth=CONFIG.supportEffects.assaultSquad.maxHealth
         actor.Health=CONFIG.supportEffects.assaultSquad.health
         squad[index]=actor
-        selected[index]=name
     end
-    self.assaultWeaponRotation=(start-1+count)%#presets+1
     return squad,selected
 end
+
 
 
 local function discardAssaultSquadPayload(squad)
@@ -1641,6 +1793,9 @@ function TeamCommander:CallIn(kind,index)
     if required and (t.levels[required] or 0)==0 then
         return false,"Research "..CONFIG.research[required].name.." first"
     end
+    if outpost.level=="underground" and kind~="shield" and kind~="bubble" then
+        outpost=self:SurfaceEntryTarget(outpost)
+    end
     if not self:SupportTargetAllowed(team,outpost.x) then return false,"Support restricted near enemy base" end
     if self:ShieldBlocks(outpost,team) then return false,"Enemy jammer blocks support here" end
     local timer,cooldown,cost=option.timer,self:CallinCooldown(team,option.cooldown),option.cost
@@ -1674,7 +1829,8 @@ function TeamCommander:CallIn(kind,index)
     elseif kind=="bubble" then
         local config=CONFIG.supportEffects.bubbleShield
         self.energyShields=self.energyShields or {}
-        table.insert(self.energyShields,{x=outpost.x,groundY=outpost.groundY,centerY=outpost.groundY-config.verticalOffset,
+        local centerY=outpost.level=="underground" and outpost.captureY or outpost.groundY-config.verticalOffset
+        table.insert(self.energyShields,{x=outpost.x,groundY=outpost.groundY,centerY=centerY,
             radius=config.radius,team=team,timer=Timer(),duration=config.duration})
         self:Notify((team==0 and "Your" or "Enemy").." energy shield active for "..math.floor(config.duration/1000).."s")
     elseif kind=="orbital" then
@@ -2218,8 +2374,7 @@ function Frontline:CollectAISnapshot(team)
             end
             if actor.Team==0 and vehicle then enemyVehicle=true end
             for i,post in ipairs(self.outposts) do
-                local distance=math.abs(actor.Pos.X-post.x)
-                if distance<=CONFIG.OUTPOST_RADIUS then
+                if self:IsActorInOutpostRange(actor,post) then
                     if actor.Team==team then
                         posts[i].allies=posts[i].allies+1
                         posts[i].alliedStrength=posts[i].alliedStrength+strength
@@ -2229,7 +2384,7 @@ function Frontline:CollectAISnapshot(team)
                         posts[i].enemyStrength=posts[i].enemyStrength+strength
                     end
                 end
-                if actor.Team~=team and distance<=CONFIG.OUTPOST_RADIUS*CONFIG.ai.tuning.threatRadiusMultiplier then
+                if actor.Team~=team and self:IsActorInOutpostRange(actor,post,CONFIG.ai.tuning.threatRadiusMultiplier) then
                     posts[i].threats=posts[i].threats+1
                 end
             end
@@ -2239,7 +2394,7 @@ function Frontline:CollectAISnapshot(team)
         if particle and not particle.ToDelete and particle.HitsMOs and particle.Team~=team then
             for i,post in ipairs(self.outposts) do
                 local dx=particle.Pos.X-post.x
-                local dy=particle.Pos.Y-post.groundY
+                local dy=particle.Pos.Y-(post.captureY or post.groundY)
                 if dx*dx+dy*dy<=CONFIG.OUTPOST_RADIUS*CONFIG.OUTPOST_RADIUS then
                     posts[i].projectiles=posts[i].projectiles+1
                 end
@@ -2297,7 +2452,7 @@ function Frontline:CheckUrgentAIThreats(team)
                 baseStrength=baseStrength+health
             end
             for _,post in ipairs(self.outposts) do
-                if post.owner==team and math.abs(actor.Pos.X-post.x)<=CONFIG.OUTPOST_RADIUS*CONFIG.ai.tuning.threatRadiusMultiplier then
+                if post.owner==team and self:IsActorInOutpostRange(actor,post,CONFIG.ai.tuning.threatRadiusMultiplier) then
                     postThreat=true
                     break
                 end
@@ -2362,9 +2517,9 @@ function Frontline:ChooseAIStrategicGoal(snapshot,ai)
         if post.owner~=snapshot.team then
             allPostsHeld=false
             if situation.enemies==0 then safeAdvance=true end
-            local nearest=math.abs(self.brains[snapshot.team].Pos.X-post.x)
+            local nearest=self:OutpostDistance(self.brains[snapshot.team].Pos,post)
             for _,actor in ipairs(snapshot.fieldActors) do
-                if actor.Team==snapshot.team then nearest=math.min(nearest,math.abs(actor.Pos.X-post.x)) end
+                if actor.Team==snapshot.team then nearest=math.min(nearest,self:OutpostDistance(actor.Pos,post)) end
             end
             local progress=snapshot.team==0 and post.progress or -post.progress
             -- Against passive players, be more cautious about advancing to neutral posts
@@ -2608,7 +2763,11 @@ function Frontline:UpdateAI()
             for i,post in ipairs(self.outposts) do
                 if post.owner==team and posts[i].enemies==0 then
                     local score=posts[i].allies
-                    if ai.attackTarget then score=score-math.abs(post.x-self.outposts[ai.attackTarget].x)/CONFIG.OUTPOST_RADIUS end
+                    if ai.attackTarget then
+                        local target=self.outposts[ai.attackTarget]
+                        local dx,dy=post.x-target.x,(post.captureY or post.groundY)-(target.captureY or target.groundY)
+                        score=score-math.sqrt(dx*dx+dy*dy)/CONFIG.OUTPOST_RADIUS
+                    end
                     if score>bestScore then bestScore=score; forward=i end
                 end
             end
@@ -2696,10 +2855,14 @@ function Frontline:UpdateAI()
         local option=calls[callin]
         local required=CONFIG.supportResearch[callin]
         local outpost=type(target)=="table" and target or self.outposts[target]
+        local supportTarget=outpost
+        if outpost and outpost.level=="underground" and callin~="shield" and callin~="bubble" then
+            supportTarget=self:SurfaceEntryTarget(outpost)
+        end
         if option and outpost and (ai.levels[required] or 0)>0
             and ai.funds>=option.cost+(reserve or aiTuning.callinReserve)
             and option.timer:IsPastSimMS(self:CallinCooldown(team,option.cooldown))
-            and self:SupportTargetAllowed(team,outpost.x) and not self:ShieldBlocks(outpost,team) then
+            and self:SupportTargetAllowed(team,supportTarget.x) and not self:ShieldBlocks(supportTarget,team) then
             context.kind=kind
             context.callin=callin
             context.target=target
@@ -2716,7 +2879,9 @@ function Frontline:UpdateAI()
             if pending.team~=team and not pending.projectileTimer then
                 local target=pending.target or self.outposts[pending.index]
                 for _,post in ipairs(self.outposts) do
-                    if target and post.owner==team and math.abs(post.x-target.x)<=CONFIG.OUTPOST_RADIUS then
+                    local dx=target and post.x-target.x or math.huge
+                    local dy=target and (post.captureY or post.groundY)-(target.captureY or target.groundY or 0) or math.huge
+                    if target and post.owner==team and dx*dx+dy*dy<=CONFIG.OUTPOST_RADIUS*CONFIG.OUTPOST_RADIUS then
                         addAction("intercept","shield",target,{threats=1},aiTuning.interceptReserve)
                     end
                 end
@@ -3045,13 +3210,21 @@ end
 
 function Frontline:DrawOutpost()
     for _,outpost in ipairs(self.outposts) do
-        local x,y=outpost.x,outpost.groundY
+        local x=outpost.x
+        local y=outpost.level=="underground" and outpost.captureY or outpost.groundY
         local color=outpost.owner==0 and 120 or (outpost.owner==1 and 13 or 86)
-        PrimitiveMan:DrawLinePrimitive(Vector(x,y-8),Vector(x,y-105),color)
-        PrimitiveMan:DrawTextPrimitive(Vector(x,y-125),outpost.name.." "..outpost.bonus,true,1)
-        PrimitiveMan:DrawBoxPrimitive(Vector(x-40,y-112),Vector(x+40,y-107),120)
         local progress=math.floor((outpost.progress+1)*40)
-        PrimitiveMan:DrawBoxFillPrimitive(Vector(x-39,y-111),Vector(x-39+progress,y-108),color)
+        if outpost.level=="underground" then
+            PrimitiveMan:DrawLinePrimitive(Vector(x-20,y),Vector(x+20,y),color)
+            PrimitiveMan:DrawTextPrimitive(Vector(x,y-18),outpost.name,true,1)
+            PrimitiveMan:DrawBoxPrimitive(Vector(x-20,y+8),Vector(x+20,y+13),120)
+            PrimitiveMan:DrawBoxFillPrimitive(Vector(x-19,y+9),Vector(x-19+progress,y+12),color)
+        else
+            PrimitiveMan:DrawLinePrimitive(Vector(x,y-8),Vector(x,y-105),color)
+            PrimitiveMan:DrawTextPrimitive(Vector(x,y-125),outpost.name.." "..outpost.bonus,true,1)
+            PrimitiveMan:DrawBoxPrimitive(Vector(x-40,y-112),Vector(x+40,y-107),120)
+            PrimitiveMan:DrawBoxFillPrimitive(Vector(x-39,y-111),Vector(x-39+progress,y-108),color)
+        end
     end
     for _,field in ipairs(self.jamFields) do
         local duration=field.duration or CONFIG.supportEffects.shieldDurationByLevel[1]
@@ -3285,11 +3458,14 @@ function Frontline:DrawPanel()
                 self.commanders[0]:SetOrder(order,target)
             end)
         end
-        local deployment=t.forward==0 and "BASE" or self.outposts[t.forward].name
+        local deployment=t.forward==0 and "BASE" or (self.outposts[t.forward].name
+            ..(self.outposts[t.forward].level=="underground" and " ENTRY" or ""))
         button(310,119,140,"SPAWN: "..deployment..(t.forward>0 and (" (+"..self:ForwardDeploymentCost(0).."/unit)") or ""),"available",function(step)
             self.commanders[0]:SetForward((t.forward+step)%(#self.outposts+1))
         end,true)
-        text(310,143,t.order=="Rush" and "RUSH: enemy brain" or ("TARGET: "..(t.orderTarget==0 and "BASE" or self.outposts[t.orderTarget].name)))
+        local orderTarget=t.orderTarget==0 and "BASE" or
+            ((self.outposts[t.orderTarget].level=="underground" and "UNDERGROUND " or "")..self.outposts[t.orderTarget].name)
+        text(310,143,t.order=="Rush" and "RUSH: enemy brain" or ("TARGET: "..orderTarget))
         button(310,158,64,"< PREV","available",function()
             local target
             if t.order=="Advance" then target=((t.orderTarget-2)%#self.outposts)+1
@@ -3383,7 +3559,8 @@ function Frontline:DrawPanel()
         text(15,84,"OUTPOSTS: hold for stacking bonuses")
         for i,outpost in ipairs(self.outposts) do
             local owner=outpost.owner==0 and "YOUR TEAM" or (outpost.owner==1 and "ENEMY" or "NEUTRAL")
-            text(15,86+i*12,outpost.name..": "..owner.."  "..outpost.bonus.."  "..math.floor((outpost.progress+1)*50).."%")
+            local levelTag=outpost.level=="underground" and "[UNDERGROUND] " or ""
+            text(15,88+i*10,levelTag..outpost.name..": "..owner.."  "..outpost.bonus.."  "..math.floor((outpost.progress+1)*50).."%",true)
         end
         text(15,215,"YOUR UNITS: "..self:UnitCount(0).." / "..self.settings.unitCap)
         text(15,230,"ENEMY UNITS: "..self:UnitCount(1).." / "..self.settings.unitCap)
@@ -3392,8 +3569,8 @@ function Frontline:DrawPanel()
         text(15,280,"Rush attacks the brain. Advance captures then attacks.")
         text(15,295,"Defend goes to the selected outpost and holds there.")
     elseif self.tab=="Support" then
-        text(15,84,"Choose an unlocked support, then click a target on the battlefield.")
-        text(15,99,"Research nodes unlock each call-in and show its prerequisites.")
+        text(15,84,"Click a target; cavern markers accept underground calls.")
+        text(15,99,"Air drops use the paired surface entry; shields stay below.")
         text(15,116,"OFFENSE",false); text(165,116,"DEFENSE",false); text(315,116,"PERSONNEL",false)
         local function supportOption(kind,label,cost,timer,cooldown,x,y)
             local required=CONFIG.supportResearch[kind]

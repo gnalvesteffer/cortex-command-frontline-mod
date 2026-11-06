@@ -43,18 +43,17 @@ the drop to two drones. Mining Call-In delivers a Dummy with a pistol and
 Light Digger; it seeks deposits and digs. The Support Jammer's two levels
 increase its duration.
 
-Assault Squad research unlocks a 500 oz call-in with a 60-second base cooldown.
+Assault Squad research unlocks a 1000 oz call-in with a 120-second base cooldown.
 Its dropship delivers three Coalition Light soldiers at 200 current and maximum
 health. The eligible arsenal scans HDFirearm presets in every loaded module,
 then requires each qualified preset to be creatable with positive game gold
 value. Only qualified preset names ending in " Stationary" are excluded.
 Base.rte, Coalition.rte, Browncoats.rte, Dummy.rte, Ronin.rte and Techion.rte
 form the stock module set. Firearms from all other loaded modules above the
-best stock value are eligible, sorted by descending value and qualified name.
-Three consecutive eligible weapons are sampled in a rotating window per call,
-making the full pool reachable. Best stock firearms fill slots only if fewer
-than three eligible exotics exist. The selected qualified name is stored per
-passenger and reattached after dropship extraction if cargo transfer lost it.
+best stock value are eligible. Each Assault Squad randomly samples three
+eligible exotic firearms without replacement. Stock firearms fill only if
+fewer than three eligible exotics exist. The selected qualified name is stored
+per passenger and reattached after dropship extraction if cargo transfer lost it.
 
 
 Enemy AI personas use distinct research priorities and support preferences.
@@ -74,21 +73,37 @@ random firearms using qualified names from all loaded HDFirearm presets, includi
 Each team receives one free baseline HE turret in its upper bunker room when battle starts; the Base tab can upgrade it to HE Mk2 or rebuild it after destruction.
 
 The upgradeable base turret uses a custom cannon firing the engine's damaging
-explosive fragmentation shell. Both levels have twice the stock Gatling's
-health and match its 1,000-rounds-per-minute cadence while retaining their HE
-rounds. Each 12-round magazine takes four seconds to reload after it is empty.
+explosive fragmentation shell. Both levels have 600 health (six times the stock
+Gatling Turret's 100) plus doubled body and mount gib thresholds. Their HE cannon
+retains the 1,000-rounds-per-minute cadence, and each 12-round magazine takes
+four seconds to reload. The Frontline cannon spins up in 200 ms rather than the
+inherited stationary Gatling's 1,300 ms; Mk2 inherits the shorter spin-up.
+The main turret's base shell adds ten higher-sharpness Frontline fragments to
+the stock ten; Mk2 adds ten stronger Frontline fragments, for 30 per shell.
 Their un-sharp target-acquisition ray is twice the stock Gatling ray at the
 viewport width when built; sharp aim also adds the weapon's SharpLength. Both
-variants use full Perceptiveness for a broader native scan while preserving
-stock aim limits, terrain-blocked sight rays and enemy-team filtering. Level 2
-keeps the same fast firing rate and doubles the damaging fragment payload from
-ten to twenty per shell. Both enemy and player builds retain these benefits
-when rebuilt.
+variants use increased Perceptiveness for a broader native scan while preserving
+stock aim limits, terrain-blocked sight rays and enemy-team filtering. Both
+enemy and player builds retain these benefits when rebuilt.
 
 The approach hallway's walkable floor is aligned to the main vault exit on both
 teams. Mirrored upper turret rooms align with the battlefield-facing outer exits;
 the stock Gatling head and cover use their original pivot alignment; a single
 HE cannon fires outward above the lower corridor roof.
+
+Battlefield and Expanse have surface-only terrain and no underground tunnels.
+Highlands retains its nine surface outposts and adds two horizontally mirrored
+capture points inside separate roofed bunker halls, each linked by a vertical
+ladder shaft. Capture and AI proximity use the hall's Y level; non-climbing
+vehicles stage at the surface entry. Forward drops and aircraft call-ins land
+at that clear surface entry, while jammer and energy-shield call-ins remain
+underground. Dirt backdrop layers fill the non-solid tunnel cavities.
+All three hall right ends use the stock Base.rte/End D cap on scene load; the
+generator uses its matching indexed mask so collision, artwork and dirt backdrop align.
+
+
+Randomized surface rocks, barriers and crates follow the ground on all maps.
+Their footings are seated into the terrain even where the surface slopes.
 
 
 The Support tab orders the offense as Orbital Gatling Barrage, Orbital Precision
@@ -105,8 +120,9 @@ payload only on collision.
 
 Forward drops to captured posts cost an extra 25 oz per unit for each interval
 of progress toward the enemy base, rounded up. The distance between bases is
-divided into one interval per outpost; both teams use the same rule.
-The Squad SPAWN selector shows the selected destination's per-unit surcharge.
+divided into one interval per surface outpost; both teams use the same rule.
+Highlands cave drops land at their paired surface entries and retain the normal
+nine surface cost tiers. The Squad SPAWN selector shows the per-unit surcharge.
 Base deployments have no surcharge. Configure the 25 oz tier using
 unitSurcharges.forwardDeployment in Frontline.lua.
 

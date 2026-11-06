@@ -709,10 +709,11 @@ do
     end
     noOffense(a,ai)
 
-    a,ai=setup('strike',750,1)
-    local legal=CreateAHuman('enemy'); legal.Team=0; legal.Pos=Vector(810,565); MovableMan:AddActor(legal)
+    -- Team 1's enemy base is at x=180; reject the first point at 870px, then target one 910px away.
+    a,ai=setup('strike',1050,1)
+    local legal=CreateAHuman('enemy'); legal.Team=0; legal.Pos=Vector(1090,565); MovableMan:AddActor(legal)
     a:UpdateAI()
-    assert(a.pendingStrikes[1] and a.pendingStrikes[1].target.x==810,
+    assert(a.pendingStrikes[1] and a.pendingStrikes[1].target.x==1090,
         'an excluded first point must not hide a nearby legal concentration')
 
     a,ai=setup('strike',2100,3)
@@ -888,7 +889,7 @@ do
         'deferred rebuild mismatch: funds='..ai.funds..' action='..tostring(ai.lastAIAction and ai.lastAIAction.kind)..':'..tostring(ai.lastAIAction and ai.lastAIAction.target))
     ai.funds=650
     a:UpdateAI()
-    assert(ai.turret~=nil and ai.turret.Health==200 and ai.turret.MaxHealth==200
+    assert(ai.turret~=nil and ai.turret.Health==600 and ai.turret.MaxHealth==600
         and ai.turret.name=='Frontline HE Turret' and ai.turretLevel==2
         and ai.funds==300 and ai.lastAIAction.kind=='baseUpgrade'
         and ai.lastAIAction.target=='turret',

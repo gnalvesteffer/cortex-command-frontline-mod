@@ -219,20 +219,24 @@ local function runHeadlessCallinSuite(self)
     assert(team.levels[13] == 2 and team.levels[27] == 1 and team.levels[22] == 3
         and team.levels[23] == 3 and team.levels[12] == 1,
         "all three Cover/Mines levels, both Medic/Jammer levels, and Energy Shield must be researched")
-    local assaultWeaponPresets = self:AssaultSquadWeaponPresets()
-    assert(assaultWeaponPresets and #assaultWeaponPresets >= CONFIG.supportEffects.assaultSquad.count,
-        "Assault Squad must select its loadout from every eligible loaded firearm")
+    local assaultWeaponPresets,assaultStockPresets=self:AssaultSquadWeaponPresets()
+    assert(assaultWeaponPresets and assaultStockPresets
+        and #assaultWeaponPresets+#assaultStockPresets>=CONFIG.supportEffects.assaultSquad.count,
+        "Assault Squad must retain enough eligible loaded firearms for its loadout")
     local assaultWeaponNames = {}
-    for _, name in ipairs(assaultWeaponPresets) do
-        assert(not name:find("HeadlessTestExotics.rte/", 1, true),
-            "Assault Squad selection must not rely on injected test-only firearms")
-        local probe = CreateHDFirearm(name)
-        assert(probe, "Assault Squad selection must instantiate loaded firearm " .. tostring(name))
-        assert(type(probe.GetGoldValue) == "function" and probe:GetGoldValue(0, 1, 1) > 0,
-            "Assault Squad selection must use a positive-value real firearm " .. tostring(name))
-        probe.ToDelete = true
-        assaultWeaponNames[name] = true
+    for _, weaponPool in ipairs({assaultWeaponPresets,assaultStockPresets}) do
+        for _, name in ipairs(weaponPool) do
+            assert(not name:find("HeadlessTestExotics.rte/", 1, true),
+                "Assault Squad selection must not rely on injected test-only firearms")
+            local probe = CreateHDFirearm(name)
+            assert(probe, "Assault Squad selection must instantiate loaded firearm " .. tostring(name))
+            assert(type(probe.GetGoldValue) == "function" and probe:GetGoldValue(0, 1, 1) > 0,
+                "Assault Squad selection must use a positive-value real firearm " .. tostring(name))
+            probe.ToDelete = true
+            assaultWeaponNames[name] = true
+        end
     end
+    local assaultObservedWeapons={}
     self:SetTeamFunds(team.funds, 0)
 
     local illegalTarget = {name="enemy base exclusion", x=SceneMan.SceneWidth-CONFIG.map.baseOffset,
@@ -350,6 +354,7 @@ local function runHeadlessCallinSuite(self)
                 assert(selectedWeapon and not selectedThisCall[selectedWeapon],
                     "each staged Assault passenger must carry a distinct firearm from the real eligible pool")
                 selectedThisCall[selectedWeapon] = true
+                assaultObservedWeapons[selectedWeapon]=true
                 expected[passenger.UniqueID] = selectedWeapon
             end
             finishDropshipDelivery(order)
@@ -364,15 +369,20 @@ local function runHeadlessCallinSuite(self)
                 assert(math.abs(actor.Pos.X - target.x) <= CONFIG.supportEffects.delivery.medicSpread
                     and actor.Pos.Y < target.groundY,
                     "assault passenger must be deployed above target terrain within configured spread")
-                local carried = false
+                local carried,carriedWeapons = false,{}
                 local equipped = actor.EquippedItem
-                if equipped and equipped.ModuleName .. "/" .. equipped.PresetName == expectedWeapon then
-                    carried = true
+                if equipped then
+                    local name=equipped.ModuleName.."/"..equipped.PresetName
+                    carriedWeapons[#carriedWeapons+1]=name
+                    if name==expectedWeapon then carried=true end
                 end
                 for item in actor.Inventory do
-                    if item.ModuleName .. "/" .. item.PresetName == expectedWeapon then carried = true end
+                    local name=item.ModuleName.."/"..item.PresetName
+                    carriedWeapons[#carriedWeapons+1]=name
+                    if name==expectedWeapon then carried=true end
                 end
-                assert(carried, "delivered Assault soldier must retain firearm " .. expectedWeapon)
+                assert(carried, "delivered Assault soldier must retain firearm " .. expectedWeapon
+                    .. "; found " .. table.concat(carriedWeapons,","))
                 if self.teams[0].order == "Rush" then
                     assert(actor.AIMode == Actor.AIMODE_BRAINHUNT and not self.orderAssignments[id],
                         "Rush assault passenger must receive the production Brain Hunt order")
@@ -623,6 +633,48 @@ local function runHeadlessCallinSuite(self)
                                 "Medic Drone count must match researched level " .. callLevel)
                         elseif case.kind == "turret" then
                             assert(order.count == 1, "turret call-in must queue exactly one turret")
+                        end
+                        if case.kind=="assaultSquad" then
+                            local fundsAfterDelivery=team.funds
+                            team.funds=60000
+                            self:SetTeamFunds(team.funds,0)
+                            for repeatIndex=1,8 do
+                                team.assaultSquadTimer.ElapsedSimTimeMS=case.cooldown+1
+                                local beforeRepeat=#self.pendingDrops
+                                local repeated,repeatError=self.commanders[0]:CallIn(case.kind,targetIndex)
+                                assert(repeated,"repeated Assault Squad call-in failed: "..tostring(repeatError))
+                                local repeatOrder=expectOrder(self.pendingDrops,case.kind)
+                                assert(#self.pendingDrops==beforeRepeat+1
+                                    and #repeatOrder.squad==CONFIG.supportEffects.assaultSquad.count,
+                                    "each repeated Assault call must stage the configured squad count")
+                                local selectedThisCall={}
+                                for _,passenger in ipairs(repeatOrder.squad) do
+                                    local selectedWeapon
+                                    local equipped=passenger.EquippedItem
+                                    if equipped then
+                                        local name=equipped.ModuleName.."/"..equipped.PresetName
+                                        if assaultWeaponNames[name] then selectedWeapon=name end
+                                    end
+                                    for item in passenger.Inventory do
+                                        local name=item.ModuleName.."/"..item.PresetName
+                                        if assaultWeaponNames[name] then selectedWeapon=name end
+                                    end
+                                    assert(selectedWeapon and not selectedThisCall[selectedWeapon],
+                                        "repeated Assault squad must carry distinct firearms from the eligible pool")
+                                    selectedThisCall[selectedWeapon]=true
+                                    assaultObservedWeapons[selectedWeapon]=true
+                                    passenger.ToDelete=true
+                                end
+                                table.remove(self.pendingDrops,beforeRepeat+1)
+                            end
+                            team.assaultSquadTimer.ElapsedSimTimeMS=case.cooldown+1
+                            local variedWeaponCount=0
+                            for _ in pairs(assaultObservedWeapons) do variedWeaponCount=variedWeaponCount+1 end
+                            assert(#assaultWeaponPresets<=CONFIG.supportEffects.assaultSquad.count
+                                or variedWeaponCount>CONFIG.supportEffects.assaultSquad.count,
+                                "repeated Assault squads must vary selections across the full eligible exotic pool")
+                            team.funds=fundsAfterDelivery
+                            self:SetTeamFunds(team.funds,0)
                         end
                         verifyDelivery(case, order)
                     end

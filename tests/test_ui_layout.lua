@@ -72,7 +72,7 @@ MovableMan={Actors=(function() local i=0; return function() i=i+1; if not actors
 MovableMan.Particles=function() return nil end
 function IsAHuman(a) return not a.vehicle end
 function IsACrab(a) return a.vehicle==true end
-SceneMan={SceneWidth=5200,SceneHeight=800,CastMaterialRay=function() return false end,AddSceneObject=function() end,MovePointToGround=function(_,p) return Vector(p.X,600) end}
+SceneMan={SceneWidth=5200,SceneHeight=800,Scene={PresetName='Frontline Battlefield'},CastMaterialRay=function() return false end,AddSceneObject=function() end,MovePointToGround=function(_,p) return Vector(p.X,600) end}
 MusicMan={PlayDynamicSong=function() end}; FrameMan={PlayerScreenWidth=640,IsHudDisabled=function() return false end}
 CameraMan={GetOffset=function() return Vector(0,0) end}
 UInputMan={GetMouseMovement=function() return Vector(0,0) end,MouseButtonPressed=function() return false end}
@@ -184,8 +184,9 @@ local function run(label,activity,draw,width,height)
  if draw=='DrawPanel' and activity.tab=='Battle' then
   for _,post in ipairs(activity.outposts) do
    local row
+   local prefix=(post.level=='underground' and '[UNDERGROUND] ' or '')..post.name..':'
    for _,item in ipairs(items) do
-    if item.label and item.label:find(post.name..':',1,true)==1 then row=item.label; break end
+    if item.label and item.label:find(prefix,1,true)==1 then row=item.label; break end
    end
    assert(row,'Battle view must render every outpost, including '..post.name)
    if post.owner==0 and post.progress==1 then
@@ -305,6 +306,19 @@ for _,scene in ipairs({{5200,3},{10400,5},{15600,9}}) do
   end
  end
 end
+do
+ local oldScene,oldWidth,oldHeight=SceneMan.Scene,SceneMan.SceneWidth,SceneMan.SceneHeight
+ SceneMan.Scene={PresetName='Frontline Highlands Battlefield'}
+ SceneMan.SceneWidth=15600; SceneMan.SceneHeight=1600; actors={}
+ local highlands=setmetatable({deathCounts={[0]=0,[1]=0}},{__index=Frontline})
+ highlands:StartActivity(); highlands:StartBattle(); highlands.tab='Battle'; highlands.screenUI=true
+ assert(#highlands.outposts==11 and highlands.outposts[10].level=='underground'
+  and highlands.outposts[11].level=='underground','Highlands UI must include both cavern capture points')
+ run('Highlands underground outpost list',highlands,'DrawPanel',640,480)
+ highlands.tab='Support'
+ run('Highlands underground support controls',highlands,'DrawPanel',640,480)
+ SceneMan.Scene=oldScene; SceneMan.SceneWidth=oldWidth; SceneMan.SceneHeight=oldHeight
+end
 if #failures>0 then
  local total=0
  for _,failure in ipairs(failures) do
@@ -313,4 +327,4 @@ if #failures>0 then
  end
  error(total..' UI layout violations ('..#failures..' distinct)')
 end
-print('UI layout: HUD primitives, panel, wizard, tabs, research pages, states and 3/5/9 outposts passed; engine screen text geometry not measurable in doubles')
+print('UI layout: HUD primitives, panel, wizard, tabs, research pages, states, 3/5/9 surface outposts and 11 Highlands outposts passed; engine screen text geometry not measurable in doubles')

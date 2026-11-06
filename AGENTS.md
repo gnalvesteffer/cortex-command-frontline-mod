@@ -25,7 +25,7 @@ Grenades use the Coalition.rte Frag Grenade (ActivatesWhenReleased=0) and its ti
 
 ## Call-In System
 Weapon Cache Pod is delivered by a landing pod, which opens and dispenses three random firearms from loaded-game HDFirearm presets, including exotic weapons. It is distinct from dropship-delivered payloads.
-- Assault Squad (index 30) delivers three 200-HP Coalition Light soldiers for 500 oz on a 60-second base cooldown. Its pool scans loaded HDFirearm presets, requires creation and positive value, excludes only qualified names ending in " Stationary", and selects every other loaded-module firearm above the best stock value; rotating windows reach the full pool, with best stock guns filling only if fewer than three eligible exotics exist.
+- Assault Squad (index 30) delivers three 200-HP Coalition Light soldiers for 1000 oz on a 120-second base cooldown. Its full eligible exotic pool comprises every spawnable firearm from loaded modules with positive value above the best stock firearm; each squad randomly samples three without replacement, using stock firearms only if fewer than three exotics qualify.
 
 Key call-in types:
 - strike: Orbital Precision Strike
@@ -38,8 +38,9 @@ Key call-in types:
 
 Bomb runs release three visible inert Frontline Carpet Bomb MOSRotating shells along their flight path; each shell's supported MOSRotating collision callbacks create and activate the Frontline Heavy Bomb TDExplosive on impact. Released payloads are not intercepted by the Support Jammer. Orbital Gatling Barrage fires 72 rounds, with a 36-round research bonus and 16 fragments per round.
 
-## Base Upgrades
-Both factions use an HE turret for their upgradeable base turret; the upgrade path is HE→HE Mk2 (200 health). The acquisition ray is doubled from stock but remains unsharp at construction viewport range.
+Both factions use an HE turret for their upgradeable base turret; the upgrade path is HE→HE Mk2 (600 health). Raised Perceptiveness broadens its target scan. Its 200 ms ActivationDelay shortens spin-up, inherited by Mk2; body and mount gib thresholds are doubled, and Frontline-only HE fragments increase per-shell damage. The acquisition ray is doubled from stock but remains unsharp at construction viewport range.
+
+Support call-ins are excluded within 900 horizontal pixels of the opposing starting bunker, applied equally to both teams.
 
 The tabs are ordered Squad, Research, Support, Base, Battle, Setup. Squad selection uses manual unit configuration without presets. Squad size starts at 3 and can reach 9 through six Squad Size upgrades.
 

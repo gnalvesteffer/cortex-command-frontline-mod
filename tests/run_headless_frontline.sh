@@ -8,9 +8,9 @@ set -eu
 
 SUITE=${FRONTLINE_TEST_SUITE:-all}
 case "$SUITE" in
-    deployment|callins) RUN_SUITES=$SUITE ;;
-    all) RUN_SUITES="deployment callins" ;;
-    *) printf '%s\n' "Unknown FRONTLINE_TEST_SUITE: $SUITE (expected deployment, callins, or all)" >&2; exit 2 ;;
+    deployment|callins|highlands) RUN_SUITES=$SUITE ;;
+    all) RUN_SUITES="deployment callins highlands" ;;
+    *) printf '%s\n' "Unknown FRONTLINE_TEST_SUITE: $SUITE (expected deployment, callins, highlands, or all)" >&2; exit 2 ;;
 esac
 
 mkdir -p "$TEST_ROOT"
@@ -69,26 +69,49 @@ run_suite() {
     suite=$1
     result="$TEST_ROOT/frontline-test-result-$suite.txt"
     log="$TEST_ROOT/headless-frontline-$suite.log"
+    settings="$TEST_ROOT/headless-settings-$suite.ini"
+    printf 'SettingsMan\n\tMuteMaster = 1\n' > "$settings"
+    cp "$FRONTLINE_DIR/Scenario.ini" "$MODULE_DIR/Scenario.ini"
     cp "$FRONTLINE_DIR/Frontline.lua" "$MODULE_DIR/Frontline.lua"
-    if [ "$suite" = callins ]; then
+    if [ "$suite" = highlands ]; then
+        python3 - "$MODULE_DIR/Scenario.ini" <<'PY'
+from pathlib import Path
+import sys
+scenario = Path(sys.argv[1])
+text = scenario.read_text()
+old = "SceneName = Frontline Battlefield"
+new = "SceneName = Frontline Highlands Battlefield"
+assert text.count(old) == 1, "expected exactly one Frontline activity SceneName"
+scenario.write_text(text.replace(old, new, 1))
+PY
+        cat "$SCRIPT_DIR/headless_highlands.lua" >> "$MODULE_DIR/Frontline.lua"
+    elif [ "$suite" = callins ]; then
         cat "$SCRIPT_DIR/headless_callins.lua" >> "$MODULE_DIR/Frontline.lua"
     else
         cat "$SCRIPT_DIR/headless_frontline.lua" >> "$MODULE_DIR/Frontline.lua"
     fi
     rm -f "$result"
 
+    scene='Frontline Battlefield'
+    updates=10
+    runtime=45s
+    if [ "$suite" = highlands ]; then
+        scene='Frontline Highlands Battlefield'
+        updates=4800
+        runtime=90s
+    fi
     set +e
     (
         cd "$ENGINE_DIR"
         env -u DISPLAY -u WAYLAND_DISPLAY \
             HOME="$TEST_HOME" XDG_CONFIG_HOME="$TEST_HOME/config" \
             XDG_CACHE_HOME="$TEST_HOME/cache" XDG_DATA_HOME="$TEST_HOME/data" \
-            CCCP_SETTINGSPATH="$TEST_ROOT/headless-settings-$suite.ini" \
+            CCCP_SETTINGSPATH="$settings" \
             SDL_VIDEODRIVER=offscreen FRONTLINE_TEST_RESULT="$result" \
-            timeout --signal=TERM --kill-after=5s 45s \
+            timeout --signal=TERM --kill-after=5s "$runtime" \
             "$BUILD_DIR/CortexCommand" -headless -cout -seed 0 \
-            -activity GAScripted 'Frontline Auto-Battler' 'Frontline Battlefield' \
--sim-updates 10
+            -activity GAScripted 'Frontline Auto-Battler' "$scene" \
+            -sim-updates "$updates"
     ) >"$log" 2>&1
     run_status=$?
     set -e
@@ -107,6 +130,7 @@ log = sys.argv[3]
 expected = {
     "deployment": "PASS deployment units=3 funds=285 inventory=Base.rte/Pistol insufficient-funds=unchanged",
     "callins": "PASS callins strike=PASS medic=PASS cover=PASS mines=PASS bomb=PASS turret=PASS orbital=PASS shield=PASS bubble=PASS mining=PASS weaponPod=PASS assaultSquad=PASS team1=PASS",
+    "highlands": "PASS highlands cave_posts=2 mirrored=PASS halls=2 stamped=PASS shafts=2/2 traversed=2/2 hall_passage=2/2 captured=2/2 forward=PASS",
 }[suite]
 if not result_path.is_file():
     print(f"{suite} result file missing: {result_path}; log: {log}", file=sys.stderr)

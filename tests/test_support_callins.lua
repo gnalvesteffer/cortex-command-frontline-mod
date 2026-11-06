@@ -37,7 +37,8 @@ function CreateHDFirearm(presetOrQualifiedName,module)
     if presetName=="Broken Firearm" then return nil end
     local values={["Base.rte/Pistol"]=5,["Coalition.rte/Shotgun"]=120,
         ["Mod A.rte/Rifle A"]=400,["Mod C.rte/Rifle B"]=260,["Mod D.rte/Plasma Cannon"]=900,
-        ["Mod E.rte/Heavy Rifle"]=500,["Mod F.rte/Portable Vehicle Killer"]=650}
+        ["Mod E.rte/Heavy Rifle"]=500,["Mod F.rte/Portable Vehicle Killer"]=650,
+        ["Mod G.rte/Gatling Gun"]=2000,["Mod H.rte/Old Rifle"]=130}
     return {name=presetName,module=moduleName,qualified=qualified,
         GetGoldValue=function() return values[(moduleName or "").."/"..(presetName or "")] or 0 end}
 end
@@ -74,11 +75,13 @@ local presets={
     {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod D.rte/Plasma Cannon" end},
     {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod E.rte/Heavy Rifle" end},
     {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod F.rte/Portable Vehicle Killer" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod G.rte/Gatling Gun" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod H.rte/Old Rifle" end},
     {ClassName="MOSRotating",GetModuleAndPresetName=function() return "Base.rte/Not a firearm" end},
 }
 PresetMan={Modules=iterator({
     {Presets=iterator({presets[1],presets[2],presets[3],presets[4]})},
-    {Presets=iterator({presets[5],presets[6],presets[7],presets[8],presets[9],presets[1]})},
+    {Presets=iterator({presets[5],presets[6],presets[7],presets[8],presets[9],presets[10],presets[11],presets[1]})},
 })}
 local actors={}
 MovableMan={
@@ -112,8 +115,8 @@ assert(loadfile('Frontline.rte/Frontline.lua'))()
 local activity=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 activity:StartActivity(); activity:StartBattle(); activity.matchTimer.ElapsedSimTimeMS=15000
 local loadedFirearms=activity:LoadedFirearmPresetNames()
-assert(#loadedFirearms==8 and loadedFirearms[1]=='Base.rte/Pistol'
-    and loadedFirearms[8]=='Mod F.rte/Portable Vehicle Killer',
+assert(#loadedFirearms==10 and loadedFirearms[1]=='Base.rte/Pistol'
+    and loadedFirearms[10]=='Mod H.rte/Old Rifle',
     'loaded firearm discovery must visit each module preset list, deduplicate qualified names and sort them')
 assert(activity.teams[0].counts[6]==3 and activity.teams[1].counts[6]==3, 'both teams must start with three Ronin Bandits selected')
 activity:UpdateAI()
@@ -147,8 +150,8 @@ activity.tab='Support'; activity:DrawPanel()
 local supportLabels=table.concat(panelText,' ')
 local function smallFontWidthEstimate(label) return #label*5 end
 assert(#supportDescriptionLines==4 and supportLabels:find('WEAPON CACHE POD',1,true)
-    and supportLabels:find('ASSAULT SQUAD',1,true) and supportLabels:find('500 oz | LOCKED',1,true),
-    'personnel column must expose both call-ins, the locked 500-oz Assault Squad, and Energy Shield/Jammer descriptions')
+    and supportLabels:find('1000 oz | LOCKED',1,true),
+    'personnel column must expose both call-ins, the locked 1000-oz Assault Squad, and Energy Shield/Jammer descriptions')
 for _,line in ipairs(supportDescriptionLines) do
     assert(line.small and line.x==315 and line.y>=307 and line.y<=346
         and line.x+smallFontWidthEstimate(line.label)<=465,
@@ -242,27 +245,53 @@ for index=itemsBefore+1,#MovableMan.items do
         and weapon.qualified and weapon.name~='Broken Firearm')
 end
 
+do
 local squadTarget={name='off-post legal target',x=2600,groundY=600,owner=-1}
+local function withRandomChoices(choices,callback)
+    local previousRandom=math.random
+    local choiceIndex=0
+    math.random=function(lower,upper)
+        choiceIndex=choiceIndex+1
+        local choice=choices[choiceIndex]
+        assert(choice and choice>=lower and choice<=upper,'random sample must draw within the current Fisher-Yates bounds')
+        return choice
+    end
+    local result={pcall(callback)}
+    math.random=previousRandom
+    assert(result[1],result[2])
+    return unpack(result,2)
+end
 local fundsBeforeSquad=25000; team.funds=fundsBeforeSquad
-local illegalTarget={name='inside enemy base exclusion',x=SceneMan.SceneWidth-100,groundY=600,owner=-1}
+local illegalTarget={name='inside enemy base exclusion',x=SceneMan.SceneWidth-180-899,groundY=600,owner=-1}
+assert(activity:SupportTargetAllowed(0,SceneMan.SceneWidth-180-901)
+    and not activity:SupportTargetAllowed(0,SceneMan.SceneWidth-180-899)
+    and activity:SupportTargetAllowed(1,180+901)
+    and not activity:SupportTargetAllowed(1,180+899),
+    'support exclusion must be symmetric at 900 pixels and retain legitimate distant targets')
 local illegalCallin,illegalMessage=activity.commanders[0]:CallIn('assaultSquad',illegalTarget)
 assert(not illegalCallin and illegalMessage=='Support restricted near enemy base'
-    and team.funds==fundsBeforeSquad and team.assaultSquadTimer.ElapsedSimTimeMS==60000,
+    and team.funds==fundsBeforeSquad and team.assaultSquadTimer.ElapsedSimTimeMS==120000,
     'Assault Squad must reject illegal targets without spending funds or starting cooldown')
-assert(activity:PostBonusCount(0,3)==0 and activity:CallinCooldown(0,60000)==60000,
-    'Assault Squad base cooldown must be exactly 60,000 ms without call-in post discounts')
-assert(activity.commanders[0]:CallIn('assaultSquad',squadTarget),'research-unlocked Assault Squad must accept any legal target position')
-assert(team.funds==fundsBeforeSquad-500 and team.assaultSquadTimer.ElapsedSimTimeMS==0,
-    'one ordered Assault Squad must debit exactly 500 oz and start its 60-second cooldown')
+assert(activity:PostBonusCount(0,3)==0 and activity:CallinCooldown(0,120000)==120000,
+    'Assault Squad base cooldown must be exactly 120,000 ms without call-in post discounts')
+assert(withRandomChoices({1,2,3},function()
+    return activity.commanders[0]:CallIn('assaultSquad',squadTarget)
+end),'research-unlocked Assault Squad must accept any legal target position')
+assert(team.funds==fundsBeforeSquad-1000 and team.assaultSquadTimer.ElapsedSimTimeMS==0,
+    'one ordered Assault Squad must debit exactly 1000 oz and start its 120-second cooldown')
 local assaultDelivery=activity.pendingDrops[#activity.pendingDrops]
 assert(assaultDelivery.kind=='assaultSquad' and assaultDelivery.target==squadTarget
     and assaultDelivery.count==3 and assaultDelivery.delay==4000 and #assaultDelivery.squad==3,
     'Assault Squad must queue the standard three-person Coalition Light dropship payload at the requested position')
 local eligiblePool=activity:AssaultSquadWeaponPresets()
-assert(table.concat(eligiblePool,",")=="Mod D.rte/Plasma Cannon,Mod F.rte/Portable Vehicle Killer,Mod E.rte/Heavy Rifle,Mod A.rte/Rifle A,Mod C.rte/Rifle B",
-    'all loaded spawnable exotic firearms above the stock value ceiling should remain eligible, not only the top three')
+assert(#eligiblePool==7,'every creatable, positive-value exotic above the stock ceiling must remain eligible')
 local eligibleNames={}
 for _,name in ipairs(eligiblePool) do eligibleNames[name]=true end
+for _,name in ipairs({'Mod A.rte/Rifle A','Mod C.rte/Rifle B','Mod D.rte/Plasma Cannon',
+    'Mod E.rte/Heavy Rifle','Mod F.rte/Portable Vehicle Killer','Mod G.rte/Gatling Gun',
+    'Mod H.rte/Old Rifle'}) do
+    assert(eligibleNames[name],'full eligible exotic pool must contain '..name)
+end
 local function assertAssaultLoadout(squad)
     local names={}
     for _,actor in ipairs(squad) do
@@ -278,26 +307,37 @@ local function assertAssaultLoadout(squad)
     return names
 end
 local firstNames=assertAssaultLoadout(assaultDelivery.squad)
-assert(table.concat(firstNames,",")=="Mod D.rte/Plasma Cannon,Mod F.rte/Portable Vehicle Killer,Mod E.rte/Heavy Rifle",
-    'first Assault Squad sample should remain value-ranked and deterministic')
+local function weaponSet(names)
+    local result={}
+    for _,name in ipairs(names) do
+        assert(not result[name],'each squad must sample without replacement')
+        result[name]=true
+    end
+    return result
+end
+local firstSet=weaponSet(firstNames)
+assert(not firstSet['Mod G.rte/Gatling Gun'] and firstSet['Mod A.rte/Rifle A'],
+    'random sampling must allow a full eligible squad without favoring the highest-value Gatling')
 local passengerIDs={}
 for _,actor in ipairs(assaultDelivery.squad) do passengerIDs[actor.UniqueID]=true end
-team.assaultSquadTimer.ElapsedSimTimeMS=59999
+team.assaultSquadTimer.ElapsedSimTimeMS=119999
 local coolingDown,cooldownMessage=activity.commanders[0]:CallIn('assaultSquad',squadTarget)
-assert(not coolingDown and cooldownMessage=='Call-in cooling down' and team.funds==fundsBeforeSquad-500,
-    'Assault Squad must remain unavailable until its full 60,000 ms cooldown elapses')
-team.assaultSquadTimer.ElapsedSimTimeMS=60000
-assert(activity.commanders[0]:CallIn('assaultSquad',squadTarget),
-    'a second ready call should construct a new varied Assault Squad sample')
+assert(not coolingDown and cooldownMessage=='Call-in cooling down' and team.funds==fundsBeforeSquad-1000,
+    'Assault Squad must remain unavailable until its full 120,000 ms cooldown elapses')
+team.assaultSquadTimer.ElapsedSimTimeMS=120000
+local secondCall,secondMessage=withRandomChoices({7,6,5},function()
+    return activity.commanders[0]:CallIn('assaultSquad',squadTarget)
+end)
+assert(secondCall,secondMessage)
 local secondDelivery=activity.pendingDrops[#activity.pendingDrops]
 local secondNames=assertAssaultLoadout(secondDelivery.squad)
-local selectedNames={}
-for _,name in ipairs(firstNames) do selectedNames[name]=true end
-for _,name in ipairs(secondNames) do selectedNames[name]=true end
-local reachableCount=0
-for _,name in ipairs(eligiblePool) do if selectedNames[name] then reachableCount=reachableCount+1 end end
-assert(reachableCount==#eligiblePool and table.concat(secondNames,",")=="Mod A.rte/Rifle A,Mod C.rte/Rifle B,Mod D.rte/Plasma Cannon",
-    'rotating three-weapon samples must make every eligible loaded exotic reachable across calls')
+local secondSet=weaponSet(secondNames)
+assert(not (firstSet['Mod A.rte/Rifle A'] and secondSet['Mod A.rte/Rifle A'])
+    or not (firstSet['Mod C.rte/Rifle B'] and secondSet['Mod C.rte/Rifle B'])
+    or not (firstSet['Mod D.rte/Plasma Cannon'] and secondSet['Mod D.rte/Plasma Cannon']),
+    'successive squads must be able to draw different eligible weapons')
+assert(secondSet['Mod G.rte/Gatling Gun'],
+    'eligible high-value Gatlings remain selectable without being guaranteed in every squad')
 assaultDelivery.timer.ElapsedSimTimeMS=4000
 activity:UpdateCallIns()
 local assaultShip=assaultDelivery.ship
@@ -317,8 +357,7 @@ for _,actor in ipairs(delivered) do
         and actor.inventory and actor.inventory.module~='Base.rte' and actor.inventory.module~='Coalition.rte',
         'each delivered soldier must retain 200 HP and its exotic firearm after dropship delivery')
 end
-local savedAssaultPresets,savedLoadedPresets,savedRotation=
-    activity.assaultWeaponPresets,activity.weaponPodPresets,activity.assaultWeaponRotation
+local savedAssaultPresets,savedLoadedPresets=activity.assaultWeaponPresets,activity.weaponPodPresets
 activity.assaultWeaponPresets=nil
 activity.weaponPodPresets={'Mod F.rte/Portable Vehicle Killer','Mod A.rte/Rifle A','Mod C.rte/Rifle B'}
 local portableNamedPool=activity:AssaultSquadWeaponPresets()
@@ -328,20 +367,28 @@ for _,name in ipairs(portableNamedPool or {}) do
 end
 assert(hasPortableNamed,'portable infantry firearms remain eligible when their preset name mentions a vehicle')
 activity.assaultWeaponPresets=nil
-activity.assaultWeaponRotation=1
 activity.weaponPodPresets={'Mod A.rte/Rifle A','Mod C.rte/Rifle B','Base.rte/Pistol','Coalition.rte/Shotgun'}
-local fallbackPresets=activity:AssaultSquadWeaponPresets()
-assert(table.concat(fallbackPresets,",")=="Mod A.rte/Rifle A,Mod C.rte/Rifle B,Coalition.rte/Shotgun",
-    'only a short eligible exotic pool may be filled with the best available stock firearm')
+local fallbackExotics,fallbackStock=activity:AssaultSquadWeaponPresets()
+assert(#fallbackExotics==2 and #fallbackStock==2,
+    'full exotic pool should remain intact, with stock weapons available only for a short pool')
+local fallbackSquad,fallbackNames=withRandomChoices({1,2,1},function()
+    return activity:CreateAssaultSquadPayload(0)
+end)
+local fallbackExoticCount=0
+for _,name in ipairs(fallbackNames) do
+    if name:find('Mod ',1,true) then fallbackExoticCount=fallbackExoticCount+1 end
+end
+assert(fallbackExoticCount==2 and #fallbackSquad==3,
+    'stock weapons should fill only the remaining squad slot when fewer than three exotics qualify')
 activity.assaultWeaponPresets=nil
 activity.weaponPodPresets={'Base.rte/Pistol','Coalition.rte/Shotgun'}
 local missingFirearms,missingFirearmMessage=activity:AssaultSquadWeaponPresets()
 assert(not missingFirearms and missingFirearmMessage:find('three loaded firearms',1,true),
     'Assault Squad must reject fewer than three loaded spawnable firearms')
 activity.assaultWeaponPresets=savedAssaultPresets
-activity.assaultWeaponRotation=savedRotation
 activity.weaponPodPresets=savedLoadedPresets
-print('Assault Squad research, legal targeting, rotating loaded arsenal, 200 HP, cost/cooldown and dropship delivery verified')
+print('Assault Squad research, legal targeting, random loaded arsenal, 200 HP, cost/cooldown and dropship delivery verified')
+end
 
 local ai=activity.teams[1]
 local oldFunds,oldAuto,oldTurretLevel,oldBaseArmor,oldTurret=ai.funds,ai.auto,ai.turretLevel,ai.baseArmor,ai.turret

@@ -68,7 +68,7 @@ MovableMan={
 MovableMan.Particles=(function() local i=0; return function() i=i+1; local items=MovableMan.particles or {}; if not items[i] then i=0; return nil end; return items[i] end end)()
 function IsAHuman(a) return not a.vehicle and not a.ship end; function IsACrab(a) return a.vehicle==true end
 local sceneObjects={}
-SceneMan={SceneWidth=5200, SceneHeight=800, CastMaterialRay=function() return false end,
+SceneMan={SceneWidth=5200, SceneHeight=800, Scene={PresetName="Frontline Battlefield"}, CastMaterialRay=function() return false end,
     CastMORay=function() return rte.NoMOID end,
     ShortestDistance=function(_,a,b) return Vector(b.X-a.X,b.Y-a.Y) end,
     AddSceneObject=function(_,o) table.insert(sceneObjects,o) end,
@@ -87,39 +87,80 @@ function Frontline:StartActivity()
     startActivity(self)
     for team=0,1 do self.teams[team].levels[11]=1; self.teams[team].levels[12]=1; self.teams[team].weapons={1,1,1,1,1,1,1} end
 end
+-- Contact rows represent substantial stock bitmap mass, above stray bottom pixels.
+do
+    local props={
+        {"Zombie Cave Rock",40,-42,52},
+        {"Zombie Cave Under Rock 1",22,-45,15},
+        {"Zombie Cave Under Rock 2",28,-43,18},
+        {"Concrete Barrier",21,2,21},
+        {"Metal Crate Small A FG",21,0,23},
+    }
+    local oldGround,oldRandom=SceneMan.MovePointToGround,math.random
+    for _,width in ipairs({5200,10400,15600}) do
+        SceneMan.SceneWidth=width
+        for index,prop in ipairs(props) do
+            for _,slope in ipairs({-1,1}) do
+                local calls={}
+                SceneMan.MovePointToGround=function(_,p,height,accuracy)
+                    if accuracy==0 then calls[p.X]=true end
+                    return Vector(p.X,600+slope*(p.X-650))
+                end
+                math.random=function(low,high) return high and low or index end
+                sceneObjects={}; actors={}
+                local layout=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+                layout:StartActivity()
+                local placed
+                for _,object in ipairs(sceneObjects) do
+                    if object.name==prop[1] and object.Pos.X==650 then placed=object; break end
+                end
+                assert(placed,prop[1]..' must be placed on every map size')
+                local deepest=600+math.max(slope*prop[3],slope*prop[4])
+                assert(placed.Pos.Y+prop[2]==deepest+2,prop[1]..' must meet the downhill footing')
+                for dx=prop[3],prop[4] do
+                    assert(calls[650+dx],prop[1]..' must probe every footing column without skipping pixels')
+                end
+            end
+        end
+    end
+    SceneMan.SceneWidth=5200; SceneMan.MovePointToGround=oldGround; math.random=oldRandom
+    sceneObjects={}; actors={}
+end
 local a=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 a:StartActivity()
 assert(a.brains[0].Pos.X==180 and a.brains[1].Pos.X==5020)
 assert(a.brains[0].inventory.name=="Gatling Gun" and a.brains[1].inventory.name=="Gatling Gun" and a.brains[1].HFlipped)
-for index,expectedX in ipairs({1300,2600,3900}) do
-    assert(sceneObjects[index].name=="Tunnel A" and sceneObjects[index].Pos.X==expectedX and sceneObjects[index].Pos.Y==576)
+assert(sceneObjects[1].name=="Frontline Mirrored Brain Vault" and sceneObjects[1].Team==0 and sceneObjects[1].Pos.X==180)
+assert(sceneObjects[2].name=="Brain Vault" and sceneObjects[2].Team==1 and sceneObjects[2].Pos.X==5020)
+for _,postX in ipairs({1300,2600,3900}) do
+    for _,object in ipairs(sceneObjects) do
+        assert(object.name~="Tunnel A" or object.Pos.X~=postX,"surface-only map outposts must not receive underground tunnels")
+    end
 end
-assert(sceneObjects[4].name=="Frontline Mirrored Brain Vault" and sceneObjects[4].Team==0 and sceneObjects[4].Pos.X==180)
-assert(sceneObjects[5].name=="Brain Vault" and sceneObjects[5].Team==1 and sceneObjects[5].Pos.X==5020)
 local expectedLeft={{340,570,"Tunnel A"},{436,570,"Tunnel A"},{508,570,"Tunnel B"},{484,498,"Tunnel A"}}
 local expectedRight={{4860,570,"Tunnel A"},{4764,570,"Tunnel A"},{4692,570,"Tunnel B"},{4716,498,"Tunnel A"}}
 for index,expected in ipairs(expectedLeft) do
-    local left,right=sceneObjects[5+index],sceneObjects[9+index]
+    local left,right=sceneObjects[2+index],sceneObjects[6+index]
     assert(left.name==expected[3] and left.Pos.X==expected[1] and left.Pos.Y==expected[2] and left.Team==0 and left.HFlipped)
     assert(right.name==expectedRight[index][3] and right.Pos.X==expectedRight[index][1] and right.Pos.Y==expectedRight[index][2]
         and right.Team==1 and not right.HFlipped and left.Pos.X+right.Pos.X==SceneMan.SceneWidth)
     if index>1 and index<=3 then
-        local span=(left.width+sceneObjects[5+index-1].width)/2
-        assert(math.abs(left.Pos.X-sceneObjects[5+index-1].Pos.X)==span)
-        assert(math.abs(right.Pos.X-sceneObjects[9+index-1].Pos.X)==span)
+        local span=(left.width+sceneObjects[2+index-1].width)/2
+        assert(math.abs(left.Pos.X-sceneObjects[2+index-1].Pos.X)==span)
+        assert(math.abs(right.Pos.X-sceneObjects[6+index-1].Pos.X)==span)
     end
 end
-local hallway=sceneObjects[6]
-local finalHall=sceneObjects[8]
-local enemyFinalHall=sceneObjects[12]
-local upperLeft,upperRight=sceneObjects[9],sceneObjects[13]
+local hallway=sceneObjects[3]
+local finalHall=sceneObjects[5]
+local enemyFinalHall=sceneObjects[9]
+local upperLeft,upperRight=sceneObjects[6],sceneObjects[10]
 local function materialFloorY(object)
     return object.Pos.Y+object.bitmapOffsetY+object.walkablePixelY
 end
 local playerHallFloor=materialFloorY(hallway)
-local enemyHallFloor=materialFloorY(sceneObjects[10])
-local playerVaultFloor=materialFloorY(sceneObjects[4])
-local enemyVaultFloor=materialFloorY(sceneObjects[5])
+local enemyHallFloor=materialFloorY(sceneObjects[7])
+local playerVaultFloor=materialFloorY(sceneObjects[1])
+local enemyVaultFloor=materialFloorY(sceneObjects[2])
 local hallwayRoof=hallway.Pos.Y+hallway.bitmapOffsetY+hallway.roofPixelY
 local upperOpeningTop=upperLeft.Pos.Y+upperLeft.bitmapOffsetY+upperLeft.openingTop
 local upperOpeningBottom=upperLeft.Pos.Y+upperLeft.bitmapOffsetY+upperLeft.openingBottom
@@ -153,10 +194,83 @@ for _,turret in ipairs({{object=CreateACrab("Frontline HE Base Turret"),team=0},
         or turret.team==1 and muzzleX<room.Pos.X and muzzleX>exit,
         'both mirrored custom cannon muzzles must remain inside the outward half of the upper bore')
 end
-assert(sceneObjects[6].Pos.Y-sceneObjects[9].Pos.Y==72 and sceneObjects[10].Pos.Y-sceneObjects[13].Pos.Y==72,
+assert(hallway.Pos.Y-upperLeft.Pos.Y==72 and sceneObjects[7].Pos.Y-upperRight.Pos.Y==72,
     'moving the hallway down must preserve upper room and turret vertical alignment')
-assert(508+24<1300-48 and 4692-24>3900+48,'base tunnel segments must remain separate from outpost bunkers')
+assert(508+24<1300-200 and 4692-24>3900+200,'base bunker entrances must remain separate from open outpost pads')
 for _,object in ipairs(sceneObjects) do assert(object.name~="Tut Roof Attachment","bunker must not add floating roof attachments") end
+do
+    local oldWidth,oldHeight,oldScene=SceneMan.SceneWidth,SceneMan.SceneHeight,SceneMan.Scene
+    local oldGround,oldRandom=SceneMan.MovePointToGround,math.random
+    sceneObjects={}; actors={}
+    SceneMan.SceneWidth=15600; SceneMan.SceneHeight=1600; SceneMan.Scene={PresetName="Frontline Highlands Battlefield"}
+    local coverGroundProbes={}
+    SceneMan.MovePointToGround=function(_,point,_,accuracy)
+        if accuracy==0 then table.insert(coverGroundProbes,point.X) end
+        return Vector(point.X,600)
+    end
+    math.random=function(low,high) return high and low or 1 end
+    local highland=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
+    highland:StartActivity()
+    local counts={}
+    local coverBodies={
+        ["Zombie Cave Rock"]={-60,64},
+        ["Zombie Cave Under Rock 1"]={-60,54},
+        ["Zombie Cave Under Rock 2"]={-45,51},
+        ["Concrete Barrier"]={0,23},
+        ["Metal Crate Small A FG"]={0,23},
+    }
+    for _,object in ipairs(sceneObjects) do
+        counts[object.name]=(counts[object.name] or 0)+1
+        if object.name=="End B" and object.Pos.X==6720 then assert(not object.HFlipped and object.Pos.Y==1486) end
+        if object.name=="End B" and (object.Pos.X==4008 or object.Pos.X==11208) then
+            assert(not object.HFlipped and object.Pos.Y==1390)
+        end
+        if object.name=="T-Junction B" then
+            assert((object.Pos.X==6912 or object.Pos.X==7200) and object.Pos.Y==1486
+                or (object.Pos.X==4200 or object.Pos.X==11400) and object.Pos.Y==1390)
+        end
+        for _,layout in ipairs({{x=6912,segments=3},{x=7200,segments=3},
+            {x=4200,segments=2},{x=11400,segments=2}}) do
+            local shaftX=layout.x
+            local hallY=1150+48+layout.segments*96
+            if object.name=="Shaft A" and object.Pos.X==shaftX then
+                assert(object.Pos.Y>=1198 and object.Pos.Y<=1198+(layout.segments-1)*96
+                    and (object.Pos.Y-1198)%96==0)
+            end
+            if object.name=="Background Ladder" and object.Pos.X==shaftX-12 then
+                assert(object.Pos.Y>=1150 and object.Pos.Y<=hallY-72 and (object.Pos.Y-1150)%24==0)
+            end
+            local body=coverBodies[object.name]
+            if body then
+                local left,right=object.Pos.X+body[1],object.Pos.X+body[2]
+                assert(left>shaftX+100 or right<shaftX-100,
+                    "Highlands surface cover footprint must leave the full shaft clearance open")
+            end
+        end
+        end
+    assert(counts["End B"]==3 and counts["T-Junction B"]==4
+        and counts["Shaft A"]==10 and counts["Background Ladder"]==40,
+        "Highlands must stamp three bunker halls with accessible mirrored shafts")
+    assert(#highland.outposts==11,"Highlands must retain nine surface points and append two cavern capture points")
+    for i=1,9 do
+        assert(highland.outposts[i].level=="surface" and highland.outposts[i].x==1560*i,
+            "the nine original Highlands surface outposts must stay at their existing coordinates")
+    end
+    local west,east=highland.outposts[10],highland.outposts[11]
+    assert(west.level=="underground" and east.level=="underground" and west.x+east.x==SceneMan.SceneWidth)
+    assert(west.captureY==east.captureY and west.groundY==east.groundY
+        and west.landingX+east.landingX==SceneMan.SceneWidth and west.landingY==east.landingY)
+    assert(west.bonus==east.bonus and west.bonus=="Call-ins -20%")
+    for _,probeX in ipairs(coverGroundProbes) do
+        for _,shaftX in ipairs({6912,7200,4200,11400}) do
+            assert(math.abs(probeX-shaftX)>100,"cover footing probes must avoid each Highlands shaft mouth")
+        end
+    end
+    assert(counts["Zombie Cave Rock"]>0,"Highlands cover loop should still place grounded cover away from shafts")
+    SceneMan.SceneWidth=oldWidth; SceneMan.SceneHeight=oldHeight; SceneMan.Scene=oldScene
+    SceneMan.MovePointToGround=oldGround; math.random=oldRandom
+    sceneObjects={}; actors={}
+end
 a.panel=false
 a.DrawHUD=function() end
 a.DrawOutpost=function() end
@@ -546,7 +660,7 @@ print('AI can use bomb, orbital cannon, turret and mines through standard call-i
 
 
 -- Free opening turrets are symmetric and stationary; paid upgrades retain
--- the existing range, health, rebuild and mobile-army exclusion behavior.
+-- the existing range, durability, rebuild and mobile-army exclusion behavior.
 actors={}; local base=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 base:StartActivity(); assert(not base.commanders[0]:BaseUpgrade('armor'))
 local startingFunds={base.teams[0].funds,base.teams[1].funds}
@@ -555,12 +669,12 @@ local bt=base.teams[0]; local enemyBaseTurret=base.teams[1].turret
 local expectedTurretAimDistance=549.6
 assert(bt.turret and bt.turret.name=='Frontline HE Base Turret' and bt.turretLevel==1
     and bt.turret.Team==0 and bt.turret.Pos.X==484 and bt.turret.Pos.Y==513 and not bt.turret.HFlipped
-    and bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.turret.Health==200 and bt.turret.MaxHealth==200
+    and bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.turret.Health==600 and bt.turret.MaxHealth==600
     and bt.turret.AimDistance==expectedTurretAimDistance and bt.turret.PinStrength==100000,
     'player must start with the configured free baseline HE turret')
 assert(enemyBaseTurret and enemyBaseTurret.name=='Frontline HE Base Turret' and base.teams[1].turretLevel==1
     and enemyBaseTurret.Team==1 and enemyBaseTurret.Pos.X==4716 and enemyBaseTurret.Pos.Y==513 and enemyBaseTurret.HFlipped
-    and enemyBaseTurret.AIMode==Actor.AIMODE_SENTRY and enemyBaseTurret.Health==200 and enemyBaseTurret.MaxHealth==200
+    and enemyBaseTurret.AIMode==Actor.AIMODE_SENTRY and enemyBaseTurret.Health==600 and enemyBaseTurret.MaxHealth==600
     and enemyBaseTurret.AimDistance==expectedTurretAimDistance and enemyBaseTurret.PinStrength==100000,
     'enemy must start with the configured free mirrored baseline HE turret')
 assert(base.teams[0].funds==startingFunds[1] and base.teams[1].funds==startingFunds[2],
@@ -587,7 +701,7 @@ assert(base.commanders[0]:BaseUpgrade('repair')); assert(base.brains[0].Health==
 assert(bt.turret.name=='Frontline HE Base Turret' and bt.funds==1680)
 local playerMuzzleX,playerMuzzleY=worldMuzzle(bt.turret)
 assert(bt.turret.AIMode==Actor.AIMODE_SENTRY and bt.turret.AimDistance==expectedTurretAimDistance
-    and bt.turret.Health==200 and bt.turret.MaxHealth==200
+    and bt.turret.Health==600 and bt.turret.MaxHealth==600
     and bt.turret.Pos.X==484 and bt.turret.Pos.Y==513 and not bt.turret.HFlipped
     and playerMuzzleX>upperLeft.Pos.X and playerMuzzleX<playerExit and playerMuzzleY>=upperOpeningTop and playerMuzzleY<=upperOpeningBottom
     and bt.turret.Pos.Y+bt.turret.SpriteOffset.Y+bt.turret.SpriteHeight==materialFloorY(upperLeft))
@@ -595,7 +709,7 @@ local gatling=bt.turret
 assert(base.commanders[0]:BaseUpgrade('turretUpgrade'))
 local upgradedPlayerMuzzleX,upgradedPlayerMuzzleY=worldMuzzle(bt.turret)
 assert(gatling.ToDelete and bt.turret.name=='Frontline HE Turret'
-    and bt.turret.AimDistance==expectedTurretAimDistance and bt.turret.Health==200 and bt.turret.MaxHealth==200
+    and bt.turret.AimDistance==expectedTurretAimDistance and bt.turret.Health==600 and bt.turret.MaxHealth==600
     and upgradedPlayerMuzzleX>upperLeft.Pos.X and upgradedPlayerMuzzleX<playerExit and upgradedPlayerMuzzleY>=upperOpeningTop
     and upgradedPlayerMuzzleY<=upperOpeningBottom and bt.funds==1030
     and bt.turret.Pos.Y+bt.turret.SpriteOffset.Y+bt.turret.SpriteHeight==materialFloorY(upperLeft),
@@ -604,7 +718,7 @@ assert(base:UnitCount(0)==0 and not base.commanders[0]:BaseUpgrade('turret'),
     'stationary HE base turret must not count as a field unit or be purchased twice')
 bt.turret.deleted=true; bt.funds=1000
 assert(base.commanders[0]:BaseUpgrade('turret'))
-assert(bt.turret.name=='Frontline HE Turret' and bt.turret.Health==200 and bt.turret.MaxHealth==200
+assert(bt.turret.name=='Frontline HE Turret' and bt.turret.Health==600 and bt.turret.MaxHealth==600
     and bt.turret.AimDistance==expectedTurretAimDistance
     and bt.turret.Pos.Y+bt.turret.SpriteOffset.Y+bt.turret.SpriteHeight==materialFloorY(upperLeft),
     'rebuilt upgraded turret must retain HE variant, health, range and floor position')
@@ -616,14 +730,14 @@ for index=1,29 do bi.levels[index]=10 end
 bi.baseArmor=3; bi.auto=false; bi.funds=0; bi.timer.ElapsedSimTimeMS=0
 base:UpdateAI()
 assert(bi.turret and bi.turret.name=='Frontline HE Base Turret'
-    and bi.turret.AimDistance==expectedTurretAimDistance and bi.turret.Health==200 and bi.turret.MaxHealth==200
+    and bi.turret.AimDistance==expectedTurretAimDistance and bi.turret.Health==600 and bi.turret.MaxHealth==600
     and bi.turret.Team==1 and bi.turret.Pos.X==4716 and bi.turret.Pos.Y==513 and bi.turret.HFlipped
     and bi.turret.Pos.Y+bi.turret.SpriteOffset.Y+bi.turret.SpriteHeight==materialFloorY(upperRight))
 bi.funds=2000
 base:UpdateAI()
 local upgradedEnemyMuzzleX,upgradedEnemyMuzzleY=worldMuzzle(bi.turret)
 assert(bi.turret.name=='Frontline HE Turret' and bi.turret.AimDistance==expectedTurretAimDistance
-    and bi.turret.Health==200 and bi.turret.MaxHealth==200
+    and bi.turret.Health==600 and bi.turret.MaxHealth==600
     and upgradedEnemyMuzzleX<upperRight.Pos.X and upgradedEnemyMuzzleX>enemyExit and upgradedEnemyMuzzleY>=upperOpeningTop
     and upgradedEnemyMuzzleY<=upperOpeningBottom
     and bi.turret.Pos.Y+bi.turret.SpriteOffset.Y+bi.turret.SpriteHeight==materialFloorY(upperRight),
@@ -1097,20 +1211,22 @@ actors={}; local restricted=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=F
 restricted:StartActivity(); restricted:StartBattle(); restricted.matchTimer.ElapsedSimTimeMS=15001
 for team=0,1 do
     local t=restricted.teams[team]; t.funds=5000
-    for _,index in ipairs({13,21,22,23,24,25,26}) do t.levels[index]=1 end
+    for _,index in ipairs({11,13,14,21,22,23,24,25,26,27,28,30}) do t.levels[index]=1 end
     local enemyX=team==0 and SceneMan.SceneWidth-180 or 180
     local sign=team==0 and -1 or 1
-    assert(not restricted:SupportTargetAllowed(team,enemyX+sign*600))
-    assert(restricted:SupportTargetAllowed(team,enemyX+sign*601))
-    for _,kind in ipairs({'strike','medic','cover','mines','bomb','orbital','shield'}) do
+    assert(not restricted:SupportTargetAllowed(team,enemyX+sign*900))
+    assert(restricted:SupportTargetAllowed(team,enemyX+sign*901))
+    assert(restricted:SupportTargetAllowed(team,team==0 and 180 or SceneMan.SceneWidth-180))
+    for _,kind in ipairs({'strike','medic','cover','mines','bomb','turret','orbital','shield','bubble','mining','weaponPod','assaultSquad'}) do
         local before=t.funds
         local ok,reason=restricted.commanders[team]:CallIn(kind, {name='enemy base',x=enemyX,groundY=600})
-        assert(not ok and reason:find('restricted',1,true) and t.funds==before)
+        assert(not ok and reason:find('restricted',1,true) and t.funds==before,
+            kind..' must reject targets near the enemy base before charging funds')
     end
 end
 -- Allied bases are not excluded for a defensive support call.
 assert(restricted:SupportTargetAllowed(0,180) and restricted:SupportTargetAllowed(1,SceneMan.SceneWidth-180))
-print('Enemy-base support exclusion applies to both teams and all call-ins')
+print('900px enemy-base support exclusion applies to both teams and all call-ins')
 
 -- Compact HUD totals stacking income and discounts, both sides' deaths
 -- and elapsed match time. Disabled outpost bonuses must not be advertised.
@@ -1235,3 +1351,106 @@ print('Cover pods become ground-aligned destructible crates')
     SceneMan.SceneWidth=originalWidth
 end)()
 print('Forward deployment pricing scales by position, squad size and team')
+;(function()
+    local oldScene,oldWidth,oldHeight=SceneMan.Scene,SceneMan.SceneWidth,SceneMan.SceneHeight
+    local oldGround=SceneMan.MovePointToGround
+    SceneMan.Scene={PresetName="Frontline Highlands Battlefield"}
+    SceneMan.SceneWidth=15600; SceneMan.SceneHeight=1600
+    SceneMan.MovePointToGround=function(_,point) return Vector(point.X,1150) end
+    actors={}
+    local caves=setmetatable({deathCounts={[0]=0,[1]=0}},{__index=Frontline})
+    caves:StartActivity(); caves:StartBattle(); actors={}
+    caves.matchTimer.ElapsedSimTimeMS=16000
+    local west,east=caves.outposts[10],caves.outposts[11]
+    caves.teams[0].forward=10
+    assert(caves:ForwardDeploymentCost(0)==75)
+    caves.teams[1].forward=11
+    assert(caves:ForwardDeploymentCost(1)==75,"paired cave deployments must retain the nine surface cost tiers")
+
+    local function addActor(team,x,y,vehicle)
+        local unit=vehicle and CreateACrab("Test Vehicle","Base.rte") or CreateAHuman("Test Soldier","Base.rte")
+        unit.Team=team; unit.Pos=Vector(x,y); actors[#actors+1]=unit
+        return unit
+    end
+    local aiClimber=addActor(1,west.x,west.captureY,false)
+    for _,post in ipairs(caves.outposts) do post.owner=1 end
+    west.owner=-1
+    caves.aiPersonality="balanced"; caves.aiTemperature=0
+    local aiSnapshot=caves:CollectAISnapshot(1)
+    local strategicGoal=caves:ChooseAIStrategicGoal(aiSnapshot,caves.teams[1])
+    assert(strategicGoal.goal=="advance" and strategicGoal.target==10
+        and aiSnapshot.posts[10].allies==1,
+        "AI strategic targeting must select the mirrored underground capture point at its Y level")
+    assert(caves.commanders[1]:SetOrder("Advance",strategicGoal.target)
+        and aiClimber.AIMode==Actor.AIMODE_GOTO and aiClimber.waypoint.Y==west.captureY,
+        "AI must route its selected cave capture goal to the walkable hall, not surface terrain")
+    for _,post in ipairs(caves.outposts) do post.owner=-1 end
+    actors={}; caves.orderAssignments={}
+    local surfaceUnit=addActor(0,west.x,west.surfaceY-20,false)
+    caves:UpdateOutpost(8)
+    assert(west.progress==0 and west.owner==-1,"same-X surface units must not contest the underground capture zone")
+    local snapshot=caves:CollectAISnapshot(1)
+    assert(snapshot.posts[10].enemies==0 and snapshot.posts[10].threats==0,
+        "surface units above a cave must not register as underground AI threats")
+
+    actors={}
+    local vehicle=addActor(0,west.x,west.captureY,true)
+    caves:UpdateOutpost(8)
+    assert(west.progress==0 and caves:CollectAISnapshot(1).posts[10].enemies==0,
+        "non-climbing vehicles cannot capture or threaten an underground post")
+    assert(caves.commanders[0]:SetOrder("Defend",10))
+    local vehicleOrder=caves.orderAssignments[vehicle.UniqueID]
+    assert(vehicleOrder.surfaceHold and math.abs(vehicle.waypoint.X-west.landingX)<100,
+        "non-climbing vehicles must stage at the surface entry, not enter the shaft")
+
+    actors={}
+    local climber=addActor(0,west.x,west.captureY,false)
+    local hostile=addActor(1,west.x,west.captureY,false)
+    caves:UpdateOutpost(8)
+    snapshot=caves:CollectAISnapshot(1)
+    assert(west.progress==0 and snapshot.posts[10].allies==1 and snapshot.posts[10].enemies==1,
+        "Y-aware cave capture and AI proximity must contest the actual underground hall")
+    actors={climber}
+    assert(caves.commanders[0]:SetOrder("Advance",10))
+    assert(climber.AIMode==Actor.AIMODE_GOTO and climber.waypoint.Y==west.captureY,
+        "human orders must target the walkable underground capture level")
+    caves:UpdateOutpost(8)
+    assert(west.owner==0 and caves:PostBonusCount(0,3)==1,
+        "a human reaching the underground hall captures its real outpost bonus")
+
+    west.owner=1
+    assert(select(2,caves:CheckUrgentAIThreats(1)),"AI must react to threats inside its underground outpost")
+    actors={surfaceUnit}
+    assert(not select(2,caves:CheckUrgentAIThreats(1)),
+        "AI must ignore same-X surface traffic for an underground defense")
+    west.owner=0
+    actors={}
+
+    local player=caves.teams[0]
+    player.forward=10; west.owner=0; player.funds=10000; player.timer.ElapsedSimTimeMS=100000
+    player.counts={0,0,0,0,0,1}
+    assert(caves.commanders[0]:Deploy())
+    local delivery=caves.deliveries[#caves.deliveries]
+    assert(delivery.ship.Pos.Y<west.surfaceY and math.abs(delivery.ship.Pos.X-west.landingX)<200,
+        "forward dropships for cave posts must deliver at the paired surface entry")
+
+    player.levels[25]=1
+    player.bombTimer.ElapsedSimTimeMS=100000
+    assert(caves.commanders[0]:CallIn("bomb",10))
+    local bomb=caves.pendingDrops[#caves.pendingDrops]
+    assert(bomb.target.x==west.landingX and bomb.target.groundY==west.landingY
+        and bomb.ship.Pos.Y<west.surfaceY,"air support for a cave post must target above-ground entry terrain")
+    player.levels[13]=1
+    player.shieldTimer.ElapsedSimTimeMS=100000
+    assert(caves.commanders[0]:CallIn("shield",10))
+    local caveJam=caves.jamFields[#caves.jamFields]
+    assert(caveJam.groundY==west.groundY
+        and caves:ShieldBlocks({x=west.x,groundY=west.groundY},1)
+        and not caves:ShieldBlocks({x=west.x,groundY=west.surfaceY},1),
+        "underground defensive support stays in its cave and does not alias the surface above")
+
+    assert(west.x+east.x==SceneMan.SceneWidth and west.landingX+east.landingX==SceneMan.SceneWidth)
+    SceneMan.Scene=oldScene; SceneMan.SceneWidth=oldWidth; SceneMan.SceneHeight=oldHeight
+    SceneMan.MovePointToGround=oldGround; actors={}
+end)()
+print('Highlands cavern outposts: level-aware capture, AI, orders and surface-safe support passed')
