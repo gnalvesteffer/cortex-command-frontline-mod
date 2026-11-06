@@ -1,4 +1,4 @@
--- Visible falling shell; creates the active heavy explosive only on impact.
+-- Visible falling shell; creates and detonates its activated heavy payload on impact.
 local function explode(self)
     if self.exploded then return end
     self.exploded=true
@@ -17,7 +17,8 @@ local function explode(self)
         local explosive=ToTDExplosive(bomb)
         if explosive then
             explosive:Activate()
-            MovableMan:AddParticle(explosive)
+            local rotating=ToMOSRotating(explosive)
+            if rotating then rotating:GibThis() end
         end
     end
     self.ToDelete=true

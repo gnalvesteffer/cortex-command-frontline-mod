@@ -6,6 +6,13 @@ set -eu
 : "${FRONTLINE_DIR:?Set FRONTLINE_DIR to the local Frontline.rte directory}"
 : "${TEST_ROOT:?Set TEST_ROOT to an isolated writable test directory}"
 
+SUITE=${FRONTLINE_TEST_SUITE:-all}
+case "$SUITE" in
+    deployment|callins) RUN_SUITES=$SUITE ;;
+    all) RUN_SUITES="deployment callins" ;;
+    *) printf '%s\n' "Unknown FRONTLINE_TEST_SUITE: $SUITE (expected deployment, callins, or all)" >&2; exit 2 ;;
+esac
+
 mkdir -p "$TEST_ROOT"
 TEST_ROOT=$(CDPATH= cd -- "$TEST_ROOT" && pwd -P)
 ENGINE_DIR=$(CDPATH= cd -- "$ENGINE_DIR" && pwd -P)
@@ -30,8 +37,6 @@ PY
 
 MODULE_DIR="$ENGINE_DIR/Mods/Frontline.rte"
 TEST_HOME="$TEST_ROOT/home"
-LOG="$TEST_ROOT/headless-frontline.log"
-RESULT="$TEST_ROOT/frontline-test-result.txt"
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 [ -x "$BUILD_DIR/CortexCommand" ] || { printf '%s\n' "Missing engine binary: $BUILD_DIR/CortexCommand" >&2; exit 2; }
 [ -f "$FRONTLINE_DIR/Frontline.lua" ] || { printf '%s\n' "Missing local Frontline.lua: $FRONTLINE_DIR" >&2; exit 2; }
@@ -59,44 +64,64 @@ if [ -e "$MODULE_DIR" ]; then
     HAD_MODULE=1
 fi
 cp -a "$FRONTLINE_DIR" "$MODULE_DIR"
-cat "$SCRIPT_DIR/headless_frontline.lua" >> "$MODULE_DIR/Frontline.lua"
-rm -f "$RESULT"
 
-set +e
-(
-    cd "$ENGINE_DIR"
-    env -u DISPLAY -u WAYLAND_DISPLAY \
-        HOME="$TEST_HOME" XDG_CONFIG_HOME="$TEST_HOME/config" \
-        XDG_CACHE_HOME="$TEST_HOME/cache" XDG_DATA_HOME="$TEST_HOME/data" \
-        SDL_VIDEODRIVER=offscreen FRONTLINE_TEST_RESULT="$RESULT" \
-        timeout --signal=TERM --kill-after=5s 45s \
-        "$BUILD_DIR/CortexCommand" -headless -cout -seed 0 \
-        -activity GAScripted 'Frontline Auto-Battler' 'Frontline Battlefield' \
-        -sim-updates 5
-) >"$LOG" 2>&1
-run_status=$?
-set -e
+run_suite() {
+    suite=$1
+    result="$TEST_ROOT/frontline-test-result-$suite.txt"
+    log="$TEST_ROOT/headless-frontline-$suite.log"
+    cp "$FRONTLINE_DIR/Frontline.lua" "$MODULE_DIR/Frontline.lua"
+    if [ "$suite" = callins ]; then
+        cat "$SCRIPT_DIR/headless_callins.lua" >> "$MODULE_DIR/Frontline.lua"
+    else
+        cat "$SCRIPT_DIR/headless_frontline.lua" >> "$MODULE_DIR/Frontline.lua"
+    fi
+    rm -f "$result"
 
-if [ "$run_status" -ne 0 ]; then
-    printf '%s\n' "Headless engine exited with status $run_status; log: $LOG" >&2
-    exit 1
-fi
-python3 - "$RESULT" <<'PY'
+    set +e
+    (
+        cd "$ENGINE_DIR"
+        env -u DISPLAY -u WAYLAND_DISPLAY \
+            HOME="$TEST_HOME" XDG_CONFIG_HOME="$TEST_HOME/config" \
+            XDG_CACHE_HOME="$TEST_HOME/cache" XDG_DATA_HOME="$TEST_HOME/data" \
+            CCCP_SETTINGSPATH="$TEST_ROOT/headless-settings-$suite.ini" \
+            SDL_VIDEODRIVER=offscreen FRONTLINE_TEST_RESULT="$result" \
+            timeout --signal=TERM --kill-after=5s 45s \
+            "$BUILD_DIR/CortexCommand" -headless -cout -seed 0 \
+            -activity GAScripted 'Frontline Auto-Battler' 'Frontline Battlefield' \
+-sim-updates 10
+    ) >"$log" 2>&1
+    run_status=$?
+    set -e
+
+    if [ "$run_status" -ne 0 ]; then
+        printf '%s\n' "Headless $suite engine exited with status $run_status; log: $log" >&2
+        return 1
+    fi
+    python3 - "$result" "$suite" "$log" <<'PY'
 from pathlib import Path
 import sys
 
 result_path = Path(sys.argv[1])
-expected = "PASS deployment units=3 funds=285 inventory=Base.rte/Pistol insufficient-funds=unchanged"
+suite = sys.argv[2]
+log = sys.argv[3]
+expected = {
+    "deployment": "PASS deployment units=3 funds=285 inventory=Base.rte/Pistol insufficient-funds=unchanged",
+    "callins": "PASS callins strike=PASS medic=PASS cover=PASS mines=PASS bomb=PASS turret=PASS orbital=PASS shield=PASS bubble=PASS mining=PASS weaponPod=PASS assaultSquad=PASS team1=PASS",
+}[suite]
 if not result_path.is_file():
-    print(f"Integration result file missing: {result_path}; log: {result_path.parent / 'headless-frontline.log'}", file=sys.stderr)
+    print(f"{suite} result file missing: {result_path}; log: {log}", file=sys.stderr)
     sys.exit(1)
 result = result_path.read_text(errors="replace").strip()
 if result != expected:
     detail = result if result else "<empty>"
-    print(f"Integration result mismatch: {detail}; log: {result_path.parent / 'headless-frontline.log'}", file=sys.stderr)
+    label = "Call-in suite blocked" if result.startswith("BLOCKED callins ") else "Integration result mismatch"
+    print(f"{label}: {detail}; log: {log}", file=sys.stderr)
     sys.exit(1)
 PY
+    printf '%s\n' "$result"
+    printf '%s\n' "Full engine log: $log"
+}
 
-printf '%s\n' 'FRONTLINE_HEADLESS_TEST_PASS deployment units=3 funds=285 inventory=Base.rte/Pistol insufficient-funds=unchanged'
-printf '%s\n' "Result file: $RESULT"
-printf '%s\n' "Full engine log: $LOG"
+for suite in $RUN_SUITES; do
+    run_suite "$suite"
+done

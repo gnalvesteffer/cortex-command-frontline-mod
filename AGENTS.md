@@ -6,7 +6,7 @@ This is a Cortex Command mod called "Frontline" that adds squad-based tactical g
 ## Testing Workflow
 1. **Syntax check**: Run `for f in Frontline.rte/*.lua; do luajit -b "$f" /dev/null || exit; done`.
 2. **Regression tests**: Run `luajit tests/test_ai.lua`, `luajit tests/test_units.lua`, `luajit tests/test_support_callins.lua`, `luajit tests/test_frontline.lua`, and `luajit tests/test_ui_layout.lua`.
-3. **Optional real-engine headless integration test**: Follow `.agents/skills/frontline-headless-tests/SKILL.md` and run `tests/run_headless_frontline.sh` when an isolated offscreen OpenGL environment and built engine are available. This complements, and does not replace, the mocked regression tests or manual in-game testing.
+3. **Optional real-engine headless integration tests**: Follow `.agents/skills/frontline-headless-tests/SKILL.md` and run `tests/run_headless_frontline.sh` for deployment and all 12 call-in branches when an isolated offscreen OpenGL environment and built engine are available. These complement, and do not replace, the mocked regression tests or manual in-game testing.
 4. **In-game test**: Launch `/var/home/xorberax/CortexCommand.linux/CortexCommand.AppImage` with the mod loaded, then verify the changed feature paths in-game.
 
 ## Key Files
@@ -25,7 +25,7 @@ Grenades use the Coalition.rte Frag Grenade (ActivatesWhenReleased=0) and its ti
 
 ## Call-In System
 Weapon Cache Pod is delivered by a landing pod, which opens and dispenses three random firearms from loaded-game HDFirearm presets, including exotic weapons. It is distinct from dropship-delivered payloads.
-- Assault Squad (index 30) uses the three highest-value loaded non-stock HDFirearm presets above the best stock weapon value, with qualified names as deterministic tie-breaks. It delivers three Coalition Light soldiers for 500 oz on a 60-second base cooldown; fewer than three qualifying weapons is an explicit unavailable error.
+- Assault Squad (index 30) delivers three 200-HP Coalition Light soldiers for 500 oz on a 60-second base cooldown. Its pool scans loaded HDFirearm presets, requires creation and positive value, excludes only qualified names ending in " Stationary", and selects every other loaded-module firearm above the best stock value; rotating windows reach the full pool, with best stock guns filling only if fewer than three eligible exotics exist.
 
 Key call-in types:
 - strike: Orbital Precision Strike

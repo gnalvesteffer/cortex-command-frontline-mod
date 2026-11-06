@@ -539,7 +539,9 @@ ai.funds=2000; bot.aiTemperature=0.001; bot:UpdateAI(); assert(#bot.pendingOrbit
 foe1.Pos=Vector(bot.outposts[3].x-260,565); foe2.Pos=Vector(bot.outposts[3].x-260,565)
 medic1.Health=100; medic2.Health=100; bot.pendingOrbitals={}; ai.funds=2000; ai.levels[14]=1; bot.aiPersonality="defensive"
 local oldDrops=#bot.pendingDrops; bot.aiTemperature=0.001; bot:UpdateAI(); assert(#bot.pendingDrops==oldDrops+1 and bot.pendingDrops[#bot.pendingDrops].kind=='turret' and ai.funds==1700)
-ai.minesTimer.ElapsedSimTimeMS=45000; ai.funds=2000; bot.aiTemperature=0.001; bot:UpdateAI(); assert(bot.pendingDrops[#bot.pendingDrops].kind=='mines' and bot.pendingDrops[#bot.pendingDrops].team==1 and ai.funds==1820)
+ai.minesTimer.ElapsedSimTimeMS=45000; ai.levels[22]=0 -- Isolate the Mines call-in from the defensive Cover preference.
+ai.funds=2000; bot.aiTemperature=0.001; bot:UpdateAI(); assert(bot.pendingDrops[#bot.pendingDrops].kind=='mines' and bot.pendingDrops[#bot.pendingDrops].team==1 and ai.funds==1820,
+    'AI expected mines, got '..tostring(bot.pendingDrops[#bot.pendingDrops] and bot.pendingDrops[#bot.pendingDrops].kind)..' funds='..tostring(ai.funds))
 print('AI can use bomb, orbital cannon, turret and mines through standard call-in rules')
 
 

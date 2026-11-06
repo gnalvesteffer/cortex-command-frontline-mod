@@ -286,8 +286,11 @@ do
         activity:UpdateAI()
         return ai.lastAIAction and ai.lastAIAction.target
     end
-    assert(researchDecision('',false)==3 and researchDecision('infantry',false)==2,
-        'observed infantry research should promote the income counter over bounty')
+    local balancedResearch=researchDecision('',false)
+    local infantryResearch=researchDecision('infantry',false)
+    assert(balancedResearch==3 and infantryResearch==2,
+        'observed infantry research should promote the income counter over bounty (balanced='
+            ..tostring(balancedResearch)..', infantry='..tostring(infantryResearch)..')')
     assert(researchDecision('',true)==18,'equipment research must be available to the AI')
 end
 
@@ -731,6 +734,120 @@ do
         'higher enemy density should beat the first sparse cluster')
 end
 print('AI targets safe feasible clusters with all three offensive supports')
+
+-- Personas commit to distinct research and support policies through real
+-- UpdateAI purchases and TeamCommander call-ins.
+do
+    local function researchChoice(personality)
+        local a=newBattle(); a.aiPersonality=personality; a.aiTemperature=0.001
+        a.settings.callins=false
+        local ai=a.teams[1]
+        ai.stats.deployed=3; ai.funds=1000; ai.timer.ElapsedSimTimeMS=0
+        ai.baseArmor=3; ai.turret={Health=100}; ai.turretLevel=2
+        for index=1,30 do ai.levels[index]=10 end
+        ai.levels[21]=0; ai.levels[22]=0
+        a:UpdateAI()
+        assert(ai.lastAIAction and ai.lastAIAction.kind=='research',
+            personality..' should make a real support-research purchase')
+        return ai.lastAIAction.target,1000-ai.funds
+    end
+    local artilleryResearch,artilleryCost=researchChoice('artillery')
+    local engineerResearch,engineerCost=researchChoice('engineer')
+    assert(artilleryResearch==21 and artilleryCost==600
+        and engineerResearch==22 and engineerCost==280,
+        'artillery and engineer personas should purchase their distinct preferred support unlocks')
+
+    local function supportChoice(personality)
+        local a=newBattle(); a.aiPersonality=personality; a.aiTemperature=0.001
+        a.settings.callins=true
+        local ai=a.teams[1]
+        ai.stats.deployed=3; ai.funds=420; ai.timer.ElapsedSimTimeMS=0
+        ai.baseArmor=3; ai.turret={Health=100}; ai.turretLevel=2
+        for index=1,30 do ai.levels[index]=10 end
+        ai.levels[21]=1; ai.levels[22]=1; ai.levels[24]=0; ai.levels[25]=0
+        for i=1,2 do
+            local ally=CreateAHuman('field squad'); ally.Team=1
+            ally.Pos=Vector(2100+i*10,565); MovableMan:AddActor(ally)
+        end
+        local fieldThreat=CreateAHuman('field threat'); fieldThreat.Team=0
+        fieldThreat.Pos=Vector(2450,565); MovableMan:AddActor(fieldThreat)
+        for i=1,2 do
+            local enemy=CreateAHuman('enemy concentration'); enemy.Team=0
+            enemy.Pos=Vector(3200+i*20,565); MovableMan:AddActor(enemy)
+        end
+        a:UpdateAI()
+        return a,ai
+    end
+    local artillery,artilleryAI=supportChoice('artillery')
+    assert(#artillery.pendingOrbitals==1 and #artillery.pendingDrops==0
+        and artilleryAI.funds==420-175 and artilleryAI.orbitalTimer.ElapsedSimTimeMS==0,
+        'artillery persona should choose a feasible researched orbital offense and pay its normal cost')
+    local engineer,engineerAI=supportChoice('engineer')
+    local fieldCover=engineer.pendingDrops[1]
+    assert(fieldCover and fieldCover.kind=='cover' and #engineer.pendingOrbitals==0
+        and fieldCover.target.name=='field squad' and fieldCover.target.x>=2100
+        and fieldCover.target.x<=2120 and fieldCover.target.groundY==600
+        and engineerAI.funds==420-140 and engineerAI.coverTimer.ElapsedSimTimeMS==0,
+        'engineer persona should choose safe squad-position Cover over the available offensive alternative')
+end
+
+-- Cover protects legal field squads at their measured ground position while
+-- retaining ordinary outpost support and all normal call-in gates.
+do
+    local function fieldCoverSetup(options)
+        options=options or {}
+        local a=newBattle(); a.aiPersonality='engineer'; a.aiTemperature=0.001
+        a.settings.callins=options.callins~=false
+        if options.matchTime then a.matchTimer.ElapsedSimTimeMS=options.matchTime end
+        local ai=a.teams[1]
+        ai.stats.deployed=3; ai.funds=options.funds or 400; ai.timer.ElapsedSimTimeMS=0
+        ai.baseArmor=3; ai.turret={Health=100}; ai.turretLevel=2
+        for index=1,30 do ai.levels[index]=10 end
+        ai.levels[22]=options.coverLevel==nil and 1 or options.coverLevel
+        if options.coverTimer then ai.coverTimer.ElapsedSimTimeMS=0 end
+        local x=options.x or 2100
+        if options.allies~=false then
+            for i=1,2 do
+                local ally=CreateAHuman('field squad'); ally.Team=1
+                ally.Health=options.deadAllies and 0 or 100
+                ally.Pos=Vector(x+i*10,565); MovableMan:AddActor(ally)
+            end
+        end
+        if options.enemy~=false then
+            local enemy=CreateAHuman('field threat'); enemy.Team=0
+            enemy.Pos=Vector(options.enemyX or x+350,565); MovableMan:AddActor(enemy)
+        end
+        if options.jammer then
+            a.jamFields[#a.jamFields+1]={x=x+15,team=0,timer=Timer(),duration=60000}
+        end
+        return a,ai
+    end
+    local a,ai=fieldCoverSetup()
+    a:UpdateAI()
+    local order=a.pendingDrops[1]
+    assert(order and order.kind=='cover' and order.target.name=='field squad'
+        and math.abs(order.target.x-2115)<=5 and order.target.groundY==600
+        and math.abs(order.target.x-a.outposts[2].x)>180
+        and ai.funds==260 and ai.coverTimer.ElapsedSimTimeMS==0,
+        'field Cover must use a legal ground-probed squad location and the ordinary cost/cooldown')
+    local function noFieldCover(a,reason)
+        a:UpdateAI()
+        for _,drop in ipairs(a.pendingDrops) do
+            assert(drop.kind~='cover',reason)
+        end
+    end
+    a=fieldCoverSetup({allies=false}); noFieldCover(a,'an enemy alone must not create a field Cover target')
+    a=fieldCoverSetup({deadAllies=true}); noFieldCover(a,'dead friendly units cannot anchor Cover')
+    a=fieldCoverSetup({enemyX=2160}); noFieldCover(a,'Cover must not drop into an enemy collision zone')
+    a=fieldCoverSetup({enemyX=3000}); noFieldCover(a,'Cover requires a threatened squad or a deployment wave')
+    a=fieldCoverSetup({x=700,enemyX=1050}); noFieldCover(a,'the enemy-base exclusion applies to field Cover')
+    a=fieldCoverSetup({jammer=true}); noFieldCover(a,'an enemy jammer blocks the field Cover target')
+    a=fieldCoverSetup({funds=379}); noFieldCover(a,'field Cover retains the AI call-in reserve requirement')
+    a=fieldCoverSetup({coverTimer=true}); noFieldCover(a,'field Cover respects its normal cooldown')
+    a=fieldCoverSetup({coverLevel=0}); noFieldCover(a,'field Cover still requires its research unlock')
+    a=fieldCoverSetup({callins=false}); noFieldCover(a,'disabled call-ins cannot create field Cover')
+    a=fieldCoverSetup({matchTime=14999}); noFieldCover(a,'the match grace period blocks field Cover')
+end
 
 -- The actual AI investment loop can buy both later support tiers.
 for _,index in ipairs({22,23}) do

@@ -36,12 +36,22 @@ function CreateHDFirearm(presetOrQualifiedName,module)
     table.insert(firearmCreates,{name=presetName,module=moduleName,qualified=qualified})
     if presetName=="Broken Firearm" then return nil end
     local values={["Base.rte/Pistol"]=5,["Coalition.rte/Shotgun"]=120,
-        ["Mod A.rte/Rifle A"]=400,["Mod C.rte/Rifle B"]=260,["Mod D.rte/Plasma Cannon"]=900}
+        ["Mod A.rte/Rifle A"]=400,["Mod C.rte/Rifle B"]=260,["Mod D.rte/Plasma Cannon"]=900,
+        ["Mod E.rte/Heavy Rifle"]=500,["Mod F.rte/Portable Vehicle Killer"]=650}
     return {name=presetName,module=moduleName,qualified=qualified,
         GetGoldValue=function() return values[(moduleName or "").."/"..(presetName or "")] or 0 end}
 end
-function CreateTDExplosive(n,m) return {name=n,module=m,GibThis=function(self) self.gibbed=true end,Activate=function(self) self.activated=true end} end
-function CreateMOSRotating(n,m) local item=entity(n); item.module=m; item.entityType='MOSRotating'; function item:GibThis() self.gibbed=true; self.ToDelete=true end; return item end
+function CreateTDExplosive(n,m)
+    local item={name=n,module=m,Activate=function(self) self.activated=true end}
+    function item:GibThis() self.gibbed=true; MovableMan:AddParticle(self) end
+    return item
+end
+function CreateMOSRotating(n,m)
+    nextId=nextId+1
+    local item=entity(n); item.module=m; item.entityType='MOSRotating'; item.UniqueID=nextId
+    function item:GibThis() self.gibbed=true; self.ToDelete=true end
+    return item
+end
 function CreateMOPixel(n,m) local item=entity(n); item.entityType='MOPixel'; return item end
 function CreateMOSParticle(n,m) return entity(n) end
 function ToTDExplosive(item) return item end
@@ -62,9 +72,14 @@ local presets={
     {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Coalition.rte/Shotgun" end},
     {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod C.rte/Rifle B" end},
     {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod D.rte/Plasma Cannon" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod E.rte/Heavy Rifle" end},
+    {ClassName="HDFirearm",GetModuleAndPresetName=function() return "Mod F.rte/Portable Vehicle Killer" end},
     {ClassName="MOSRotating",GetModuleAndPresetName=function() return "Base.rte/Not a firearm" end},
 }
-PresetMan={Modules=iterator({{Presets=iterator(presets)}})}
+PresetMan={Modules=iterator({
+    {Presets=iterator({presets[1],presets[2],presets[3],presets[4]})},
+    {Presets=iterator({presets[5],presets[6],presets[7],presets[8],presets[9],presets[1]})},
+})}
 local actors={}
 MovableMan={
     Actors=(function() local i=0; return function() i=i+1; if not actors[i] then i=0; return nil end; return actors[i] end end)(),
@@ -79,7 +94,14 @@ MovableMan={
     IsParticle=function(s,p) for _,item in ipairs(s.particles or {}) do if item==p then return not p.ToDelete end end; return false end,
 }
 MovableMan.Particles=(function() local i=0; return function() i=i+1; local items=MovableMan.particles or {}; if not items[i] then i=0; return nil end; return items[i] end end)()
+function MovableMan:FindObjectByUniqueID(id)
+    for _,item in ipairs(self.particles or {}) do if item.UniqueID==id then return item end end
+    for _,item in ipairs(self.items or {}) do if item.UniqueID==id then return item end end
+    for _,item in ipairs(actors) do if item.UniqueID==id then return item end end
+    return nil
+end
 function IsAHuman(a) return not a.vehicle and not a.ship end; function IsACrab(a) return a.vehicle==true end
+function ToMOSRotating(item) return item end
 local sceneObjects={}
 SceneMan={SceneWidth=5200, SceneHeight=800, CastMaterialRay=function() return false end, AddSceneObject=function(_,o) table.insert(sceneObjects,o) end, MovePointToGround=function(_,p) return Vector(p.X,600) end}; MusicMan={PlayDynamicSong=function() end}
 FrameMan={PlayerScreenWidth=640,IsHudDisabled=function() return false end,SetHudDisabled=function() end}; PrimitiveMan={DrawLinePrimitive=function() end,DrawTextPrimitive=function() end}
@@ -89,6 +111,10 @@ function Frontline:GetTeamDeathCount(team) return self.deathCounts[team] end
 assert(loadfile('Frontline.rte/Frontline.lua'))()
 local activity=setmetatable({deathCounts={[0]=0,[1]=0}}, {__index=Frontline})
 activity:StartActivity(); activity:StartBattle(); activity.matchTimer.ElapsedSimTimeMS=15000
+local loadedFirearms=activity:LoadedFirearmPresetNames()
+assert(#loadedFirearms==8 and loadedFirearms[1]=='Base.rte/Pistol'
+    and loadedFirearms[8]=='Mod F.rte/Portable Vehicle Killer',
+    'loaded firearm discovery must visit each module preset list, deduplicate qualified names and sort them')
 assert(activity.teams[0].counts[6]==3 and activity.teams[1].counts[6]==3, 'both teams must start with three Ronin Bandits selected')
 activity:UpdateAI()
 assert(activity:UnitCount(1)==3, 'AI first deployment must be exactly three Ronin Bandits')
@@ -182,16 +208,18 @@ assert(activity.commanders[0]:Research(28) and team.levels[28]==1)
 assert(activity.commanders[0]:Research(30) and team.levels[30]==1)
 assert(activity.commanders[0]:CallIn('weaponPod', 2))
 local podDelivery=activity.pendingDrops[#activity.pendingDrops]
-assert(podDelivery.kind=='weaponPod' and #podDelivery.weapons==3)
+local loadedPodPresets={}
+for _,name in ipairs(activity:LoadedFirearmPresetNames()) do loadedPodPresets[name]=true end
+assert(podDelivery.kind=='weaponPod' and #podDelivery.weaponPresets==3)
 local selectedPresets={}
-for _,weapon in ipairs(podDelivery.weapons) do
-    local key=weapon.module..'/'..weapon.name
-    assert(weapon.qualified and weapon.name~='Broken Firearm' and weapon.module and not selectedPresets[key],
-        'pod firearm must be created using the engine-qualified module/preset name')
-    selectedPresets[key]=true
+for _,presetName in ipairs(podDelivery.weaponPresets) do
+    local module,name=presetName:match("^([^/]+)/(.+)$")
+    assert(loadedPodPresets[presetName] and module and name~='Broken Firearm' and not selectedPresets[presetName],
+        'pod must keep distinct, qualified loaded firearm preset names until release')
+    selectedPresets[presetName]=true
 end
 podDelivery.timer.ElapsedSimTimeMS=3000; activity:UpdateCallIns()
-local pod=podDelivery.pod
+local pod=MovableMan:FindObjectByUniqueID(podDelivery.podID)
 assert(pod and pod.name=='Frontline Weapon Pod' and pod.Team==0 and pod.Vel.Y>0
     and pod:GetNumberValue('WeaponPodOpenDelayMs')==1000,'weapon call-in must spawn a falling physical pod')
 assert(loadfile('Frontline.rte/WeaponPod.lua'))()
@@ -230,22 +258,46 @@ local assaultDelivery=activity.pendingDrops[#activity.pendingDrops]
 assert(assaultDelivery.kind=='assaultSquad' and assaultDelivery.target==squadTarget
     and assaultDelivery.count==3 and assaultDelivery.delay==4000 and #assaultDelivery.squad==3,
     'Assault Squad must queue the standard three-person Coalition Light dropship payload at the requested position')
-local passengerIDs,selectedExotics={},{}
-for _,actor in ipairs(assaultDelivery.squad) do
-    local weapon=actor.inventory
-    assert(actor.name=='Soldier Light' and actor.module=='Coalition.rte' and actor.Team==0
-        and weapon and weapon.qualified and weapon.module~='Base.rte' and weapon.module~='Coalition.rte'
-        and weapon:GetGoldValue(0,1,1)>120,
-        'each Coalition Light passenger must carry a loaded-game exotic firearm above the stock weapon-value ceiling')
-    passengerIDs[actor.UniqueID]=true
-    selectedExotics[#selectedExotics+1]=weapon.module.."/"..weapon.name
+local eligiblePool=activity:AssaultSquadWeaponPresets()
+assert(table.concat(eligiblePool,",")=="Mod D.rte/Plasma Cannon,Mod F.rte/Portable Vehicle Killer,Mod E.rte/Heavy Rifle,Mod A.rte/Rifle A,Mod C.rte/Rifle B",
+    'all loaded spawnable exotic firearms above the stock value ceiling should remain eligible, not only the top three')
+local eligibleNames={}
+for _,name in ipairs(eligiblePool) do eligibleNames[name]=true end
+local function assertAssaultLoadout(squad)
+    local names={}
+    for _,actor in ipairs(squad) do
+        local weapon=actor.inventory
+        local qualifiedName=weapon and (weapon.module.."/"..weapon.name)
+        assert(actor.name=='Soldier Light' and actor.module=='Coalition.rte' and actor.Team==0
+            and actor.Health==200 and actor.MaxHealth==200
+            and weapon and weapon.Team==0 and weapon.qualified and eligibleNames[qualifiedName]
+            and weapon:GetGoldValue(0,1,1)>120,
+            'each Coalition Light passenger must carry a team-owned, loaded upper-tier firearm at 200 HP')
+        names[#names+1]=qualifiedName
+    end
+    return names
 end
-assert(table.concat(selectedExotics,",")=="Mod D.rte/Plasma Cannon,Mod A.rte/Rifle A,Mod C.rte/Rifle B",
-    'Assault Squad must deterministically select the three highest-value loaded exotic firearms')
+local firstNames=assertAssaultLoadout(assaultDelivery.squad)
+assert(table.concat(firstNames,",")=="Mod D.rte/Plasma Cannon,Mod F.rte/Portable Vehicle Killer,Mod E.rte/Heavy Rifle",
+    'first Assault Squad sample should remain value-ranked and deterministic')
+local passengerIDs={}
+for _,actor in ipairs(assaultDelivery.squad) do passengerIDs[actor.UniqueID]=true end
 team.assaultSquadTimer.ElapsedSimTimeMS=59999
 local coolingDown,cooldownMessage=activity.commanders[0]:CallIn('assaultSquad',squadTarget)
 assert(not coolingDown and cooldownMessage=='Call-in cooling down' and team.funds==fundsBeforeSquad-500,
     'Assault Squad must remain unavailable until its full 60,000 ms cooldown elapses')
+team.assaultSquadTimer.ElapsedSimTimeMS=60000
+assert(activity.commanders[0]:CallIn('assaultSquad',squadTarget),
+    'a second ready call should construct a new varied Assault Squad sample')
+local secondDelivery=activity.pendingDrops[#activity.pendingDrops]
+local secondNames=assertAssaultLoadout(secondDelivery.squad)
+local selectedNames={}
+for _,name in ipairs(firstNames) do selectedNames[name]=true end
+for _,name in ipairs(secondNames) do selectedNames[name]=true end
+local reachableCount=0
+for _,name in ipairs(eligiblePool) do if selectedNames[name] then reachableCount=reachableCount+1 end end
+assert(reachableCount==#eligiblePool and table.concat(secondNames,",")=="Mod A.rte/Rifle A,Mod C.rte/Rifle B,Mod D.rte/Plasma Cannon",
+    'rotating three-weapon samples must make every eligible loaded exotic reachable across calls')
 assaultDelivery.timer.ElapsedSimTimeMS=4000
 activity:UpdateCallIns()
 local assaultShip=assaultDelivery.ship
@@ -261,18 +313,35 @@ assert(#delivered==3 and assaultShip.hatchOpen and assaultShip.openedWithCargo==
     'normal dropship arrival must deliver and open with all three squad actors extracted')
 for _,actor in ipairs(delivered) do
     assert(actor.Team==0 and actor.module=='Coalition.rte' and actor.Pos.Y==565
+        and actor.Health==200 and actor.MaxHealth==200
         and actor.inventory and actor.inventory.module~='Base.rte' and actor.inventory.module~='Coalition.rte',
-        'delivered Coalition Light actors must retain their exotic firearms and land on the legal target')
+        'each delivered soldier must retain 200 HP and its exotic firearm after dropship delivery')
 end
-local savedAssaultPresets,savedLoadedPresets=activity.assaultWeaponPresets,activity.weaponPodPresets
+local savedAssaultPresets,savedLoadedPresets,savedRotation=
+    activity.assaultWeaponPresets,activity.weaponPodPresets,activity.assaultWeaponRotation
+activity.assaultWeaponPresets=nil
+activity.weaponPodPresets={'Mod F.rte/Portable Vehicle Killer','Mod A.rte/Rifle A','Mod C.rte/Rifle B'}
+local portableNamedPool=activity:AssaultSquadWeaponPresets()
+local hasPortableNamed=false
+for _,name in ipairs(portableNamedPool or {}) do
+    if name=='Mod F.rte/Portable Vehicle Killer' then hasPortableNamed=true end
+end
+assert(hasPortableNamed,'portable infantry firearms remain eligible when their preset name mentions a vehicle')
+activity.assaultWeaponPresets=nil
+activity.assaultWeaponRotation=1
+activity.weaponPodPresets={'Mod A.rte/Rifle A','Mod C.rte/Rifle B','Base.rte/Pistol','Coalition.rte/Shotgun'}
+local fallbackPresets=activity:AssaultSquadWeaponPresets()
+assert(table.concat(fallbackPresets,",")=="Mod A.rte/Rifle A,Mod C.rte/Rifle B,Coalition.rte/Shotgun",
+    'only a short eligible exotic pool may be filled with the best available stock firearm')
 activity.assaultWeaponPresets=nil
 activity.weaponPodPresets={'Base.rte/Pistol','Coalition.rte/Shotgun'}
-local missingExotics,missingExoticMessage=activity:AssaultSquadWeaponPresets()
-assert(not missingExotics and missingExoticMessage:find('three loaded exotic firearms',1,true),
-    'Assault Squad must report when fewer than three high-tier exotic firearms are loaded')
+local missingFirearms,missingFirearmMessage=activity:AssaultSquadWeaponPresets()
+assert(not missingFirearms and missingFirearmMessage:find('three loaded firearms',1,true),
+    'Assault Squad must reject fewer than three loaded spawnable firearms')
 activity.assaultWeaponPresets=savedAssaultPresets
+activity.assaultWeaponRotation=savedRotation
 activity.weaponPodPresets=savedLoadedPresets
-print('Assault Squad research, legal targeting, cost/cooldown, exotic loadout and standard dropship delivery verified')
+print('Assault Squad research, legal targeting, rotating loaded arsenal, 200 HP, cost/cooldown and dropship delivery verified')
 
 local ai=activity.teams[1]
 local oldFunds,oldAuto,oldTurretLevel,oldBaseArmor,oldTurret=ai.funds,ai.auto,ai.turretLevel,ai.baseArmor,ai.turret
@@ -308,7 +377,7 @@ for index=dropsBeforeAI+1,#activity.pendingDrops do
     local order=activity.pendingDrops[index]
     if order.kind=='weaponPod' and order.team==1 then aiPod=order end
 end
-assert(aiPod and aiPod.target==supplyPost and #aiPod.weapons==3 and aiPod.cost>0
+assert(aiPod and aiPod.target==supplyPost and #aiPod.weaponPresets==3 and aiPod.cost>0
     and ai.funds<=5000-aiPod.cost,
     'AI should pay the configured pod cost and target a three-firearm cache at an occupied friendly post')
 for _,actor in ipairs(actors) do

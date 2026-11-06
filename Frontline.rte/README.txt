@@ -44,12 +44,25 @@ Light Digger; it seeks deposits and digs. The Support Jammer's two levels
 increase its duration.
 
 Assault Squad research unlocks a 500 oz call-in with a 60-second base cooldown.
-A dropship delivers three Coalition Light soldiers carrying the three
-highest-value loaded non-stock HDFirearm presets whose gold value exceeds the
-best stock firearm; qualified module/preset names break ties. It accepts any
-position permitted by the existing support-target rules. If fewer than three
-exotic firearms qualify, the call-in reports that requirement rather than
-substituting ordinary guns.
+Its dropship delivers three Coalition Light soldiers at 200 current and maximum
+health. The eligible arsenal scans HDFirearm presets in every loaded module,
+then requires each qualified preset to be creatable with positive game gold
+value. Only qualified preset names ending in " Stationary" are excluded.
+Base.rte, Coalition.rte, Browncoats.rte, Dummy.rte, Ronin.rte and Techion.rte
+form the stock module set. Firearms from all other loaded modules above the
+best stock value are eligible, sorted by descending value and qualified name.
+Three consecutive eligible weapons are sampled in a rotating window per call,
+making the full pool reachable. Best stock firearms fill slots only if fewer
+than three eligible exotics exist. The selected qualified name is stored per
+passenger and reattached after dropship extraction if cargo transfer lost it.
+
+
+Enemy AI personas use distinct research priorities and support preferences.
+Offensive strikes, carpet bombs and orbital fire are considered only for
+researched, affordable, cooled-down legal enemy concentrations with sufficient
+friendly clearance. Cover can also target a threatened off-post friendly squad:
+the dropship location is grounded at the squad's field position, away from
+nearby enemies, the opposing base exclusion and active enemy jammers.
 
 Cover and Mines research each have three levels, delivering 3, 4 or 5
 payloads per call-in. Cover research costs 280 / 560 / 840 oz; Mines costs

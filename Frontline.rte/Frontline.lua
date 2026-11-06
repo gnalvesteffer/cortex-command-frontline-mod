@@ -112,16 +112,35 @@ CONFIG.matchSetup={
 CONFIG.ai={
     personaOrder={"aggressive","defensive","economic","balanced","strategic","raider","guardian","artillery","engineer","vanguard"},
     personas={
-        aggressive={archetype="aggressive",bias={advance=5,rush=8}},
-        defensive={archetype="defensive",bias={defend=5,fortify=38}},
-        economic={archetype="economic",bias={mine=8,research=4}},
-        balanced={archetype="balanced",bias={deployment=3,advance=2}},
-        strategic={archetype="balanced",bias={regroup=25,research=12},research={29,15}},
-        raider={archetype="aggressive",bias={rush=22,advance=12,offense=5}},
-        guardian={archetype="defensive",bias={defend=18,baseUpgrade=20,heal=8}},
-        artillery={archetype="balanced",bias={offense=32,intercept=10},research={21,24,25}},
-        engineer={archetype="economic",bias={fortify=30,mine=12},research={22,23,26}},
-        vanguard={archetype="aggressive",bias={deployment=24,advance=8},batch=4,research={29,4}},
+        aggressive={archetype="aggressive",bias={advance=5,rush=8},
+            research={4,5,6,21,24,25,30},researchBias={[21]=8,[24]=12,[25]=14,[30]=3},
+            support={strike=8,bomb=10,orbital=7,assaultSquad=4,weaponPod=2,cover=-2,mines=0,turret=-2}},
+        defensive={archetype="defensive",bias={defend=5,fortify=38},
+            research={22,23,26,13,27,11,12},researchBias={[22]=8,[23]=8,[26]=10,[13]=6,[27]=10,[11]=4},
+            support={cover=10,mines=7,turret=9,shield=7,bubble=8,medic=6,strike=-2,bomb=-3,orbital=-2}},
+        economic={archetype="economic",bias={mine=8,research=4},
+            research={2,1,14,28,29,15},researchBias={[2]=10,[1]=8,[14]=12,[28]=7,[29]=5},
+            support={mining=12,weaponPod=5,assaultSquad=2,medic=2,cover=1,mines=1,turret=0}},
+        balanced={archetype="balanced",bias={deployment=3,advance=2},
+            support={strike=2,bomb=2,orbital=2,cover=2,mines=2,turret=2,medic=2,weaponPod=2,assaultSquad=2}},
+        strategic={archetype="balanced",bias={regroup=25,research=12},
+            research={29,15,28,30,17},researchBias={[29]=9,[15]=5,[28]=8,[30]=9,[17]=4},
+            support={weaponPod=7,assaultSquad=8,medic=4,bubble=3,cover=2,mines=2,strike=2,bomb=2,orbital=2}},
+        raider={archetype="aggressive",bias={rush=22,advance=12,offense=5},
+            research={21,24,25,30,4,5},researchBias={[21]=9,[24]=12,[25]=16,[30]=5},
+            support={strike=12,bomb=16,orbital=10,assaultSquad=5,weaponPod=2,cover=-3,mines=-2,turret=-3}},
+        guardian={archetype="defensive",bias={defend=18,baseUpgrade=20,heal=8},
+            research={22,23,26,13,27,11,12},researchBias={[22]=7,[23]=8,[26]=10,[13]=9,[27]=12,[11]=6},
+            support={cover=9,mines=8,turret=12,shield=12,bubble=11,medic=9,strike=-3,bomb=-4,orbital=-3}},
+        artillery={archetype="balanced",bias={offense=32,intercept=10},
+            research={21,24,25},researchBias={[21]=14,[24]=16,[25]=18},
+            support={strike=13,bomb=16,orbital=20,cover=-2,mines=-2,turret=-3,weaponPod=1}},
+        engineer={archetype="economic",bias={fortify=30,mine=12},
+            research={22,23,26},researchBias={[22]=14,[23]=16,[26]=18,[13]=8,[27]=8},
+            support={cover=14,mines=15,turret=17,shield=7,bubble=7,medic=4,strike=-4,bomb=-5,orbital=-4}},
+        vanguard={archetype="aggressive",bias={deployment=24,advance=8},batch=4,
+            research={29,4,30,11,12},researchBias={[29]=8,[4]=7,[30]=9,[11]=4},
+            support={assaultSquad=15,medic=8,weaponPod=5,strike=4,bomb=4,orbital=4,cover=2,mines=1}},
     },
     utility={
         defend={base=35,threat=14,ally=-5,defensive=12,pressured=12},
@@ -201,6 +220,7 @@ CONFIG.ai={
         brainHealthMargin=25,
         singleLevelResearchTarget=1,
         researchRankPenalty=0.6,
+        tacticalCostBurden=4,
         -- Persona count is derived from personaOrder.
         baseRushVerticalRadius=300,
         goalSwitchMargin=12,
@@ -209,8 +229,8 @@ CONFIG.ai={
         regroupUtility=45,
         decisionInterval={minimum=1000,base=3000,difficultyScale=30,defaultDifficulty=50},
         emergencyCheckInterval=250,
-        tacticalCostBurden=5,
         bubbleProtectionUtility=6,
+        fieldCoverThreatRadius=420,fieldCoverEnemyClearance=180,fieldCoverUtility=8,
     },
 }
 CONFIG.unitSurcharges={
@@ -224,7 +244,7 @@ CONFIG.supportEffects={
     dropCountByLevel={cover={3,4,5},mines={3,4,5}},
     orbital={fragments=16},
     weaponPod={count=3,openDelayMs=1000,descentVelocity=45,releaseSpread=30,releaseHorizontalVelocity=10,releaseVerticalVelocity=4},
-    assaultSquad={count=3},
+    assaultSquad={count=3,health=200,maxHealth=200},
     bombRun={count=3,targetLead=192,height=400,flightDistance=360,speed=120,
         dropClearance=12,intervalMs=800,horizontalVelocityMultiplier=0,verticalVelocity=20,shipRadiusFallback=50},
     delivery={approachMs=2000,shipRadiusFallback=50,dropClearance=12,releaseSpread=16,releaseVerticalVelocity=10,
@@ -322,7 +342,12 @@ local function scoreAIAction(action, personality, pressured)
         if archetype=="aggressive" then score=score+weights.aggressive end
     elseif action.kind=="deployment" or action.kind=="research" or action.kind=="baseUpgrade" then
         if weights[archetype] then score=score+weights[archetype] end
-        if action.rank then score=score-math.max(0,action.rank-1)*CONFIG.ai.tuning.researchRankPenalty end
+        if action.rank then
+            score=score-math.max(0,action.rank-1)*CONFIG.ai.tuning.researchRankPenalty
+        end
+        if action.kind=="research" and profile.researchBias then
+            score=score+(profile.researchBias[action.purchase] or 0)
+        end
         if weights.costBurden and action.cost and action.availableFunds and action.availableFunds>0 then
             score=score-(action.cost/action.availableFunds)*weights.costBurden
         end
@@ -457,6 +482,7 @@ function Frontline:StartActivity()
     self.originalHudDisabled=FrameMan:IsHudDisabled(0)==true
     self.weaponPodPresets=nil
     self.assaultWeaponPresets=nil
+    self.assaultWeaponRotation=1
     local ok,method=pcall(function() return PrimitiveMan.DrawScreenBoxFillPrimitive end)
     self.screenUI=ok and method~=nil
     self.teams = {[0]=freshTeam(), [1]=freshTeam()}
@@ -1402,7 +1428,7 @@ function Frontline:CreateSupportShip(team,kind,count,x,startY,passengers)
     return ship
 end
 
--- Cache qualified names from every loaded firearm preset, including exotic mod weapons.
+-- Discover qualified HDFirearm names from every loaded module's preset list.
 function Frontline:LoadedFirearmPresetNames()
     if not self.weaponPodPresets then
         local presets,seen={},{}
@@ -1427,53 +1453,69 @@ function Frontline:LoadedFirearmPresetNames()
     return self.weaponPodPresets
 end
 
--- Rank non-stock HDFirearm presets by their loaded-game gold value. Only the
--- three highest-value mod firearms above the stock ceiling qualify; ties use
--- their qualified names so every match selects the same loadout.
+-- Cache every actually creatable, carriable HDFirearm outside stock modules whose
+-- value exceeds the best available stock firearm. Only use stock weapons to
+-- fill squad slots when the eligible exotic pool is smaller than the squad.
 function Frontline:AssaultSquadWeaponPresets()
     if self.assaultWeaponPresets then return self.assaultWeaponPresets end
     local stockModules={
         ["Base.rte"]=true,["Coalition.rte"]=true,["Browncoats.rte"]=true,
-        ["Dummy.rte"]=true,["Ronin.rte"]=true,["Techion.rte"]=true,["Frontline.rte"]=true,
+        ["Dummy.rte"]=true,["Ronin.rte"]=true,["Techion.rte"]=true,
     }
-    local candidates,stockCeiling={},0
+    local candidates,stockCandidates,stockCeiling={}, {},0
     for _,name in ipairs(self:LoadedFirearmPresetNames()) do
         local moduleName=name:match("^([^/]+)/")
-        local probe=CreateHDFirearm(name)
-        if probe then
-            local value=type(probe.GetGoldValue)=="function" and probe:GetGoldValue(0,1,1) or nil
-            if moduleName and type(value)=="number" and value>0 then
-                if stockModules[moduleName] then
-                    stockCeiling=math.max(stockCeiling,value)
-                else
-                    candidates[#candidates+1]={name=name,value=value}
+        local carriable=not string.lower(name):match("%sstationary$")
+        if carriable then
+            local probe=CreateHDFirearm(name)
+            if probe then
+                local value=type(probe.GetGoldValue)=="function" and probe:GetGoldValue(0,1,1) or nil
+                if moduleName and type(value)=="number" and value>0 then
+                    local candidate={name=name,value=value}
+                    if stockModules[moduleName] then
+                        stockCeiling=math.max(stockCeiling,value)
+                        stockCandidates[#stockCandidates+1]=candidate
+                    else
+                        candidates[#candidates+1]=candidate
+                    end
                 end
+                probe.ToDelete=true
             end
-            probe.ToDelete=true
         end
     end
-    table.sort(candidates,function(a,b)
+    local function rank(a,b)
         if a.value==b.value then return a.name<b.name end
         return a.value>b.value
-    end)
+    end
+    table.sort(candidates,rank)
+    table.sort(stockCandidates,rank)
     local selected={}
     for _,candidate in ipairs(candidates) do
-        if candidate.value<=stockCeiling then break end
-        selected[#selected+1]=candidate.name
-        if #selected==CONFIG.supportEffects.assaultSquad.count then break end
+        if candidate.value>stockCeiling then selected[#selected+1]=candidate.name end
     end
-    if #selected~=CONFIG.supportEffects.assaultSquad.count then
-        return nil,"Assault Squad requires three loaded exotic firearms above stock weapon value"
+    if #selected<CONFIG.supportEffects.assaultSquad.count then
+        for _,candidate in ipairs(stockCandidates) do
+            if #selected==CONFIG.supportEffects.assaultSquad.count then break end
+            selected[#selected+1]=candidate.name
+        end
+    end
+    if #selected<CONFIG.supportEffects.assaultSquad.count then
+        return nil,"Assault Squad requires three loaded firearms that can be carried"
     end
     self.assaultWeaponPresets=selected
+    self.assaultWeaponRotation=1
     return selected
 end
 
 function Frontline:CreateAssaultSquadPayload(team)
     local presets,errorMessage=self:AssaultSquadWeaponPresets()
     if not presets then return nil,errorMessage end
-    local squad={}
-    for index,name in ipairs(presets) do
+    local count=CONFIG.supportEffects.assaultSquad.count
+    local start=self.assaultWeaponRotation or 1
+    local squad,selected={},{ }
+    for index=1,count do
+        local presetIndex=(start+index-2)%#presets+1
+        local name=presets[presetIndex]
         local actor=CreateAHuman("Soldier Light","Coalition.rte")
         local weapon=CreateHDFirearm(name)
         if not actor or not weapon then
@@ -1486,30 +1528,36 @@ function Frontline:CreateAssaultSquadPayload(team)
         actor:AddInventoryItem(weapon)
         actor.Team=team
         actor.HFlipped=team==1
+        actor.MaxHealth=CONFIG.supportEffects.assaultSquad.maxHealth
+        actor.Health=CONFIG.supportEffects.assaultSquad.health
         squad[index]=actor
+        selected[index]=name
     end
-    return squad
+    self.assaultWeaponRotation=(start-1+count)%#presets+1
+    return squad,selected
 end
+
 
 local function discardAssaultSquadPayload(squad)
     for _,actor in ipairs(squad or {}) do actor.ToDelete=true end
 end
 
+-- Keep preset names in the pending order; live HDFirearms are created at opening.
 function Frontline:CreateWeaponPodPayload()
-    local presets=self:LoadedFirearmPresetNames()
     local available={}
-    for i,name in ipairs(presets) do available[i]=name end
-    local weapons={}
-    for _=1,CONFIG.supportEffects.weaponPod.count do
-        local weapon
-        while #available>0 and not weapon do
-            local name=table.remove(available,math.random(#available))
-            weapon=CreateHDFirearm(name)
+    for _,name in ipairs(self:LoadedFirearmPresetNames()) do
+        local probe=CreateHDFirearm(name)
+        if probe then
+            probe.ToDelete=true
+            available[#available+1]=name
         end
-        if not weapon then return nil,"No loaded firearm presets are available" end
-        table.insert(weapons,weapon)
     end
-    return weapons
+    local presets={}
+    for _=1,CONFIG.supportEffects.weaponPod.count do
+        if #available==0 then return nil,"No loaded firearm presets are available" end
+        table.insert(presets,table.remove(available,math.random(#available)))
+    end
+    return presets
 end
 
 function Frontline:DropWeaponPod(order)
@@ -1521,23 +1569,46 @@ function Frontline:DropWeaponPod(order)
     pod.Team=order.team
     pod:SetNumberValue("WeaponPodOpenDelayMs",config.openDelayMs)
     MovableMan:AddParticle(pod)
-    order.pod=pod
+    order.podID=pod.UniqueID
     return true
 end
 
-function Frontline:ReleaseWeaponPod(order)
+-- Detect physical ground contact as well as the scripted collision signal so
+-- a dropped MOSRotating still opens if its callback is not dispatched.
+local function weaponPodHasLanded(order,pod)
+    if pod:GetNumberValue("WeaponPodLanded")>0 then return true end
+    if pod.Vel.Y<0 or type(order.target.groundY)~="number" then return false end
+    local radius=pod.Radius or 0
+    if pod.Pos.Y+radius<order.target.groundY-1 then return false end
+    pod:SetNumberValue("WeaponPodLanded",1)
+    pod.Vel=Vector(0,0)
+    return true
+end
+
+function Frontline:ReleaseWeaponPod(order,pod)
     local config=CONFIG.supportEffects.weaponPod
-    local ground=SceneMan:MovePointToGround(Vector(order.target.x,0),0,CONFIG.map.outposts.groundProbe)
-    for index,weapon in ipairs(order.weapons) do
-        local spread=index-(#order.weapons+1)/2
+    local ground=SceneMan:MovePointToGround(Vector(order.target.x,0),order.team,CONFIG.map.outposts.groundProbe)
+    local weapons={}
+    for _,presetName in ipairs(order.weaponPresets) do
+        local weapon=CreateHDFirearm(presetName)
+        if not weapon then
+            for _,created in ipairs(weapons) do created.ToDelete=true end
+            return false
+        end
+        weapons[#weapons+1]=weapon
+    end
+    order.weapons=weapons
+    for index,weapon in ipairs(weapons) do
+        local spread=index-(#weapons+1)/2
         weapon.Pos=Vector(order.target.x+spread*config.releaseSpread,ground.Y-12)
         weapon.Vel=Vector(spread*config.releaseHorizontalVelocity,config.releaseVerticalVelocity)
         weapon.Team=order.team
         weapon.ToSettle=true
         MovableMan:AddItem(weapon)
     end
-    order.pod:SetNumberValue("WeaponPodOpened",1)
-    order.pod:GibThis()
+    pod:SetNumberValue("WeaponPodOpened",1)
+    pod:GibThis()
+    return true
 end
 
 
@@ -1653,22 +1724,22 @@ function TeamCommander:CallIn(kind,index)
             delay=CONFIG.CALLIN_MEDIC_DELAY_MS,startY=startY,releaseY=releaseY,count=count,cost=cost})
         self:Notify((team==0 and "Your" or "Enemy").." medical robot dropship inbound ("..math.ceil(CONFIG.CALLIN_MEDIC_DELAY_MS/1000).."s)!")
     elseif kind=="weaponPod" then
-        local weapons,errorMessage=self:CreateWeaponPodPayload()
-        if not weapons then return false,errorMessage end
+        local weaponPresets,errorMessage=self:CreateWeaponPodPayload()
+        if not weaponPresets then return false,errorMessage end
         local ground=SceneMan:MovePointToGround(Vector(outpost.x,0),0,CONFIG.map.outposts.groundProbe)
         local startY=math.max(CONFIG.map.cover.minimumShipHeight,ground.Y-CONFIG.map.cover.startOffset)
         table.insert(self.pendingDrops,{team=team,kind="weaponPod",target=outpost,timer=Timer(),
-            delay=CONFIG.CALLIN_WEAPON_POD_DELAY_MS,startY=startY,cost=cost,weapons=weapons})
+            delay=CONFIG.CALLIN_WEAPON_POD_DELAY_MS,startY=startY,cost=cost,weaponPresets=weaponPresets})
         self:Notify((team==0 and "Your" or "Enemy").." weapon cache pod inbound!")
     elseif kind=="assaultSquad" then
-        local squad,errorMessage=self:CreateAssaultSquadPayload(team)
-        if not squad then return false,errorMessage end
+        local squad,weaponPresets=self:CreateAssaultSquadPayload(team)
+        if not squad then return false,weaponPresets end
         local ground=SceneMan:MovePointToGround(Vector(outpost.x,0),0,CONFIG.map.outposts.groundProbe)
         local startY=math.max(CONFIG.map.cover.minimumShipHeight,ground.Y-CONFIG.map.cover.startOffset)
         table.insert(self.pendingDrops,{team=team,kind=kind,target=outpost,timer=Timer(),
             delay=CONFIG.CALLIN_ASSAULT_SQUAD_DELAY_MS,startY=startY,
             releaseY=math.max(startY,ground.Y-CONFIG.map.cover.releaseOffset),
-            count=#squad,cost=cost,squad=squad})
+            count=#squad,cost=cost,squad=squad,weaponPresets=weaponPresets})
         self:Notify((team==0 and "Your" or "Enemy").." assault squad dropship inbound!")
     end
     t.funds=t.funds-cost
@@ -1705,7 +1776,7 @@ function Frontline:UpdateCallIns()
             if not order.timer:IsPastSimMS(order.delay) then
                 local remaining=math.max(0,math.ceil((order.delay-order.timer.ElapsedSimTimeMS)/1000))
                 self:DrawCallInMarker(order.target,order.team,"WEAPON CACHE POD IN "..remaining.."s")
-            elseif not order.pod then
+            elseif not order.podID then
                 if self:ShieldBlocks(order.target,order.team) then
                     self.teams[order.team].funds=self.teams[order.team].funds+order.cost
                     self:Notify("Jammer intercepted weapon pod; cost refunded")
@@ -1717,22 +1788,31 @@ function Frontline:UpdateCallIns()
                 else
                     self:Notify("Weapon cache pod descending at "..order.target.name)
                 end
-            elseif order.pod.ToDelete then
-                self:Notify("Weapon cache pod destroyed before opening")
-                table.remove(self.pendingDrops,i)
-            elseif self:ShieldBlocks(order.target,order.team) then
-                order.pod.ToDelete=true
-                self.teams[order.team].funds=self.teams[order.team].funds+order.cost
-                self:Notify("Jammer intercepted weapon pod; cost refunded")
-                table.remove(self.pendingDrops,i)
-            elseif order.pod:GetNumberValue("WeaponPodLanded")>0 then
-                if not order.landedTimer then
-                    order.landedTimer=Timer()
-                    self:DrawCallInMarker(order.target,order.team,"WEAPON CACHE POD OPENING")
-                elseif order.landedTimer:IsPastSimMS(config.openDelayMs) then
-                    self:ReleaseWeaponPod(order)
-                    self:Notify("Weapon cache pod opened at "..order.target.name)
+            else
+                local object=MovableMan:FindObjectByUniqueID(order.podID)
+                local pod=object and ToMOSRotating(object) or nil
+                if not pod or pod.ToDelete then
+                    self:Notify("Weapon cache pod destroyed before opening")
                     table.remove(self.pendingDrops,i)
+                elseif self:ShieldBlocks(order.target,order.team) then
+                    pod.ToDelete=true
+                    self.teams[order.team].funds=self.teams[order.team].funds+order.cost
+                    self:Notify("Jammer intercepted weapon pod; cost refunded")
+                    table.remove(self.pendingDrops,i)
+                elseif weaponPodHasLanded(order,pod) then
+                    if not order.landedTimer then
+                        order.landedTimer=Timer()
+                        self:DrawCallInMarker(order.target,order.team,"WEAPON CACHE POD OPENING")
+                    elseif order.landedTimer:IsPastSimMS(config.openDelayMs) then
+                        if self:ReleaseWeaponPod(order,pod) then
+                            self:Notify("Weapon cache pod opened at "..order.target.name)
+                        else
+                            pod.ToDelete=true
+                            self.teams[order.team].funds=self.teams[order.team].funds+order.cost
+                            self:Notify("Weapon cache firearms unavailable; cost refunded")
+                        end
+                        table.remove(self.pendingDrops,i)
+                    end
                 end
             end
         elseif order.kind=="bomb" then
@@ -1858,6 +1938,29 @@ function Frontline:UpdateCallIns()
                     ship:OpenHatch()
                     for n,cargo in ipairs(passengers) do
                         local actor=ToActor(cargo)
+                        local expectedWeapon=order.weaponPresets and order.weaponPresets[n]
+                        local hasExpectedWeapon=false
+                        local equipped=actor.EquippedItem
+                        if equipped and equipped.ModuleName.."/"..equipped.PresetName==expectedWeapon then
+                            hasExpectedWeapon=true
+                        end
+                        if not hasExpectedWeapon then
+                            if actor.Inventory then
+                                for item in actor.Inventory do
+                                    if item.ModuleName.."/"..item.PresetName==expectedWeapon then
+                                        hasExpectedWeapon=true
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                        if expectedWeapon and not hasExpectedWeapon then
+                            local weapon=CreateHDFirearm(expectedWeapon)
+                            if weapon then
+                                weapon.Team=order.team
+                                actor:AddInventoryItem(weapon)
+                            end
+                        end
                         local spread=n-(#passengers+1)/2
                         actor.Pos=Vector(target.x+spread*delivery.medicSpread,ground.Y-(actor.Height or 70)/2)
                         actor.Vel=Vector(spread*delivery.otherHorizontalVelocity,delivery.releaseVerticalVelocity)
@@ -2602,6 +2705,7 @@ function Frontline:UpdateAI()
             context.target=target
             context.cost=option.cost
             context.availableFunds=ai.funds
+            context.utility=(context.utility or 0)+(profile.support and profile.support[callin] or 0)
             actions[#actions+1]=context
         end
     end
@@ -2706,7 +2810,60 @@ function Frontline:UpdateAI()
         end
     end
 
+    -- Cover drops can also protect a separated field squad. Anchor the legal
+    -- delivery point to the squad's ground position, not a nearby outpost.
+    local fieldCoverTargets={}
+    for _,candidate in ipairs(fieldActors) do
+        if candidate.Team==team and candidate.Pos then
+            local alreadyGrouped=false
+            for _,target in ipairs(fieldCoverTargets) do
+                if math.abs(target.x-candidate.Pos.X)<=aiTuning.enemyClusterRadius
+                    and math.abs(target.groundY-candidate.Pos.Y)<=aiTuning.enemyClusterVerticalRadius then
+                    alreadyGrouped=true
+                    break
+                end
+            end
+            if not alreadyGrouped then
+                local allies,centerX,closestEnemy=0,0,math.huge
+                for _,actor in ipairs(fieldActors) do
+                    if actor.Pos then
+                        local dx=actor.Pos.X-candidate.Pos.X
+                        local dy=actor.Pos.Y-candidate.Pos.Y
+                        if actor.Team==team then
+                            if math.abs(dx)<=aiTuning.enemyClusterRadius
+                                and math.abs(dy)<=aiTuning.enemyClusterVerticalRadius then
+                                allies=allies+1
+                                centerX=centerX+actor.Pos.X
+                            end
+                        elseif math.abs(dx)<=aiTuning.fieldCoverThreatRadius
+                            and math.abs(dy)<=aiTuning.enemyClusterVerticalRadius then
+                            closestEnemy=math.min(closestEnemy,math.sqrt(dx*dx+dy*dy))
+                        end
+                    end
+                end
+                if allies>=aiTuning.enemyClusterMinimum
+                    and (closestEnemy<=aiTuning.fieldCoverThreatRadius
+                        or snapshot.playerDeployments>aiTuning.playerDeploymentsBeforeFortify)
+                    and closestEnemy>aiTuning.fieldCoverEnemyClearance then
+                    centerX=centerX/allies
+                    local nearPost=false
+                    for _,post in ipairs(self.outposts) do
+                        if math.abs(post.x-centerX)<=CONFIG.OUTPOST_RADIUS then nearPost=true; break end
+                    end
+                    if not nearPost then
+                        local ground=SceneMan:MovePointToGround(Vector(centerX,0),0,CONFIG.map.outposts.groundProbe)
+                        local target={name="field squad",x=ground.X,groundY=ground.Y,owner=team}
+                        local nearbyThreat=closestEnemy<=aiTuning.fieldCoverThreatRadius and 1 or 0
+                        addAction("fortify","cover",target,{allies=allies,threats=nearbyThreat,
+                            utility=aiTuning.fieldCoverUtility+(nearbyThreat>0 and 6 or 0)})
+                        fieldCoverTargets[#fieldCoverTargets+1]=target
+                    end
+                end
+            end
+        end
     end
+    end
+
     for _,investment in ipairs(investments) do actions[#actions+1]=investment end
     while #actions>0 do
         local action=self:ChooseAIAction(actions,pressured)
